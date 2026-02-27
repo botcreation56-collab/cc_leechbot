@@ -1,0 +1,44 @@
+# ========== CORE BOT FRAMEWORK ==========
+python-telegram-bot[webhooks,job-queue]
+
+# ========== WEB FRAMEWORK ==========
+fastapi
+uvicorn[standard]
+starlette
+python-multipart
+gunicorn
+
+# ========== DATABASE & ASYNC ==========
+motor
+pymongo
+aiofiles
+
+# ========== CONFIGURATION & VALIDATION ==========
+pydantic
+pydantic-settings
+python-dotenv
+
+# ========== HTTP & NETWORKING ==========
+httpx
+aiohttp
+anyio
+requests
+
+# ========== UTILITIES ==========
+yt-dlp
+pytz
+psutil
+cachetools
+
+# ========== SECURITY & ENCODING ==========
+cryptography
+python-jose
+PyJWT
+
+# ========== TESTING (Optional) ==========
+pytest
+pytest-asyncio
+
+# ========== DEVELOPMENT TOOLS (Optional) ==========
+black
+flake8
