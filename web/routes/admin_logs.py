@@ -9,7 +9,7 @@ from typing import List, Optional
 from datetime import datetime
 
 from bot.database import get_db
-from web.routes.auth import get_current_user
+from web.routes.auth import get_current_admin
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ async def get_logs(
     skip: int = Query(0),
     limit: int = Query(50),
     level: Optional[str] = None,
-    token: str = Query(...)
+    admin_id: int = Depends(get_current_admin)
 ):
     """
     Get admin logs
@@ -44,28 +44,20 @@ async def get_logs(
         skip: Skip N logs
         limit: Limit results
         level: Filter by level (INFO, WARNING, ERROR)
-        token: JWT token
+        admin_id: Injected admin user id
         
     Returns:
         Logs list
     """
     try:
-        # Verify admin
-        admin_id = await get_current_user(token)
-        from config.settings import get_admin_ids
-        
-        admin_ids = get_admin_ids()
-        if admin_id not in admin_ids:
-            raise HTTPException(status_code=403, detail="Not authorized")
-        
         # Get logs from database
         db = get_db()
         query = {}
         if level:
             query["level"] = level
         
-        logs = await db.security_logs.find(query).skip(skip).limit(limit).to_list(limit)
-        total = await db.security_logs.count_documents(query)
+        logs = await db.audit_log.find(query).skip(skip).sort("timestamp", -1).limit(limit).to_list(limit)
+        total = await db.audit_log.count_documents(query)
         
         logger.info(f"✅ Logs retrieved: {admin_id}")
         

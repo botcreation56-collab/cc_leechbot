@@ -114,6 +114,29 @@ async def add_destination(request: DestinationAdd, user_id: int = Depends(get_cu
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+@router.get("/myfiles")
+async def get_my_files(user_id: int = Depends(get_current_user)):
+    """Get current user's uploaded files — called by api.js getMyFiles()."""
+    try:
+        db = get_db()
+        files_cursor = db.cloud_files.find({"user_id": user_id}).sort("created_at", -1).limit(50)
+        files = await files_cursor.to_list(length=50)
+
+        return [
+            {
+                "file_id": f.get("file_id"),
+                "filename": f.get("filename", f.get("file_id", "Unknown")),
+                "file_size": f.get("file_size", 0),
+                "created_at": f.get("created_at").isoformat() if f.get("created_at") else None,
+                "status": "active" if f.get("status") != "expired" else "expired",
+            }
+            for f in files
+        ]
+    except Exception as e:
+        logger.error(f"❌ Get my files error: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 @router.delete("/destinations/{channel_id}")
 async def remove_destination(channel_id: int, user_id: int = Depends(get_current_user)):
     """Remove a destination channel"""
@@ -130,3 +153,4 @@ async def remove_destination(channel_id: int, user_id: int = Depends(get_current
     except Exception as e:
         logger.error(f"❌ Remove destination error: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+

@@ -236,16 +236,29 @@ class UploadService:
         remote_path = config.get("remote_path", "/uploads")
         safe_name = sanitize_filename(display_name)
 
-        cmd = [
-            "rclone", "copyto",
-            file_path,
-            f"{remote}:{remote_path}/{safe_name}",
-            "--progress",
-            "--config", config.get("config_path", "/tmp/rclone.conf"),
-        ]
+        import tempfile
+        import os
+        from pathlib import Path
 
-        logger.info("☁️ Rclone upload → %s:%s/%s", remote, remote_path, safe_name)
+        config_path = None
         try:
+            # Bug Fix: Render/Docker containers lose /tmp or ~/.config files on restart.
+            # So, we write the securely DB-stored credentials to a temp file dynamically
+            # just for the duration of this rclone subprocess.
+            credentials = config.get("credentials", "")
+            fd, config_path = tempfile.mkstemp(suffix=".conf", prefix="rclone_")
+            with os.fdopen(fd, 'w') as f:
+                f.write(credentials)
+
+            cmd = [
+                "rclone", "copyto",
+                file_path,
+                f"{remote}:{remote_path}/{safe_name}",
+                "--progress",
+                "--config", config_path,
+            ]
+
+            logger.info("☁️ Rclone upload → %s:%s/%s", remote, remote_path, safe_name)
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
@@ -261,6 +274,13 @@ class UploadService:
             raise
         except Exception as exc:
             raise RcloneUploadError(remote, file_path, str(exc)) from exc
+        finally:
+            config_path_file = Path(config_path) if config_path else None
+            if config_path_file and config_path_file.exists():
+                try:
+                    config_path_file.unlink()
+                except OSError:
+                    pass
 
         # Build public URL from remote config
         cdn_base = config.get("cdn_base_url", "")
@@ -288,7 +308,13 @@ class UploadService:
 
         Returns: {stream_link, token, expires_at_iso}.
         """
-        expiry_days = 7 if plan == "free" else 28
+        from bot.database import get_config
+        config = await get_config() or {}
+        if plan == "free":
+            expiry_days = config.get("retention_free_days", 7)
+        else:
+            expiry_days = config.get("retention_pro_days", 28)
+            
         expires_file = datetime.utcnow() + timedelta(days=expiry_days)
 
         # Save cloud file metadata

@@ -112,8 +112,19 @@ async def request_magic_link(req: LoginRequest, request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 # -------------------------------------------------------------
-# 2. VERIFY MAGIC TOKEN
+# 5. LEGACY ALIASES  (auth.js uses /request-code & /verify-code)
 # -------------------------------------------------------------
+@router.post("/request-code", dependencies=[Depends(RateLimiter(times=3, seconds=60))])
+async def request_code_alias(req: LoginRequest, request: Request):
+    """Alias for /request-login-link — used by auth.js OTP flow."""
+    return await request_magic_link(req, request)
+
+
+@router.post("/verify-code", dependencies=[Depends(RateLimiter(times=10, seconds=60))])
+async def verify_code_alias(req: VerifyTokenRequest, request: Request):
+    """Alias for /verify-magic-token — used by auth.js OTP flow."""
+    return await verify_magic_token(req, request)
+
 @router.post("/verify-magic-token", dependencies=[Depends(RateLimiter(times=10, seconds=60))])
 async def verify_magic_token(req: VerifyTokenRequest, request: Request):
     """

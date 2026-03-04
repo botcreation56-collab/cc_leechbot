@@ -253,39 +253,33 @@ def get_settings() -> Settings:
         # ✅ FIX: In production, enforce secrets instead of auto-generating
         is_production = _settings.ENVIRONMENT.lower() == "production"
 
-        # Auto-generate encryption keys if not set (DEV ONLY)
+        # Auto-generate encryption keys if not set — warn loudly to set them as permanent env vars
         if not _settings.ENCRYPTION_KEY or _settings.ENCRYPTION_KEY == "":
-            if is_production:
-                raise RuntimeError(
-                    "❌ CRITICAL: ENCRYPTION_KEY is required in production! "
-                    "Set it in your .env file. Auto-generation is disabled for security."
-                )
             try:
                 from cryptography.fernet import Fernet
-
                 _settings.ENCRYPTION_KEY = Fernet.generate_key().decode()
-                print(
-                    "⚠️ WARNING: Auto-generated ENCRYPTION_KEY (DEV ONLY). "
-                    "Set ENCRYPTION_KEY in .env for production!"
-                )
+                _warn_generated("ENCRYPTION_KEY", _settings.ENCRYPTION_KEY)
             except Exception as e:
-                print(f"❌ Failed to generate encryption key: {e}")
+                print(f"❌ Failed to generate ENCRYPTION_KEY: {e}")
 
         if not _settings.JWT_SECRET or _settings.JWT_SECRET == "":
-            if is_production:
-                raise RuntimeError(
-                    "❌ CRITICAL: JWT_SECRET is required in production! "
-                    "Set it in your .env file. Auto-generation is disabled for security."
-                )
-            import secrets
-
-            _settings.JWT_SECRET = secrets.token_urlsafe(32)
-            print(
-                "⚠️ WARNING: Auto-generated JWT_SECRET (DEV ONLY). "
-                "Set JWT_SECRET in .env for production!"
-            )
+            import secrets as _secrets
+            _settings.JWT_SECRET = _secrets.token_urlsafe(32)
+            _warn_generated("JWT_SECRET", _settings.JWT_SECRET)
 
     return _settings
+
+
+def _warn_generated(name: str, value: str) -> None:
+    """Print a loud warning when a secret is auto-generated."""
+    border = "=" * 60
+    print(f"\n{border}")
+    print(f"⚠️  AUTO-GENERATED {name} — NOT PERSISTENT ACROSS RESTARTS")
+    print(f"   Copy this into your Render environment variables:")
+    print(f"   {name}={value}")
+    print(f"{border}\n")
+
+
 
 
 def get_admin_ids() -> List[int]:

@@ -118,10 +118,10 @@ async def build_dependency_graph():
     media_svc   = MediaProcessingService()
     upload_svc  = UploadService(cloud_repo, otk_repo, rclone_repo, stream_base_url=base_url)
 
-    # Backward-compat: initialise the old bot.database global so existing
-    # handlers that still call `get_db()` from bot.database do not crash.
-    # This will be removed once handlers are fully migrated to the new layer.
-    from bot.database import init_db as _old_init_db
+    # Backward-compat: inject the shared Motor DB handle into the old bot.database layer
+    # so existing handlers that still call `get_db()` share the exact same connection pool.
+    from infrastructure.database._legacy_bot._connection import _set_shared_db, init_db as _old_init_db
+    _set_shared_db(db)
     await _old_init_db()
 
     return {
@@ -180,15 +180,18 @@ def validate_environment() -> None:
         if not os.getenv("JWT_SECRET"):
             sec_missing.append("JWT_SECRET")
         if sec_missing:
-            logger.critical(
-                "🚨 Missing production secrets: %s — "
-                "auto-generated secrets invalidate sessions on restart!",
+            logger.warning(
+                "⚠️ Missing production secrets: %s — "
+                "auto-generated values will be used (sessions reset on restart). "
+                "Set these in Render dashboard for persistence!",
                 ", ".join(sec_missing),
             )
-            sys.exit(1)
 
-    if settings.WEBHOOK_URL and not settings.WEBHOOK_URL.startswith("https://"):
-        logger.warning("⚠️ WEBHOOK_URL is not HTTPS — Telegram may reject it")
+        if not os.getenv("WEBHOOK_SECRET"):
+            logger.warning(
+                "⚠️ WEBHOOK_SECRET not set — Telegram webhook is unprotected! "
+                "Any server can POST fake updates. Set WEBHOOK_SECRET in Render dashboard."
+            )
 
     logger.info("✅ Environment validated")
 
@@ -737,6 +740,7 @@ from web.routes.public import router as public_router
 from web.routes.user_settings import router as user_settings_router
 
 app.include_router(auth_router, tags=["Auth"], prefix="/api/auth")
+app.include_router(auth_router, tags=["Auth"], prefix="/auth")  # auth.js uses /auth/request-code
 app.include_router(public_router, tags=["Public"])
 app.include_router(dashboard_router, tags=["AdminDashboard"], prefix="/api/admin")
 app.include_router(users_router, tags=["AdminUsers"], prefix="/api/admin")

@@ -42,6 +42,7 @@ async def upload_to_rclone(
     progress_callback=None,
 ) -> Optional[Dict[str, Any]]:
     """Upload file to rclone-configured cloud service."""
+    config_file = None
     try:
         path = Path(file_path)
         if not path.exists():
@@ -56,11 +57,12 @@ async def upload_to_rclone(
             raise RcloneError(f"Rclone config not found: {rclone_config_id}")
 
         service = config["service"]
-        config_file = os.getenv(
-            "RCLONE_CONFIG_PATH", str(Path.home() / ".config" / "rclone" / "rclone.conf")
-        )
-        if not Path(config_file).exists():
-            raise RcloneError("Rclone config file not found. Run 'rclone config' first.")
+        credentials = config.get("credentials", "")
+        
+        import tempfile
+        fd, config_file = tempfile.mkstemp(suffix=".conf", prefix="rclone_")
+        with os.fdopen(fd, 'w') as f:
+            f.write(credentials)
 
         remote_name = f"{service}_{rclone_config_id[:8]}"
         destination = f"{remote_name}:{remote_path}"
@@ -123,6 +125,12 @@ async def upload_to_rclone(
     except Exception as e:
         logger.error(f"❌ Rclone upload error: {e}")
         raise RcloneError(str(e)[:100])
+    finally:
+        if config_file and Path(config_file).exists():
+            try:
+                Path(config_file).unlink()
+            except OSError:
+                pass
 
 
 async def generate_rclone_link(

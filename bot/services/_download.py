@@ -247,7 +247,7 @@ try:
     print(f"MEGA_FILE_PATH={{res}}")
 except Exception as e:
     print(str(e), file=sys.stderr)
-    sys.exit(1)
+    raise
 '''
     process = await asyncio.create_subprocess_exec(
         "python", "-c", script,

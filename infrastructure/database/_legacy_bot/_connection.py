@@ -1,78 +1,75 @@
 """
-bot/database/_connection.py — MongoDB connection lifecycle and index creation.
+bot/database/_connection.py — MongoDB connection lifecycle (CONSOLIDATED).
 
-Responsibilities:
-  - init_db()      : connect + create indexes + run migrations
-  - close_db()     : graceful disconnect
-  - get_db()       : return cached AsyncIOMotorDatabase instance
-  - create_indexes : all collection index definitions
-  - ensure_channel_schema / migrate_flat_to_nested : startup migrations
+IMPORTANT: This module no longer opens a second connection pool.
+Instead, it shares the single AsyncIOMotorDatabase created by
+infrastructure.database.connection.DatabaseConnection (via main.py).
+
+Public API (unchanged — all callers continue to work):
+  init_db()   → registers the shared DB handle
+  close_db()  → no-op (lifecycle owned by DatabaseConnection)
+  get_db()    → returns the shared DB handle
 """
 
 import logging
-import os
-from datetime import datetime
 from typing import Optional
 
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+from motor.motor_asyncio import AsyncIOMotorDatabase
 
 logger = logging.getLogger("filebot.db.connection")
 
-MONGODB_TIMEOUT = 30  # seconds
+MONGODB_TIMEOUT = 30  # seconds (kept for backward compatiblity)
 
-_db_client: Optional[AsyncIOMotorClient] = None
+# Shared DB handle — set by _set_shared_db() on startup, never a separate pool.
 _db: Optional[AsyncIOMotorDatabase] = None
 
 
+def _set_shared_db(db: AsyncIOMotorDatabase) -> None:
+    """Called once by main.py after DatabaseConnection.connect() to share the pool."""
+    global _db
+    _db = db
+    logger.info("✅ Legacy DB layer is now using the shared MongoDB connection pool")
+
+
 async def init_db() -> AsyncIOMotorDatabase:
-    """Initialize MongoDB connection and create indexes."""
-    global _db_client, _db
-
-    try:
-        mongo_uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-        db_name = os.getenv("MONGODB_DB", "filebot_production")
-
-        max_pool_size = int(os.getenv("MONGODB_MAX_POOL_SIZE", "200"))
-        min_pool_size = int(os.getenv("MONGODB_MIN_POOL_SIZE", "20"))
-
-        _db_client = AsyncIOMotorClient(
-            mongo_uri,
-            maxPoolSize=max_pool_size,
-            minPoolSize=min_pool_size,
-            maxIdleTimeMS=45000,
-            serverSelectionTimeoutMS=5000,
-            connectTimeoutMS=10000,
-            retryWrites=True,
+    """
+    No-op initialiser retained for backward compatibility.
+    The real connection is established via infrastructure.database.connection.DatabaseConnection
+    and injected with _set_shared_db() before this is called by any handler.
+    """
+    if _db is None:
+        raise RuntimeError(
+            "Shared DB not set. Call _set_shared_db(db) from main.py after "
+            "DatabaseConnection.connect() before starting the bot."
         )
+    await _run_migrations(_db)
+    logger.info("✅ init_db() ack — using shared pool, no second client opened")
+    return _db
 
-        await _db_client.admin.command("ping")
-        _db = _db_client[db_name]
 
-        await create_indexes(_db)
-        await ensure_channel_schema(_db)
-        await migrate_flat_to_nested(_db)
-
-        logger.info(f"✅ MongoDB connected: {db_name}")
-        return _db
-
+async def _run_migrations(db: AsyncIOMotorDatabase) -> None:
+    """Run one-time startup migrations (schema ensures)."""
+    try:
+        await ensure_channel_schema(db)
+        await migrate_flat_to_nested(db)
     except Exception as e:
-        logger.error(f"❌ MongoDB connection failed: {e}", exc_info=True)
-        raise
+        logger.warning("⚠️ Migration step failed (non-fatal): %s", e)
 
 
 async def close_db() -> None:
-    """Close MongoDB connection."""
-    global _db_client
-    if _db_client is not None:
-        _db_client.close()
-        logger.info("✅ MongoDB connection closed")
+    """
+    No-op — lifecycle is owned by DatabaseConnection in infrastructure layer.
+    Kept for backward compatibility.
+    """
+    logger.info("ℹ️ close_db() called — lifecycle delegated to DatabaseConnection")
 
 
 def get_db() -> AsyncIOMotorDatabase:
-    """Return database instance (must call init_db first)."""
+    """Return the shared database instance."""
     if _db is None:
-        raise RuntimeError("Database not initialized. Call init_db() first.")
+        raise RuntimeError("Database not initialized. Ensure _set_shared_db() was called at startup.")
     return _db
+
 
 
 async def _safe_create_index(collection, keys, **kwargs) -> None:

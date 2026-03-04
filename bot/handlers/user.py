@@ -528,9 +528,7 @@ async def lock_link_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     except Exception as e:
         logger.error(f"❌ Lock link error: {e}")
 
-async def handle_us_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Placeholder for handle_us_remove"""
-    pass
+
 
 async def handle_us_destination_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show user destination management menu"""
@@ -1963,25 +1961,3 @@ async def handle_callback_support(update: Update, context: ContextTypes.DEFAULT_
 
 
 
-async def handle_user_destination_forward(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle forwarded channel message for user destination setup"""
-    try:
-        msg = update.message
-        forward_origin = msg.forward_origin
-        if forward_origin and hasattr(forward_origin, 'chat'):
-            channel = forward_origin.chat
-            user_id = update.effective_user.id
-            await update_user(user_id, {"settings.destination_channel": channel.id})
-            await msg.reply_text(
-                f"✅ **Destination Set!**\n\n"
-                f"Channel: `{channel.title or channel.id}`\n\n"
-                f"Processed files will be forwarded there.",
-                parse_mode="Markdown"
-            )
-            context.user_data.pop("awaiting", None)
-        else:
-            await msg.reply_text("❌ Could not read channel from this forward. Please forward a message from your channel.")
-    except Exception as e:
-        logger.error(f"❌ Error in handle_user_destination_forward: {e}")
-
-        await update.message.reply_text("❌ Error setting destination. Please try again.")
