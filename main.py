@@ -758,7 +758,13 @@ app.include_router(logs_router, tags=["AdminLogs"], prefix="/api/admin")
 # ── Static files ─────────────────────────────────────────────
 _static_dir = project_root / "web" / "static"
 if _static_dir.exists():
+    # Mount assets (CSS, JS) under /static
     app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+    
+    # Mount HTML pages under / so they are accessible as /login.html, /dashboard.html etc.
+    _pages_dir = _static_dir / "pages"
+    if _pages_dir.exists():
+        app.mount("/", StaticFiles(directory=str(_pages_dir), html=True), name="pages")
 
 
 # ============================================================
