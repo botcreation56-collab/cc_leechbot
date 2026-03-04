@@ -120,10 +120,16 @@ async def request_code_alias(req: LoginRequest, request: Request):
     return await request_magic_link(req, request)
 
 
+class VerifyCodeRequest(BaseModel):
+    user_id: int
+    code: str
+
 @router.post("/verify-code", dependencies=[Depends(RateLimiter(times=10, seconds=60))])
-async def verify_code_alias(req: VerifyTokenRequest, request: Request):
+async def verify_code_alias(req: VerifyCodeRequest, request: Request):
     """Alias for /verify-magic-token — used by auth.js OTP flow."""
-    return await verify_magic_token(req, request)
+    # Map the `code` field to the `token` field expected by the new implementation
+    adapted_req = VerifyTokenRequest(token=req.code)
+    return await verify_magic_token(adapted_req, request)
 
 @router.post("/verify-magic-token", dependencies=[Depends(RateLimiter(times=10, seconds=60))])
 async def verify_magic_token(req: VerifyTokenRequest, request: Request):
