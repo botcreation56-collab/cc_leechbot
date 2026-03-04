@@ -736,7 +736,7 @@ from web.routes.auth import router as auth_router
 from web.routes.public import router as public_router
 from web.routes.user_settings import router as user_settings_router
 
-app.include_router(auth_router, tags=["Auth"])
+app.include_router(auth_router, tags=["Auth"], prefix="/api/auth")
 app.include_router(public_router, tags=["Public"])
 app.include_router(dashboard_router, tags=["AdminDashboard"], prefix="/admin")
 app.include_router(users_router, tags=["AdminUsers"], prefix="/admin")
