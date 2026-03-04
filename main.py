@@ -738,11 +738,11 @@ from web.routes.user_settings import router as user_settings_router
 
 app.include_router(auth_router, tags=["Auth"], prefix="/api/auth")
 app.include_router(public_router, tags=["Public"])
-app.include_router(dashboard_router, tags=["AdminDashboard"], prefix="/admin")
-app.include_router(users_router, tags=["AdminUsers"], prefix="/admin")
-app.include_router(config_router, tags=["AdminConfig"], prefix="/admin")
-app.include_router(user_settings_router, tags=["UserSettings"])
-app.include_router(logs_router, tags=["AdminLogs"], prefix="/admin")
+app.include_router(dashboard_router, tags=["AdminDashboard"], prefix="/api/admin")
+app.include_router(users_router, tags=["AdminUsers"], prefix="/api/admin")
+app.include_router(config_router, tags=["AdminConfig"], prefix="/api/admin")
+app.include_router(user_settings_router, tags=["UserSettings"], prefix="/api/user")
+app.include_router(logs_router, tags=["AdminLogs"], prefix="/api/admin")
 
 # ── Static files ─────────────────────────────────────────────
 _static_dir = project_root / "web" / "static"
