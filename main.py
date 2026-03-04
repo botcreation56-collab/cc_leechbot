@@ -755,16 +755,6 @@ app.include_router(config_router, tags=["AdminConfig"], prefix="/api/admin")
 app.include_router(user_settings_router, tags=["UserSettings"], prefix="/api/user")
 app.include_router(logs_router, tags=["AdminLogs"], prefix="/api/admin")
 
-# ── Static files ─────────────────────────────────────────────
-_static_dir = project_root / "web" / "static"
-if _static_dir.exists():
-    # Mount assets (CSS, JS) under /static
-    app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
-    
-    # Mount HTML pages under / so they are accessible as /login.html, /dashboard.html etc.
-    _pages_dir = _static_dir / "pages"
-    if _pages_dir.exists():
-        app.mount("/", StaticFiles(directory=str(_pages_dir), html=True), name="pages")
 
 
 # ============================================================
@@ -831,6 +821,18 @@ async def stream_file(file_id: str):
     except Exception as exc:
         logger.warning("Stream redirect failed for file_id=%s: %s", file_id, exc)
         raise HTTPException(status_code=404, detail="File not found or expired")
+
+
+# ── Static files ─────────────────────────────────────────────
+_static_dir = project_root / "web" / "static"
+if _static_dir.exists():
+    # Mount assets (CSS, JS) under /static
+    app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+
+    # Mount HTML pages under / so they are accessible as /login.html, /dashboard.html etc.
+    _pages_dir = _static_dir / "pages"
+    if _pages_dir.exists():
+        app.mount("/", StaticFiles(directory=str(_pages_dir), html=True), name="pages")
 
 
 # ============================================================
