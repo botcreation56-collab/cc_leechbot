@@ -14,6 +14,7 @@ from bot.database import (
     ban_user,
     unban_user,
     update_user,
+    get_config,
     update_config,
     add_action,
     get_chatbox_messages,
@@ -256,6 +257,7 @@ async def handle_edit_file_expiry(update: Update, context: ContextTypes.DEFAULT_
 
 async def handle_edit_force_subs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Alias for force sub management"""
+    from bot.handlers.admin import handle_admin_set_force_sub_channel
     await handle_admin_set_force_sub_channel(update, context)
 
 async def handle_edit_plan(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -476,12 +478,13 @@ async def ussettings_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 InlineKeyboardButton("💎 Plan", callback_data="us_plan"),
                 InlineKeyboardButton("🎬 Mode", callback_data="us_mode"),
             ],
-            [
-                InlineKeyboardButton("📁 Destination", callback_data="us_destination"),
+            [InlineKeyboardButton("📁 Destination", callback_data="us_destination"),
                 InlineKeyboardButton("👁️ Visibility", callback_data="us_visibility"),
             ],
-            [InlineKeyboardButton("🗑️ Remove", callback_data="us_remove")],
-            [InlineKeyboardButton("📂 My Files", callback_data="us_myfiles")],
+            [InlineKeyboardButton("🗑️ Remove", callback_data="us_remove"),
+             InlineKeyboardButton("📂 My Files", callback_data="us_myfiles")
+            ],
+            [InlineKeyboardButton("🔙 Back", callback_data="us_close")],
         ]
 
         # Get user settings
@@ -795,6 +798,16 @@ async def go_back_to_settings(update: Update, context: ContextTypes.DEFAULT_TYPE
     except Exception as e:
         logger.error(f"❌ Error in go_back_to_settings: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
+
+async def handle_us_close(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Close the settings menu by deleting the message"""
+    try:
+        query = update.callback_query
+        await query.answer()
+        await query.message.delete()
+        logger.info(f"✅ Settings menu closed for {update.effective_user.id}")
+    except Exception as e:
+        logger.error(f"❌ Error closing settings: {e}")
 
 async def handle_us_prefix(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Callback: show prompt to set filename prefix"""

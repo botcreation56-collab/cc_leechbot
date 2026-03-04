@@ -14,6 +14,7 @@ from bot.database import (
     ban_user,
     unban_user,
     update_user,
+    get_config,
     update_config,
     add_action,
     get_chatbox_messages,
@@ -31,6 +32,9 @@ from bot.database import (
     get_admin_stats,
     create_task,
     update_task,
+    get_force_sub_channels,
+    update_force_sub_metadata,
+    set_channel_config,
 )
 from bot.utils import log_info, log_error, log_user_update, validate_url
 from bot.services import create_or_update_storage_message, FFmpegService
@@ -853,14 +857,17 @@ async def handle_terabox_stats(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def handle_admin_set_log_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Prompt admin to set log channel"""
+    from bot.handlers.user import ask_channel_forward
     await ask_channel_forward(update, context, "log_channel")
 
 async def handle_admin_set_dump_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Prompt admin to set dump channel"""
+    from bot.handlers.user import ask_channel_forward
     await ask_channel_forward(update, context, "dump_channel")
 
 async def handle_admin_set_storage_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Prompt admin to set storage channel"""
+    from bot.handlers.user import ask_channel_forward
     await ask_channel_forward(update, context, "storage_channel")
 
 async def handle_admin_set_force_sub_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -902,6 +909,7 @@ async def handle_admin_set_force_sub_channel(update: Update, context: ContextTyp
 
 async def handle_admin_fsub_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Prompt admin to add a force-sub channel"""
+    from bot.handlers.user import ask_channel_forward
     await ask_channel_forward(update, context, "force_sub_channel")
 
 async def handle_admin_fsub_manage(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1046,6 +1054,7 @@ async def handle_admin_remove_log(update: Update, context: ContextTypes.DEFAULT_
         config.pop("log_channel_id", None)
         await update_config(config, admin_id=update.effective_user.id)
         await update.callback_query.answer("✅ Log channel removed", show_alert=True)
+        from bot.handlers.settings import show_config_menu
         await show_config_menu(update, context)
     except Exception as e:
         logger.error(f"❌ Error removing log channel: {e}", exc_info=True)
@@ -1058,6 +1067,7 @@ async def handle_admin_remove_dump(update: Update, context: ContextTypes.DEFAULT
         config.pop("dump_channel_id", None)
         await update_config(config, admin_id=update.effective_user.id)
         await update.callback_query.answer("✅ Dump channel removed", show_alert=True)
+        from bot.handlers.settings import show_config_menu
         await show_config_menu(update, context)
     except Exception as e:
         logger.error(f"❌ Error removing dump channel: {e}", exc_info=True)
@@ -1070,6 +1080,7 @@ async def handle_admin_remove_storage(update: Update, context: ContextTypes.DEFA
         config.pop("storage_channel_id", None)
         await update_config(config, admin_id=update.effective_user.id)
         await update.callback_query.answer("✅ Storage channel removed", show_alert=True)
+        from bot.handlers.settings import show_config_menu
         await show_config_menu(update, context)
     except Exception as e:
         logger.error(f"❌ Error removing storage channel: {e}", exc_info=True)

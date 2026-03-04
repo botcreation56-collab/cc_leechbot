@@ -63,6 +63,7 @@ from .settings import (
     settings_command, ussettings_command,
     handle_user_settings_text,
     handle_us_mode, handle_us_mode_video, handle_us_mode_document,
+    handle_us_close,
     go_back_to_settings,
 )
 

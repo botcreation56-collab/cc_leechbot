@@ -30,7 +30,7 @@ class API {
             }
 
             const response = await fetch(`${this.adminBaseUrl}${endpoint}`, options);
-            
+
             // Handle Session Expiry (401)
             if (response.status === 401) {
                 localStorage.removeItem('filebot_token');
@@ -130,6 +130,18 @@ class API {
 
     async saveSiteConfig(config) {
         return this.adminRequest('/site-config', 'POST', config);
+    }
+
+    async getPlans() {
+        return this.adminRequest('/plans');
+    }
+
+    async updatePlans(plans) {
+        return this.adminRequest('/plans', 'POST', plans);
+    }
+
+    async triggerBroadcast(data) {
+        return this.adminRequest('/broadcast', 'POST', data);
     }
 
     // =========================

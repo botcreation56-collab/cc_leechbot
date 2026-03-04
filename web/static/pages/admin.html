@@ -382,11 +382,15 @@
                         </div>
                         <div class="form-group">
                             <label>Default Dump Channel ID</label>
-                            <input type="number" id="cf-dump" class="form-control">
+                            <input type="number" id="cf-dump" class="form-control" placeholder="-100...">
+                        </div>
+                        <div class="form-group">
+                            <label>Storage Channel ID</label>
+                            <input type="number" id="cf-storage" class="form-control" placeholder="-100...">
                         </div>
                         <div class="form-group">
                             <label>Force Sub Channel ID</label>
-                            <input type="number" id="cf-fsub" class="form-control">
+                            <input type="number" id="cf-fsub" class="form-control" placeholder="-100...">
                         </div>
                     </div>
                     <button class="btn-primary" onclick="saveGlobalConfig()">Save Global Config</button>
@@ -513,8 +517,7 @@
 
         async function loadGlobalConfig() {
             try {
-                const res = await fetch('/api/admin/config', { headers: { 'Authorization': `Bearer ${token}` } });
-                const cfg = await res.json();
+                const cfg = await api.getConfig();
 
                 document.getElementById('cf-start').value = cfg.start_message || '';
                 document.getElementById('cf-help').value = cfg.help_text || '';
@@ -528,6 +531,7 @@
                 document.getElementById('cf-retpro').value = cfg.retention_pro_days || '';
                 document.getElementById('cf-log').value = cfg.log_channel || '';
                 document.getElementById('cf-dump').value = cfg.dump_channel || '';
+                document.getElementById('cf-storage').value = cfg.storage_channel || '';
                 document.getElementById('cf-fsub').value = cfg.force_sub_channel || '';
 
             } catch (e) { console.error("Config Load Error", e); }
@@ -548,26 +552,27 @@
 
                 log_channel: parseInt(document.getElementById('cf-log').value) || null,
                 dump_channel: parseInt(document.getElementById('cf-dump').value) || null,
+                storage_channel: parseInt(document.getElementById('cf-storage').value) || null,
                 force_sub_channel: parseInt(document.getElementById('cf-fsub').value) || null,
             };
 
             try {
-                const res = await fetch('/api/admin/config', {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
+                const res = await api.updateConfig(payload);
                 const msg = document.getElementById('config-msg');
-                msg.style.color = res.ok ? '#3fb950' : '#ff7b72';
-                msg.innerText = res.ok ? 'Saved globally!' : 'Failed to save!';
+                msg.style.color = '#3fb950';
+                msg.innerText = 'Saved globally!';
                 setTimeout(() => msg.innerText = '', 3000);
-            } catch (e) { console.error(e); }
+            } catch (e) {
+                console.error(e);
+                const msg = document.getElementById('config-msg');
+                msg.style.color = '#ff7b72';
+                msg.innerText = 'Failed to save: ' + (e.message || 'Error');
+            }
         }
 
         async function loadBotPlans() {
             try {
-                const res = await fetch('/api/admin/config/plans', { headers: { 'Authorization': `Bearer ${token}` } });
-                const plans = await res.json();
+                const plans = await api.getPlans();
 
                 if (plans.free) {
                     document.getElementById('pl-free-price').value = plans.free.price || 0;
@@ -576,11 +581,12 @@
                     document.getElementById('pl-free-expiry').value = plans.free.dump_expiry_days || 0;
                 }
 
-                if (plans.premium) {
-                    document.getElementById('pl-pro-price').value = plans.premium.price || 5;
-                    document.getElementById('pl-pro-para').value = plans.premium.parallel || 3;
-                    document.getElementById('pl-pro-stor').value = plans.premium.storage_per_day || 50;
-                    document.getElementById('pl-pro-expiry').value = plans.premium.dump_expiry_days || 30;
+                if (plans.premium || plans.pro) {
+                    const proPlan = plans.pro || plans.premium;
+                    document.getElementById('pl-pro-price').value = proPlan.price || 5;
+                    document.getElementById('pl-pro-para').value = proPlan.parallel || 3;
+                    document.getElementById('pl-pro-stor').value = proPlan.storage_per_day || 50;
+                    document.getElementById('pl-pro-expiry').value = proPlan.dump_expiry_days || 30;
                 }
             } catch (e) { console.error("Plans Load Error", e); }
         }
@@ -602,16 +608,17 @@
             };
 
             try {
-                const res = await fetch('/api/admin/config/plans', {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
+                const res = await api.updatePlans(payload);
                 const msg = document.getElementById('plans-msg');
-                msg.style.color = res.ok ? '#3fb950' : '#ff7b72';
-                msg.innerText = res.ok ? 'Plans successfully updated!' : 'Failed to save!';
+                msg.style.color = '#3fb950';
+                msg.innerText = 'Plans successfully updated!';
                 setTimeout(() => msg.innerText = '', 3000);
-            } catch (e) { console.error(e); }
+            } catch (e) {
+                console.error(e);
+                const msg = document.getElementById('plans-msg');
+                msg.style.color = '#ff7b72';
+                msg.innerText = 'Failed to save!';
+            }
         }
 
         async function triggerBroadcast() {
@@ -623,18 +630,19 @@
             btn.innerText = "Dispatching...";
 
             try {
-                const res = await fetch('/api/admin/config/broadcast', {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: message })
-                });
+                const res = await api.triggerBroadcast({ message: message });
 
                 const msg = document.getElementById('bc-msg');
-                msg.style.color = res.ok ? '#3fb950' : '#ff7b72';
-                msg.innerText = res.ok ? 'Broadcast queued!' : 'Broadcast dispatch failed.';
-                if (res.ok) document.getElementById('broadcast-msg').value = '';
+                msg.style.color = '#3fb950';
+                msg.innerText = 'Broadcast queued!';
+                document.getElementById('broadcast-msg').value = '';
                 setTimeout(() => msg.innerText = '', 5000);
-            } catch (e) { console.error(e); }
+            } catch (e) {
+                console.error(e);
+                const msg = document.getElementById('bc-msg');
+                msg.style.color = '#ff7b72';
+                msg.innerText = 'Broadcast dispatch failed: ' + (e.message || 'Error');
+            }
             finally {
                 btn.disabled = false;
                 btn.innerText = "Send Broadcast";

@@ -59,7 +59,13 @@ async def get_config_endpoint(admin_id: int = Depends(get_current_user)):
             raise HTTPException(status_code=403, detail="Not authorized")
 
         config = await get_config() or {}
+        channels = config.get("channels", {})
         logger.info(f"✅ Config retrieved: admin={admin_id}")
+
+        def get_nested_id(ch_val):
+            if isinstance(ch_val, dict):
+                return ch_val.get("id")
+            return ch_val
 
         return ConfigResponse(
             max_upload_size=config.get("max_upload_size", 4294967296),
@@ -71,10 +77,10 @@ async def get_config_endpoint(admin_id: int = Depends(get_current_user)):
             help_text=config.get("help_text", "Send a file to start."),
             support_contact=config.get("support_contact", "@admin"),
             watermark=config.get("watermark", ""),
-            log_channel=config.get("log_channel"),
-            dump_channel=config.get("dump_channel"),
-            storage_channel=config.get("storage_channel"),
-            force_sub_channel=config.get("force_sub_channel")
+            log_channel=get_nested_id(channels.get("log")) or config.get("log_channel"),
+            dump_channel=get_nested_id(channels.get("dump")) or config.get("dump_channel"),
+            storage_channel=get_nested_id(channels.get("storage")) or config.get("storage_channel"),
+            force_sub_channel=get_nested_id(channels.get("force_sub")) or config.get("force_sub_channel")
         )
     except HTTPException:
         raise
@@ -115,12 +121,16 @@ async def update_config_endpoint(request: ConfigRequest, admin_id: int = Depends
             updates["watermark"] = request.watermark
         if request.log_channel is not None:
             updates["log_channel"] = request.log_channel
+            updates["channels.log"] = {"id": request.log_channel}
         if request.dump_channel is not None:
             updates["dump_channel"] = request.dump_channel
+            updates["channels.dump"] = {"id": request.dump_channel}
         if request.storage_channel is not None:
             updates["storage_channel"] = request.storage_channel
+            updates["channels.storage"] = {"id": request.storage_channel}
         if request.force_sub_channel is not None:
             updates["force_sub_channel"] = request.force_sub_channel
+            updates["channels.force_sub"] = {"id": request.force_sub_channel}
 
         if not updates:
             raise HTTPException(status_code=400, detail="No updates provided")
@@ -163,6 +173,11 @@ async def get_plans_endpoint(admin_id: int = Depends(get_current_user)):
             "free": {"price": 0, "parallel": 1, "storage_per_day": 5, "dump_expiry_days": 0},
             "premium": {"price": 5, "parallel": 3, "storage_per_day": 50, "dump_expiry_days": 30}
         })
+        
+        # Ensure 'pro' key exists if UI expects it (or just return the whole plans dict)
+        if "premium" in plans and "pro" not in plans:
+            plans["pro"] = plans["premium"]
+        
         return plans
     except Exception as e:
         logger.error(f"❌ Get plans error: {e}")

@@ -416,6 +416,7 @@ def setup_handlers(application: Application) -> None:
             ("^us_visibility$",     handle_us_visibility),
             ("^us_destination$",    handle_us_destination_button),
             ("^us_back$",           go_back_to_settings),
+            ("^us_close$",          handle_us_close),
             ("^us_help$",           handle_callback_help),
             ("^us_support$",        handle_callback_support),
             ("^us_stats$",          stats_command),
