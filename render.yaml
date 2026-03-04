@@ -5,14 +5,12 @@ services:
     region: singapore   # change to your preferred region
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: python main.py
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1
     healthCheckPath: /health
 
     envVars:
       - key: ENVIRONMENT
         value: production
-      - key: PORT
-        value: 10000          # Render assigns this automatically
       - key: BOT_TOKEN
         sync: false           # fill in Render dashboard
       - key: ADMIN_IDS
