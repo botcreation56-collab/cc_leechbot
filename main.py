@@ -211,50 +211,21 @@ def setup_handlers(application: Application) -> None:
     """Register ALL bot handlers in correct priority order."""
     from bot.middleware import apply_ban_check, error_handler
 
-    # ── User settings handlers ───────────────────────────────
+    # ── User handlers ────────────────────────────────────────
     from bot.handlers import (
-        go_back_to_settings,
-        handle_callback_help,
-        handle_callback_support,
-        handle_inject_sub,
-        handle_meta_title,
-        handle_meta_author,
-        handle_meta_year,
-        handle_meta_audio,
-        handle_meta_subtitle,
-        handle_meta_video,
-        handle_rem_inject,
-        handle_rem_meta,
-        handle_rem_word,
-        handle_subtitle_menu,
-        handle_us_destination_button,
-        handle_us_metadata,
-        handle_us_mode,
-        handle_us_mode_document,
-        handle_us_mode_video,
-        handle_us_myfiles,
-        handle_us_plan,
-        handle_us_prefix,
-        handle_us_remove_confirm,
-        handle_us_reset_confirm_yes,
-        handle_us_suffix,
-        handle_us_thumbnail,
-        handle_us_thumbnail_menu,
-        handle_us_visibility,
-        settings_command,
-        ussettings_command,
-    )
-
-    # ── User command handlers ────────────────────────────────
-    from bot.handlers import (
-        cancel_command,
-        cancel_task_command,
-        help_command,
-        myfiles_command,
-        start_command,
-        stats_command,
-        support_command,
-        unknown_handler,
+        start_command, help_command, stats_command, myfiles_command,
+        support_command, cancel_command, settings_command, ussettings_command,
+        go_back_to_settings, handle_us_close, handle_us_mode,
+        handle_us_mode_video, handle_us_mode_document,
+        handle_us_prefix, handle_us_suffix, handle_us_metadata,
+        handle_meta_title, handle_meta_author, handle_meta_year,
+        handle_us_thumbnail, handle_us_thumbnail_menu, handle_us_visibility,
+        handle_us_destination_button, handle_us_remove_confirm,
+        handle_us_reset_confirm_yes, handle_us_myfiles, handle_us_plan,
+        handle_subtitle_menu, handle_inject_sub, handle_meta_audio,
+        handle_meta_video, handle_meta_subtitle, handle_rem_word,
+        handle_rem_meta, handle_rem_inject, handle_callback_help,
+        handle_callback_support, cancel_task_command, unknown_handler,
     )
 
     # ── Admin handlers ───────────────────────────────────────
