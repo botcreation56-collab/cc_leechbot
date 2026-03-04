@@ -21,6 +21,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 settings = get_settings()
 
+from fastapi.responses import RedirectResponse
+
+@router.get("/")
+async def redirect_to_login():
+    """Redirect root path to the login page."""
+    return RedirectResponse(url="/login.html")
+
 
 class FileMetadata(BaseModel):
     """File metadata"""

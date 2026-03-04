@@ -235,24 +235,71 @@ async def download_from_mega(
 
     logger.info(f"📥 Starting Mega download: {url}")
 
-    # P0 FIX: Thread pool exhaustion averted by spinning up a separate Python process
-    # for the blocking mega.py operations. This processes can be killed if it hangs.
+    # Pass credentials to subprocess if admin has them
+    from bot.database import get_db
+    mega_email = ""
+    mega_password = ""
+    if user_id in settings.ADMIN_IDS or user_id == int(str(settings.ADMIN_IDS).split(",")[0] if isinstance(settings.ADMIN_IDS, str) else settings.ADMIN_IDS[0]):
+        try:
+            db_inst = get_db()
+            mega_conf = await db_inst.rclone_configs.find_one({"user_id": user_id, "service": "mega"})
+            if mega_conf and "credentials" in mega_conf:
+                # Basic parsing of rclone conf format for mega: user = ... \n pass = ...
+                creds = mega_conf["credentials"]
+                for line in creds.splitlines():
+                    if line.strip().startswith("user ="):
+                        mega_email = line.split("=", 1)[1].strip()
+                    elif line.strip().startswith("pass ="):
+                        mega_password = line.split("=", 1)[1].strip()
+                        # Rclone obscures mega passwords, mega.py needs plaintext.
+                        # Attempt to reveal it using rclone.
+                        try:
+                            # Using python's subprocess since this is a quick synchronous-like operation
+                            # but we do it async so we don't block.
+                            reveal_proc = await asyncio.create_subprocess_exec(
+                                "rclone", "reveal", mega_password,
+                                stdout=asyncio.subprocess.PIPE,
+                                stderr=asyncio.subprocess.PIPE
+                            )
+                            stdout, _ = await asyncio.wait_for(reveal_proc.communicate(), timeout=5.0)
+                            if reveal_proc.returncode == 0:
+                                mega_password = stdout.decode().strip()
+                        except Exception as e:
+                            logger.warning(f"Could not reveal mega password: {e}")
+        except Exception as e:
+            logger.warning(f"Could not load Mega credentials for admin: {e}")
+
     script = f'''
 import sys
+import os
 try:
     from mega import Mega
     m = Mega()
-    m_login = m.login()
+    email = os.environ.get("MEGA_EMAIL", "").strip()
+    password = os.environ.get("MEGA_PASSWORD", "").strip()
+    
+    if email and password:
+        m_login = m.login(email, password)
+    else:
+        m_login = m.login()
+        
     res = m_login.download_url("{url}", dest_path="{user_dir}")
     print(f"MEGA_FILE_PATH={{res}}")
 except Exception as e:
     print(str(e), file=sys.stderr)
     raise
 '''
+    
+    env = os.environ.copy()
+    if mega_email and mega_password:
+        env["MEGA_EMAIL"] = mega_email
+        env["MEGA_PASSWORD"] = mega_password
+
     process = await asyncio.create_subprocess_exec(
         "python", "-c", script,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        env=env
     )
 
     try:
