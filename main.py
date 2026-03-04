@@ -168,10 +168,17 @@ def validate_environment() -> None:
             logger.info("🔍 Deduced Webhook URL: %s", settings.WEBHOOK_URL)
 
     required = {"BOT_TOKEN", "MONGODB_URI"}
-    missing = [v for v in required if not getattr(settings, v, None)]
+    missing = []
+    for v in required:
+        val = getattr(settings, v, None)
+        if not val:
+            missing.append(v)
+        elif hasattr(val, "get_secret_value") and not val.get_secret_value():
+            missing.append(v)
+
     if missing:
-        logger.critical("🚨 Missing required env vars: %s", ", ".join(missing))
-        return
+        logger.critical("🚨 Missing required env vars: %s. The bot will not function until these are set in Render.", ", ".join(missing))
+        # We don't sys.exit(1) here so that uvicorn can bind to the port and Render doesn't mark the deploy as failed.
 
     if settings.ENVIRONMENT.lower() == "production":
         sec_missing = []

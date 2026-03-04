@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     # ============================================
     # TELEGRAM BOT (REQUIRED FROM ENV)
     # ============================================
-    BOT_TOKEN: SecretStr = Field(..., description="Telegram bot token from BotFather")
+    BOT_TOKEN: SecretStr = Field(default=SecretStr(""), description="Telegram bot token from BotFather")
     ADMIN_IDS: str = Field(
         default="123456789",
         description="Admin user IDs (comma-separated)",
@@ -260,7 +260,7 @@ def get_settings() -> Settings:
                 _settings.ENCRYPTION_KEY = Fernet.generate_key().decode()
                 _warn_generated("ENCRYPTION_KEY", _settings.ENCRYPTION_KEY)
             except Exception as e:
-                print(f"❌ Failed to generate ENCRYPTION_KEY: {e}")
+                print(f"!!! Failed to generate ENCRYPTION_KEY: {e} !!!")
 
         if not _settings.JWT_SECRET or _settings.JWT_SECRET == "":
             import secrets as _secrets
@@ -274,7 +274,7 @@ def _warn_generated(name: str, value: str) -> None:
     """Print a loud warning when a secret is auto-generated."""
     border = "=" * 60
     print(f"\n{border}")
-    print(f"⚠️  AUTO-GENERATED {name} — NOT PERSISTENT ACROSS RESTARTS")
+    print(f"!!! AUTO-GENERATED {name} — NOT PERSISTENT ACROSS RESTARTS !!!")
     print(f"   Copy this into your Render environment variables:")
     print(f"   {name}={value}")
     print(f"{border}\n")
