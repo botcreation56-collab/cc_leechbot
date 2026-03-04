@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Login - FileBot</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <link rel="stylesheet" href="/static/css/responsive.css">
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: linear-gradient(135deg, #0d1117 0%, #161b22 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .login-card {
+            background: rgba(22, 27, 34, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+            padding: 40px;
+            width: 100%;
+            max-width: 400px;
+            border-radius: 20px;
+            text-align: center;
+            color: #f0f6fc;
+        }
+
+        .login-logo {
+            font-size: 40px;
+            margin-bottom: 20px;
+            display: block;
+        }
+
+        .login-title {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .login-desc {
+            font-size: 14px;
+            opacity: 0.6;
+            margin-bottom: 30px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+
+        .input-label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            opacity: 0.8;
+            margin-left: 4px;
+        }
+
+        .input-field {
+            width: 100%;
+            padding: 14px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(0, 0, 0, 0.2);
+            color: white;
+            font-family: inherit;
+            outline: none;
+            transition: all 0.2s;
+            box-sizing: border-box;
+            /* Critical for padding */
+        }
+
+        .input-field:focus {
+            border-color: #0096FF;
+            background: rgba(0, 150, 255, 0.05);
+        }
+
+        .otp-input {
+            letter-spacing: 8px;
+            text-align: center;
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .btn-primary {
+            width: 100%;
+            padding: 14px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #0096FF 0%, #0077CC 100%);
+            color: white;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            transition: transform 0.1s, box-shadow 0.2s;
+            margin-top: 10px;
+        }
+
+        .btn-primary:active {
+            transform: scale(0.98);
+        }
+
+        .link-text {
+            color: #0096FF;
+            text-decoration: none;
+            font-size: 13px;
+        }
+
+        .btn-link {
+            background: none;
+            border: none;
+            color: #0096FF;
+            cursor: pointer;
+            font-size: 13px;
+            margin-top: 16px;
+            opacity: 0.8;
+            transition: opacity 0.2s;
+        }
+
+        .btn-link:hover {
+            opacity: 1;
+            text-decoration: underline;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .error-banner {
+            background: rgba(255, 71, 87, 0.1);
+            color: #ff4757;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 13px;
+            margin-top: 16px;
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="login-card">
+        <span class="login-logo">⚡</span>
+
+        <!-- Headers -->
+        <h1 class="login-title">Welcome Back</h1>
+        <p class="login-desc">Sign in securely with your Telegram account</p>
+
+        <!-- STEP 1: Request Link -->
+        <div id="step1">
+            <div class="form-group">
+                <label class="input-label">Telegram User ID</label>
+                <input type="number" id="userId" class="input-field" placeholder="e.g. 123456789">
+            </div>
+
+            <button onclick="requestMagicLink()" id="btnRequest" class="btn-primary">
+                Send Login Link
+            </button>
+
+            <p style="margin-top: 20px; font-size: 13px; opacity: 0.5;">
+                Don't know your ID?
+                <a id="botLink" href="#" target="_blank" style="color: #0096FF; text-decoration: none; display:none;">
+                    Get My ID (Start Bot)
+                </a>
+            </p>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loadingState" class="hidden" style="text-align: center; padding: 20px;">
+            <div style="font-size: 40px; margin-bottom: 20px;">📨</div>
+            <h3>Link Sent!</h3>
+            <p style="opacity: 0.7; font-size: 14px;">Check your Telegram messages for the login link.</p>
+            <button onclick="resetFlow()" class="btn-link">
+                Try different ID
+            </button>
+        </div>
+
+        <!-- Verification State -->
+        <div id="verifyingState" class="hidden" style="text-align: center; padding: 20px;">
+            <div style="font-size: 40px; margin-bottom: 20px;">🔄</div>
+            <h3>Verifying...</h3>
+        </div>
+
+        <div id="errorMsg" class="error-banner"></div>
+
+    </div>
+
+    <script>
+        const API_BASE = "/api/auth";
+
+        // Check for Magic Link Token
+        document.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const magicToken = urlParams.get('magic_token');
+            if (magicToken) {
+                verifyMagicToken(magicToken);
+            }
+
+            // Fetch dynamically generated bot link
+            fetch('/health')
+                .then(res => res.json())
+                .then(data => {
+                    console.log("[DEBUG] Health check returned:", data);
+                    if (data.bot_link) {
+                        const botLinkEl = document.getElementById('botLink');
+                        let link = data.bot_link.trim();
+
+                        // Clean trailing slash
+                        if (link.endsWith('/')) {
+                            link = link.slice(0, -1);
+                        }
+
+                        // Handle '@username' instead of full link
+                        if (link.startsWith('@')) {
+                            link = 'https://t.me/' + link.slice(1);
+                        }
+                        // Handle relative domains
+                        else if (!link.startsWith('http://') && !link.startsWith('https://')) {
+                            if (link.includes('t.me/')) {
+                                link = 'https://' + link;
+                            } else {
+                                link = 'https://t.me/' + link;
+                            }
+                        }
+
+                        console.log("[DEBUG] Final Bot Link href:", `${link}?start=id`);
+                        botLinkEl.href = `${link}?start=id`;
+                        botLinkEl.style.display = 'inline';
+                    } else {
+                        console.warn("[DEBUG] data.bot_link is missing or empty.");
+                    }
+                })
+                .catch(err => console.error("Failed to fetch bot identity", err));
+        });
+
+        async function requestMagicLink() {
+            const userId = document.getElementById('userId').value;
+            const btn = document.getElementById('btnRequest');
+
+            if (!userId) {
+                showError("Please enter your User ID");
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerText = "Sending Link...";
+            hideError();
+
+            try {
+                const res = await fetch(`${API_BASE}/request-login-link`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: parseInt(userId) })
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    document.getElementById('step1').classList.add('hidden');
+                    document.getElementById('loadingState').classList.remove('hidden');
+                    document.querySelector('.login-desc').innerText = "Check your Telegram";
+                } else {
+                    showError(data.detail || "Failed to send link");
+                    btn.disabled = false;
+                    btn.innerText = "Send Login Link";
+                }
+            } catch (e) {
+                showError("Connection failed");
+                btn.disabled = false;
+                btn.innerText = "Send Login Link";
+            }
+        }
+
+        async function verifyMagicToken(token) {
+            document.getElementById('step1').classList.add('hidden');
+            document.getElementById('loadingState').classList.add('hidden');
+            document.getElementById('verifyingState').classList.remove('hidden');
+            document.querySelector('.login-desc').innerText = "Verifying your session...";
+
+            try {
+                const res = await fetch(`${API_BASE}/verify-magic-token`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: token })
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    localStorage.setItem('filebot_token', data.token);
+                    window.location.href = "/dashboard.html";
+                } else {
+                    document.getElementById('verifyingState').classList.add('hidden');
+                    document.getElementById('step1').classList.remove('hidden'); // Show login again
+                    document.querySelector('.login-desc').innerText = "Sign in securely";
+                    showError(data.detail || "Invalid or expired link");
+                }
+            } catch (e) {
+                document.getElementById('verifyingState').classList.add('hidden');
+                document.getElementById('step1').classList.remove('hidden');
+                showError("Verification connection failed");
+            }
+        }
+
+        function showError(msg) {
+            const el = document.getElementById('errorMsg');
+            el.innerText = msg;
+            el.style.display = "block";
+        }
+
+        function hideError() {
+            document.getElementById('errorMsg').style.display = "none";
+        }
+
+        function resetFlow() {
+            document.getElementById('step1').classList.remove('hidden');
+            document.getElementById('loadingState').classList.add('hidden');
+            document.querySelector('.login-desc').innerText = "Sign in securely with your Telegram account";
+            hideError();
+            document.getElementById('btnRequest').disabled = false;
+            document.getElementById('btnRequest').innerText = "Send Login Link";
+        }
+    </script>
+</body>
+
+</html>

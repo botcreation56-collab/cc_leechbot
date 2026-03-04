@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FileBot - Error</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <style>
+        .error-container {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .error-box {
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            text-align: center;
+            max-width: 500px;
+        }
+
+        .error-code {
+            font-size: 72px;
+            font-weight: bold;
+            color: #FF4757;
+            margin-bottom: 10px;
+        }
+
+        .error-message {
+            font-size: 24px;
+            color: #2C3E50;
+            margin-bottom: 20px;
+        }
+
+        .error-description {
+            color: #95A5A6;
+            margin-bottom: 30px;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="error-container">
+        <div class="error-box">
+            <div class="error-code" id="error-code">404</div>
+            <div class="error-message" id="error-message">Page Not Found</div>
+            <p class="error-description" id="error-description">
+                The page you're looking for doesn't exist or has been moved.
+            </p>
+            <a href="/" class="btn btn-primary">🏠 Go Home</a>
+        </div>
+    </div>
+
+    <script>
+        // Get error code from URL
+        const params = new URLSearchParams(window.location.search);
+        const code = params.get('code') || '404';
+        const message = params.get('message') || 'Page Not Found';
+        const description = params.get('description') || 'The page you\'re looking for doesn\'t exist.';
+
+        document.getElementById('error-code').textContent = code;
+        document.getElementById('error-message').textContent = message;
+        document.getElementById('error-description').textContent = description;
+    </script>
+</body>
+</html>

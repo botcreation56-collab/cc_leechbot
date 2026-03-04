@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Rclone Setup - FileBot</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" href="../css/styles.css">
+    <link rel="stylesheet" href="../css/responsive.css">
+    <!-- No inline CSS to conflict with responsive.css here -->
+</head>
+
+<body class="theme-light" data-lang="en">
+    <header class="top-bar">
+        <div class="top-bar-left">
+            <a href="/" class="logo-link">
+                <span id="site-logo-text">FileBot Admin</span>
+            </a>
+        </div>
+    </header>
+
+    <main class="page-container">
+        <section class="api-hero">
+            <h1>Rclone Setup Guide</h1>
+            <p>Connect your cloud storage to FileBot using rclone.</p>
+        </section>
+
+        <section class="api-content">
+            <article class="api-section active">
+                <h2>Supported clouds</h2>
+                <p>FileBot supports these rclone remotes (more can be added later):</p>
+                <ul>
+                    <li>de>gdrive</code> – Google Drive</li>
+                    <li>de>onedrive</code> – Microsoft OneDrive</li>
+                    <li>de>dropbox</code> – Dropbox</li>
+                    <li>de>mega</code> – MEGA</li>
+                    <li>de>s3</code> – S3 compatible storage</li>
+                </ul>
+            </article>
+
+            <article class="api-section active">
+                <h2>Step 1: Install rclone</h2>
+                <p>On your server or local machine, install rclone from the official site:</p>
+                <p><a href="https://rclone.org/downloads/" target="_blank"
+                        rel="noopener">https://rclone.org/downloads/</a></p>
+            </article>
+
+            <article class="api-section active">
+                <h2>Step 2: Create a remote</h2>
+                <p>Run the rclone config wizard and create a remote for your cloud.</p>
+                <pre class="code-block">rclone config</pre>
+                <p>Follow the prompts to add a new remote. At the end you will have a remote name, for example:</p>
+                <pre class="code-block">gdrive
+onedrive
+dropbox
+mega
+s3</pre>
+            </article>
+
+            <article class="api-section active">
+                <h2>Step 3: Get the config</h2>
+                <p>Locate your rclone config file. Common locations:</p>
+                <ul>
+                    <li>Linux: de>~/.config/rclone/rclone.conf</code></li>
+                    <li>Windows: de>%USERPROFILE%\.config\rclone\rclone.conf</code></li>
+                    <li>macOS: de>~/.config/rclone/rclone.conf</code></li>
+                </ul>
+                <p>Open the file and copy the full block for the remote you want FileBot to use. It will look like:</p>
+                <pre class="code-block">[gdrive]
+type = drive
+client_id = ...
+client_secret = ...
+token = {...}
+team_drive = ...</pre>
+            </article>
+
+            <article class="api-section active">
+                <h2>Step 4: Add in admin panel</h2>
+                <p>In the FileBot admin panel:</p>
+                <ol>
+                    <li>Open de>./admin.html</code> and click <strong>Add rclone config</strong>.</li>
+                    <li>Select the cloud: de>gdrive</code>, de>onedrive</code>, de>dropbox</code>, de>mega</code> or
+                        de>s3</code>.</li>
+                    <li>Paste the rclone remote block from de>rclone.conf</code> into the credentials field.</li>
+                    <li>Choose who can use this config:
+                        <ul>
+                            <li>de>Free</code> – for free users</li>
+                            <li>de>Pro</code> – for pro users</li>
+                        </ul>
+                    </li>
+                    <li>Set <strong>Max users</strong> for this config (for example: 10).</li>
+                    <li>Save the config and, if needed, add more remotes with the <strong>+</strong> button.</li>
+                </ol>
+            </article>
+
+            <article class="api-section active">
+                <h2>Step 5: Test and use</h2>
+                <p>After adding at least one active rclone config:</p>
+                <ul>
+                    <li>Send a small file to the bot as a test.</li>
+                    <li>If no rclone config is available, the bot will show a maintenance message and will not accept
+                        files.</li>
+                    <li>Once setup is correct, files will be uploaded via your configured cloud storage.</li>
+                </ul>
+            </article>
+
+            <article class="api-section active">
+                <h2>Troubleshooting</h2>
+                <ul>
+                    <li>If uploads fail, re-check the rclone credentials you pasted.</li>
+                    <li>Make sure the remote name in de>rclone.conf</code> matches the cloud type you chose.</li>
+                    <li>Ensure your server can reach the cloud provider (no firewall or proxy issues).</li>
+                </ul>
+            </article>
+        </section>
+    </main>
+
+    <footer class="page-footer">
+        <p>FileBot — Rclone Cloud Setup</p>
+    </footer>
+</body>
+
+</html>

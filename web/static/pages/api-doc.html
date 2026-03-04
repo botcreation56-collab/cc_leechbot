@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>API Documentation - FileBot</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <link rel="stylesheet" href="/static/css/responsive.css">
+</head>
+
+<body class="theme-light" data-lang="en">
+    <!-- Top bar -->
+    <header class="top-bar">
+        <div class="top-bar-left">
+            <a href="/" class="logo-link">
+                <span id="site-logo-text">FileBot API</span>
+            </a>
+        </div>
+        <div class="top-bar-right">
+            <div class="lang-toggle">
+                <button id="lang-en" class="lang-btn active">EN</button>
+                <button id="lang-ta" class="lang-btn">TA</button>
+            </div>
+
+            <button id="theme-toggle" class="theme-toggle-btn" aria-label="Toggle theme">
+                <span class="icon-sun">☀️</span>
+                <span class="icon-moon" style="display:none;">🌙</span>
+            </button>
+        </div>
+    </header>
+
+    <main class="page-container api-doc-container">
+        <section class="api-hero">
+            <h1 id="api-hero-title">FileBot REST API</h1>
+            <p id="api-hero-text">
+                Simple REST API to integrate FileBot watch, download and admin statistics into your own tools.
+            </p>
+        </section>
+
+        <div class="api-layout">
+            <!-- Hamburger button (mobile only) -->
+            <button class="hamburger" id="hamburger-btn" aria-label="Open menu" onclick="toggleSidebar()">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+
+            <!-- Sidebar Backdrop -->
+            <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="toggleSidebar()"></div>
+
+            <!-- Sidebar navigation -->
+            <nav class="api-sidebar" id="sidebar">
+                <ul class="api-nav-list">
+                    <li class="api-nav-item active" data-api-section="overview">Overview</li>
+                    <li class="api-nav-item" data-api-section="auth">Auth</li>
+                    <li class="api-nav-item" data-api-section="public">Public Endpoints</li>
+                    <li class="api-nav-item" data-api-section="admin">Admin Endpoints</li>
+                    <li class="api-nav-item" data-api-section="limits">Rate Limits</li>
+                </ul>
+            </nav>
+
+            <!-- Content -->
+            <section class="api-content">
+                <!-- Overview -->
+                <article id="api-section-overview" class="api-section active">
+                    <h2>Overview</h2>
+                    <p>
+                        Base URL:
+                        de class="mono-inline" id="api-base-url">
+                        https://your-domain.com
+                        </code>
+                    </p>
+                    <p>
+                        Use the endpoints below to fetch watch/download links or build your own dashboard.
+                    </p>
+                </article>
+
+                <!-- Auth -->
+                <article id="api-section-auth" class="api-section">
+                    <h2>Authentication</h2>
+                    <p>
+                        Admin endpoints require a JWT token in the de class="mono-inline">Authorization</code> header.
+                    </p>
+
+                    <h3>Request One-Time Code</h3>
+                    <p>de class="mono-inline">POST /auth/request-code</code></p>
+                    <p>Send your Telegram User ID to receive a one-time code in the bot.</p>
+
+                    <h3>Verify Code &amp; Get Token</h3>
+                    <p>de class="mono-inline">POST /auth/verify-code</code></p>
+                    <p>Verify the code and receive a JWT token to use with admin endpoints.</p>
+                </article>
+
+                <!-- Public Endpoints -->
+                <article id="api-section-public" class="api-section">
+                    <h2>Public Endpoints</h2>
+
+                    <h3>Watch File</h3>
+                    <p>de class="mono-inline">GET /watch/{file_id}</code></p>
+                    <p>Opens a streaming page for the given file_id.</p>
+
+                    <h3>Download File</h3>
+                    <p>de class="mono-inline">GET /download/{file_id}</code></p>
+                    <p>Downloads the file if available and not expired.</p>
+
+                    <h3>My Files (optional)</h3>
+                    <p>de class="mono-inline">GET /api/user/myfiles</code></p>
+                    <p>
+                        Returns the list of files for the authenticated user (via token/OTP).
+                        Response shape (example):
+                    </p>
+                    <pre class="code-block">
+{
+  "user_id": 123456789,
+  "files": [
+    {
+      "file_id": "abcd1234",
+      "name": "video.mp4",
+      "start_id": "start_abc123",
+      "size": 1073741824,
+      "size_human": "1.0 GB",
+      "created_at": "2025-12-01T10:00:00Z",
+      "expired": false,
+      "deep_link": "https://t.me/YourBot?start=start_abc123"
+    }
+  ]
+}
+                    </pre>
+                </article>
+
+                <!-- Admin Endpoints -->
+                <article id="api-section-admin" class="api-section">
+                    <h2>Admin Endpoints</h2>
+                    <p>
+                        All admin endpoints require:
+                        de class="mono-inline">Authorization: Bearer &lt;JWT_TOKEN&gt;</code>
+                    </p>
+
+                    <h3>Dashboard</h3>
+                    <p>de class="mono-inline">GET /api/admin/dashboard</code></p>
+                    <p>Returns statistics for the admin dashboard (users, tasks, storage, etc.).</p>
+
+                    <h3>Users</h3>
+                    <p>de class="mono-inline">GET /api/admin/users?skip=0&amp;limit=10</code></p>
+                    <p>Get paginated list of users with their limits and status.</p>
+
+                    <h3>Config</h3>
+                    <p>de class="mono-inline">GET /api/admin/config</code></p>
+                    <p>Reads configuration such as plans, limits, channels.</p>
+
+                    <h3>Logs</h3>
+                    <p>de class="mono-inline">GET /api/admin/logs?skip=0&amp;limit=50</code></p>
+                    <p>Fetches recent log entries for debugging.</p>
+
+                    <h3>Site Config</h3>
+                    <p>de class="mono-inline">POST /api/admin/site-config</code></p>
+                    <p>Update public site config (title, logo, colors, texts).</p>
+                </article>
+
+                <!-- Rate Limits -->
+                <article id="api-section-limits" class="api-section">
+                    <h2>Rate Limits</h2>
+                    <p>
+                        API requests are limited per IP and per token to protect the service.
+                        Use caching and avoid unnecessary polling.
+                    </p>
+                </article>
+            </section>
+        </div>
+    </main>
+
+    <footer class="page-footer">
+        <span id="footer-text">© 2025 FileBot. All rights reserved.</span>
+    </footer>
+
+    <script>
+        const body = document.body;
+        const themeToggleBtn = document.getElementById('theme-toggle');
+        const iconSun = themeToggleBtn.querySelector('.icon-sun');
+        const iconMoon = themeToggleBtn.querySelector('.icon-moon');
+
+        function applyTheme(theme) {
+            body.classList.remove('theme-light', 'theme-dark');
+            body.classList.add(`theme-${theme}`);
+            localStorage.setItem('theme', theme);
+            if (theme === 'dark') {
+                iconSun.style.display = 'none';
+                iconMoon.style.display = 'inline';
+            } else {
+                iconSun.style.display = 'inline';
+                iconMoon.style.display = 'none';
+            }
+        }
+
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        applyTheme(savedTheme);
+
+        themeToggleBtn.addEventListener('click', () => {
+            const current = body.classList.contains('theme-dark') ? 'dark' : 'light';
+            applyTheme(current === 'dark' ? 'light' : 'dark');
+        });
+
+        // Language toggle
+        const langEnBtn = document.getElementById('lang-en');
+        const langTaBtn = document.getElementById('lang-ta');
+
+        function applyLang(lang) {
+            document.documentElement.lang = lang === 'ta' ? 'ta' : 'en';
+            document.body.setAttribute('data-lang', lang);
+            localStorage.setItem('lang', lang);
+
+            langEnBtn.classList.toggle('active', lang === 'en');
+            langTaBtn.classList.toggle('active', lang === 'ta');
+        }
+
+        const savedLang = localStorage.getItem('lang') || 'en';
+        applyLang(savedLang);
+
+        langEnBtn.addEventListener('click', () => applyLang('en'));
+        langTaBtn.addEventListener('click', () => applyLang('ta'));
+
+        // Sidebar navigation behavior
+        const navItems = document.querySelectorAll('.api-nav-item');
+        const sections = document.querySelectorAll('.api-section');
+
+        navItems.forEach(item => {
+            item.addEventListener('click', () => {
+                const section = item.getAttribute('data-api-section');
+                navItems.forEach(i => i.classList.remove('active'));
+                item.classList.add('active');
+                sections.forEach(sec => {
+                    sec.classList.toggle('active', sec.id === `api-section-${section}`);
+                });
+            });
+        });
+
+        // Optionally, fill hero text and base URL from backend config via JS
+        // fetch('/api/public/config').then(...)
+
+        // --- Mobile Sidebar Toggle ---
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebar-backdrop');
+            const hamburger = document.getElementById('hamburger-btn');
+
+            sidebar.classList.toggle('open');
+            if (backdrop) backdrop.classList.toggle('visible');
+            if (hamburger) hamburger.classList.toggle('open');
+        }
+
+        window.addEventListener('resize', () => {
+            if (window.innerWidth > 768) {
+                const sidebar = document.getElementById('sidebar');
+                if (sidebar?.classList.contains('open')) toggleSidebar();
+            }
+        });
+    </script>
+</body>
+
+</html>

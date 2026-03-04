@@ -1,44 +1,46 @@
 # ========== CORE BOT FRAMEWORK ==========
-python-telegram-bot[webhooks,job-queue]
+python-telegram-bot[webhooks,job-queue]==22.6
+pyrogram==2.0.106
+tgcrypto==1.2.5
 
 # ========== WEB FRAMEWORK ==========
-fastapi
-uvicorn[standard]
-starlette
-python-multipart
-gunicorn
+fastapi==0.133.1
+uvicorn==0.41.0
+starlette==0.52.1
+python-multipart==0.0.22
+gunicorn==25.1.0
 
 # ========== DATABASE & ASYNC ==========
-motor
-pymongo
-aiofiles
+motor==3.7.1
+pymongo==4.16.0
+aiofiles==25.1.0
+cachetools==7.0.1
 
 # ========== CONFIGURATION & VALIDATION ==========
-pydantic
-pydantic-settings
-python-dotenv
+pydantic==2.12.5
+pydantic-settings==2.13.1
+python-dotenv==1.2.1
 
 # ========== HTTP & NETWORKING ==========
-httpx
-aiohttp
-anyio
-requests
+httpx==0.28.1
+aiohttp==3.13.3
+anyio==4.12.1
+requests==2.32.5
 
 # ========== UTILITIES ==========
-yt-dlp
-pytz
-psutil
-cachetools
+yt-dlp==2026.2.21
+pytz==2025.2
+psutil==7.2.2
 
 # ========== SECURITY & ENCODING ==========
-cryptography
-python-jose
-PyJWT
+cryptography==46.0.5
+python-jose==3.5.0
+PyJWT==2.11.0
 
 # ========== TESTING (Optional) ==========
-pytest
-pytest-asyncio
+pytest==9.0.2
+pytest-asyncio==1.3.0
 
 # ========== DEVELOPMENT TOOLS (Optional) ==========
-black
-flake8
+black==26.1.0
+flake8==7.3.0

@@ -1,0 +1,219 @@
+/* ============================================================
+   RESPONSIVE DESIGN SYSTEM
+   Supports: Desktop (>1024px) | Tablet (768–1024px) | Mobile (<768px)
+   ============================================================ */
+
+/* ── Hamburger Button (hidden on desktop) ─────────────────── */
+.hamburger {
+    display: none;
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    z-index: 1000;
+    background: rgba(22, 27, 34, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    width: 44px;
+    height: 44px;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 5px;
+    padding: 10px;
+    transition: background 0.2s;
+}
+
+.hamburger:hover {
+    background: rgba(0, 150, 255, 0.15);
+}
+
+.hamburger span {
+    display: block;
+    width: 22px;
+    height: 2px;
+    background: #e6edf3;
+    border-radius: 2px;
+    transition: all 0.3s;
+}
+
+/* Animate to X when open */
+.hamburger.open span:nth-child(1) {
+    transform: translateY(7px) rotate(45deg);
+}
+
+.hamburger.open span:nth-child(2) {
+    opacity: 0;
+}
+
+.hamburger.open span:nth-child(3) {
+    transform: translateY(-7px) rotate(-45deg);
+}
+
+/* ── Sidebar Backdrop ─────────────────────────────────────── */
+.sidebar-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 199;
+    backdrop-filter: blur(2px);
+}
+
+.sidebar-backdrop.visible,
+.sidebar-backdrop.show {
+    display: block;
+}
+
+/* ── TABLET (768–1024px): Icon-only collapsed sidebar ──────── */
+@media (max-width: 1024px) {
+
+    .sidebar,
+    .api-sidebar {
+        width: 80px;
+        padding: 20px 10px;
+    }
+
+    .brand-text {
+        display: none;
+    }
+
+    .brand span {
+        font-size: 26px;
+        display: block;
+        margin: 0 auto;
+    }
+
+    .nav-link {
+        justify-content: center;
+        padding: 13px;
+    }
+
+    .nav-text {
+        display: none;
+    }
+
+    .nav-icon {
+        font-size: 20px;
+        width: auto;
+    }
+}
+
+/* ── MOBILE (<768px): Hamburger + slide-out sidebar ────────── */
+@media (max-width: 768px) {
+
+    /* Show hamburger */
+    .hamburger {
+        display: flex;
+    }
+
+    /* Sidebar slides in from left */
+    .sidebar,
+    .api-sidebar,
+    .watch-sidebar {
+        width: 260px;
+        transform: translateX(-100%);
+        transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+        z-index: 200;
+        padding: 24px 20px;
+    }
+
+    .sidebar,
+    .api-sidebar,
+    .watch-sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        height: 100vh;
+        border-radius: 0;
+    }
+
+    .sidebar.open,
+    .api-sidebar.open,
+    .watch-sidebar.open {
+        transform: translateX(0);
+    }
+
+    /* Restore text in open sidebar */
+    .sidebar.open .brand-text,
+    .sidebar.open .nav-text,
+    .api-sidebar.open .api-nav-item {
+        display: block;
+    }
+
+    .sidebar.open .nav-link {
+        justify-content: flex-start;
+        padding: 12px 16px;
+    }
+
+    /* Full-width content with top spacing for hamburger */
+    .main-content {
+        margin-left: 0;
+        padding: 16px;
+        padding-top: 72px;
+        /* reserve space for hamburger */
+        width: 100%;
+    }
+
+    /* Watch Page */
+    .watch-hero {
+        grid-template-columns: 1fr;
+        gap: 16px;
+    }
+
+    .player-wrapper {
+        aspect-ratio: 16/9;
+        max-height: 50vh;
+    }
+
+    /* Stats Grid */
+    .stats-grid {
+        grid-template-columns: 1fr;
+        gap: 16px;
+    }
+
+    /* Table */
+    .table-section,
+    .table-card {
+        overflow-x: auto;
+    }
+
+    .data-table {
+        min-width: 560px;
+    }
+}
+
+/* ── SMALL MOBILE (<480px) ──────────────────────────────────── */
+@media (max-width: 480px) {
+    .page-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 14px;
+    }
+
+    .search-bar {
+        width: 100%;
+    }
+
+    .login-card {
+        padding: 20px;
+        margin: 12px;
+    }
+
+    .login-title {
+        font-size: 20px;
+    }
+
+    .action-stack {
+        gap: 8px;
+    }
+
+    .player-buttons-row {
+        gap: 6px;
+    }
+
+    .player-btn {
+        padding: 8px;
+        font-size: 10px;
+    }
+}

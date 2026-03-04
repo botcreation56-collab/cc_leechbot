@@ -1,0 +1,102 @@
+"""
+bot/handlers/__init__.py — Clean re-export of all handler symbols.
+
+All duplicate names removed. If a symbol appears in multiple source files,
+the most specific module is used as the canonical source.
+"""
+
+# --- Admin panel -------------------------------------------------------------
+from .admin import (
+    admin_command, admin_check_and_open, handle_admin_back,
+    handle_admin_users, handle_admin_list_users, handle_view_user,
+    handle_admin_stats, handle_admin_bans,
+    show_banned_users, handle_unban_from_list,
+    handle_admin_broadcast,
+    handle_broadcast_stats,
+    handle_admin_filesize,
+    handle_storage_stats,
+    handle_admin_find_user, handle_admin_ban_user,
+    handle_admin_unban_user, handle_admin_upgrade_user,
+    handle_admin_rclone, handle_admin_add_rclone, handle_admin_add_rclone_wizard,
+    handle_admin_terabox, handle_terabox_stats,
+    handle_admin_set_log_channel, handle_admin_set_dump_channel,
+    handle_admin_set_storage_channel, handle_admin_set_force_sub_channel,
+    handle_admin_fsub_add, handle_admin_fsub_manage,
+    handle_admin_fsub_toggle, handle_admin_fsub_link,
+    handle_admin_fsub_remove_confirm, handle_admin_fsub_remove,
+    handle_admin_remove_log, handle_admin_remove_dump, handle_admin_remove_storage,
+    handle_admin_logs, handle_admin_chatbox,
+    admin_required, handle_admin_input,
+    get_broadcast_stats, handle_admin_forwards,
+    handle_admin_shorteners,
+    stats_command,
+    get_admin_ids, get_queue_stats,
+)
+
+# --- Broadcast ---------------------------------------------------------------
+from .broadcast import (
+    handle_broadcast_compose, handle_broadcast_cancel,
+    handle_broadcast_message_input,
+)
+
+# --- Cloud / Rclone / Terabox ------------------------------------------------
+from .cloud import (
+    handle_list_rclone_remotes, handle_test_rclone,
+    handle_test_rclone_actual, handle_disable_rclone,
+    handle_terabox_setup_key, handle_terabox_test, handle_terabox_disable,
+    rclone_service_callback, rclone_plan_callback, rclone_users_callback,
+    handle_configure_rclone, start_rclone_wizard,
+    rclone_command, rclone_text_input,
+    terabox_command, terabox_text_input,
+)
+
+# --- Admin config / settings page -------------------------------------------
+from .settings import (
+    show_config_menu,
+    handle_edit_start_message, handle_edit_watermark, handle_edit_support_contact,
+    handle_edit_help_text, handle_edit_site_name, handle_edit_site_description,
+    handle_edit_support_channel, handle_edit_parallel_limit,
+    handle_edit_max_filesize, handle_edit_file_expiry,
+    handle_edit_force_subs, handle_edit_plan,
+    handle_config_edit_input,
+    handle_us_prefix, handle_us_suffix,
+    settings_command, ussettings_command,
+    handle_user_settings_text,
+    handle_us_mode, handle_us_mode_video, handle_us_mode_document,
+    go_back_to_settings,
+)
+
+# --- File upload / wizard / URL ----------------------------------------------
+from .files import (
+    handle_cleanup_old_files, handle_set_max_filesize,
+    handle_file_upload, process_file_task,
+    handle_url_input, handle_document_input,
+    myfiles_command,
+    handle_us_thumbnail_menu, handle_us_thumbnail,
+    handle_us_metadata, handle_us_myfiles,
+    WizardHandler, execute_processing_flow_by_task,
+)
+
+# --- User commands / callbacks -----------------------------------------------
+from .user import (
+    paginate_keyboard, show_plans_menu,
+    ask_channel_forward, show_shorteners_menu,
+    handle_add_shortener,
+    callback_handler, generate_cloud_link,
+    copy_link_callback, lock_link_callback,
+    handle_us_remove, handle_us_destination_button,
+    handle_us_dest_forward, handle_us_dest_text,
+    handle_meta_author, handle_user_destination_forward,
+    get_progress_bar, send_progress_message, finalize_progress,
+    handle_text_input, handle_photo_input,
+    check_force_sub,
+    start_command, help_command, cancel_command,
+    cancel_task_command, unknown_handler,
+    handle_callback_support, handle_callback_help, support_command,
+    handle_subtitle_menu, handle_inject_sub,
+    handle_us_remove_confirm, handle_us_reset_confirm_yes,
+    handle_meta_title, handle_meta_author, handle_meta_year,
+    handle_meta_subtitle, handle_meta_video, handle_meta_audio,
+    handle_us_visibility, handle_us_plan,
+    handle_rem_word, handle_rem_meta, handle_rem_inject,
+)

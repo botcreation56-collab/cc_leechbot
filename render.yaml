@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: ccs-bot
+    env: python
+    region: singapore   # change to your preferred region
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    healthCheckPath: /health
+
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: PORT
+        value: 10000          # Render assigns this automatically
+      - key: BOT_TOKEN
+        sync: false           # fill in Render dashboard
+      - key: ADMIN_IDS
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: DOMAIN
+        sync: false
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: JWT_SECRET
+        sync: false

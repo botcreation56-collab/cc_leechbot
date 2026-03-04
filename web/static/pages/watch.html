@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>{{ file_name }} - FileBot</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <link rel="stylesheet" href="/static/css/responsive.css">
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+    <style>
+        /* Premium Overrides */
+        :root {
+            --glass-bg: rgba(255, 255, 255, 0.7);
+            --glass-border: 1px solid rgba(255, 255, 255, 0.2);
+            --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.1);
+        }
+
+        body.theme-dark {
+            --glass-bg: rgba(22, 27, 34, 0.7);
+            --glass-border: 1px solid rgba(255, 255, 255, 0.05);
+            --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.4);
+            background: linear-gradient(135deg, #0d1117 0%, #161b22 100%);
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            min-height: 100vh;
+        }
+
+        .page-container {
+            max-width: 1400px;
+            /* Wider for theater mode */
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Hero Section (Player) */
+        .watch-hero {
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            gap: 24px;
+            margin-top: 20px;
+            align-items: start;
+        }
+
+        .player-wrapper {
+            background: #000;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: var(--shadow-lg);
+            position: relative;
+            width: 100%;
+            aspect-ratio: 16/9;
+        }
+
+        .video-player {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        /* Sidebar Info */
+        .media-info-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: var(--glass-border);
+            border-radius: 16px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .file-title {
+            font-size: 20px;
+            font-weight: 600;
+            line-height: 1.4;
+            color: var(--text-light);
+            margin: 0;
+        }
+
+        body.theme-dark .file-title {
+            color: var(--text-dark);
+        }
+
+        .meta-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            font-size: 13px;
+            opacity: 0.8;
+        }
+
+        .meta-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .meta-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            opacity: 0.7;
+        }
+
+        .meta-val {
+            font-weight: 500;
+            font-family: 'SF Mono', monospace;
+        }
+
+        /* External Players */
+        .external-players-section {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            padding: 16px;
+            background: rgba(0, 0, 0, 0.03);
+            border-radius: 12px;
+        }
+
+        body.theme-dark .external-players-section {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .section-label {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            opacity: 0.6;
+        }
+
+        .player-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px;
+        }
+
+        .player-btn {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 12px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            transition: transform 0.2s, opacity 0.2s;
+            font-size: 11px;
+            font-weight: 500;
+            color: #fff;
+        }
+
+        .player-btn:hover {
+            transform: translateY(-2px);
+            opacity: 0.9;
+        }
+
+        .btn-vlc {
+            background: linear-gradient(135deg, #ff9800, #ff5722);
+        }
+
+        .btn-mx {
+            background: linear-gradient(135deg, #2196f3, #1976d2);
+        }
+
+        .btn-playit {
+            background: linear-gradient(135deg, #9c27b0, #673ab7);
+        }
+
+        .player-icon {
+            font-size: 18px;
+        }
+
+        /* Action Buttons */
+        .action-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .action-btn {
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            background: transparent;
+            color: inherit;
+            cursor: pointer;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+
+        body.theme-dark .action-btn {
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .action-btn:hover {
+            background: rgba(0, 0, 0, 0.05);
+        }
+
+        body.theme-dark .action-btn:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .btn-primary {
+            background: var(--primary-color);
+            color: white;
+            border: none;
+        }
+
+        .btn-primary:hover {
+            background: #007acc;
+            box-shadow: 0 4px 12px rgba(0, 150, 255, 0.3);
+        }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            .watch-hero {
+                grid-template-columns: 1fr;
+            }
+
+            .player-wrapper {
+                order: 1;
+            }
+
+            .media-info-card {
+                order: 2;
+            }
+        }
+    </style>
+</head>
+
+<body class="theme-dark" data-lang="en"> <!-- Default to Dark for Premium Feel -->
+
+    <header class="top-bar">
+        <div class="top-bar-left">
+            <a href="/" class="logo-link">
+                <span style="font-size: 20px;">⚡</span> FileBot
+            </a>
+            <span class="top-bar-title" style="opacity: 0.5;">/ Watch</span>
+        </div>
+        <div class="top-bar-right">
+            <button id="theme-toggle" class="theme-toggle-btn">
+                <span class="icon-sun">☀️</span>
+                <span class="icon-moon" style="display:none;">🌙</span>
+            </button>
+        </div>
+    </header>
+
+    <main class="page-container">
+        <div class="watch-hero">
+
+            <!-- VIDEO PLAYER -->
+            <div class="player-wrapper">
+                <video id="video-player" class="video-player" controls preload="metadata" poster="">
+                    <source src="{{ stream_url }}" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
+            </div>
+
+            <!-- SIDEBAR INFO -->
+            <aside class="media-info-card">
+                <div>
+                    <h1 class="file-title">{{ file_name }}</h1>
+                    <div style="margin-top:4px;">
+                        <span class="status-badge status-active" style="font-size:10px;">{{ storage_type }}</span>
+                    </div>
+                </div>
+
+                <!-- EXTERNAL PLAYERS -->
+                <div class="external-players-section">
+                    <span class="section-label" style="display:block; margin-bottom: 4px;">Play Externally</span>
+                    <p style="font-size: 12px; margin: 0 0 12px 0; opacity: 0.8; line-height: 1.4;">
+                        ⚠️ <b>Note:</b> If the file stream is not playable or buffers slowly, please use an external
+                        player like MX Player, PlayIt, or VLC. Alternatively, use the Download button. Download limits
+                        remain unchanged.
+                    </p>
+                    <div class="player-grid">
+                        <button id="btn-vlc" class="player-btn btn-vlc">
+                            <span class="player-icon">🟧</span>
+                            VLC
+                        </button>
+                        <button id="btn-mx" class="player-btn btn-mx">
+                            <span class="player-icon">🟦</span>
+                            MX
+                        </button>
+                        <button id="btn-playit" class="player-btn btn-playit">
+                            <span class="player-icon">🟪</span>
+                            PlayIt
+                        </button>
+                    </div>
+                </div>
+
+                <!-- METADATA -->
+                <div class="meta-grid">
+                    <div class="meta-item">
+                        <span class="meta-label">File Size</span>
+                        <span class="meta-val" id="file-size-display">{{ file_size }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">File ID</span>
+                        <span class="meta-val" style="font-size:11px; word-break: break-all;">{{ file_id }}</span>
+                    </div>
+                </div>
+
+                <!-- ACTIONS -->
+                <div class="action-stack">
+                    <button id="btn-download" class="action-btn btn-primary">
+                        <span>⬇️ Download File</span>
+                    </button>
+                    <button id="btn-open-tg" class="action-btn">
+                        <span>✈️ Open in Telegram</span>
+                    </button>
+                    <button id="btn-copy-stream" class="action-btn">
+                        <span>🔗 Copy Stream Link</span>
+                    </button>
+                </div>
+
+            </aside>
+        </div>
+    </main>
+
+    <script>
+        // --- JS Logic Preserved & Optimized ---
+
+        const body = document.body;
+        const themeToggleBtn = document.getElementById('theme-toggle');
+        const iconSun = themeToggleBtn.querySelector('.icon-sun');
+        const iconMoon = themeToggleBtn.querySelector('.icon-moon');
+
+        function applyTheme(theme) {
+            body.classList.remove('theme-light', 'theme-dark');
+            body.classList.add(`theme-${theme}`);
+            localStorage.setItem('theme', theme);
+            if (theme === 'dark') {
+                iconSun.style.display = 'none';
+                iconMoon.style.display = 'inline';
+            } else {
+                iconSun.style.display = 'inline';
+                iconMoon.style.display = 'none';
+            }
+        }
+
+        // Default to dark if not set
+        const savedTheme = localStorage.getItem('theme') || 'dark';
+        applyTheme(savedTheme);
+
+        themeToggleBtn.addEventListener('click', () => {
+            const current = body.classList.contains('theme-dark') ? 'dark' : 'light';
+            applyTheme(current === 'dark' ? 'light' : 'dark');
+        });
+
+        // --- Logic Vars ---
+        const botUsername = "{{ bot_username }}";
+        const downloadUrl = "{{ download_url }}";
+        const startId = "{{ start_id }}";
+
+        // Ensure absolute URL for intents
+        let rawStreamUrl = "{{ stream_url }}";
+        if (rawStreamUrl.startsWith("/")) {
+            rawStreamUrl = window.location.origin + rawStreamUrl;
+        }
+        const streamUrl = rawStreamUrl;
+
+        // --- Intent Handlers ---
+        document.getElementById('btn-vlc')?.addEventListener('click', () => {
+            window.location.href = `vlc://${streamUrl}`;
+        });
+
+        document.getElementById('btn-mx')?.addEventListener('click', () => {
+            window.location.href = `intent:${streamUrl}#Intent;package=com.mxtech.videoplayer.ad;S.title=${encodeURIComponent("{{ file_name }}")};end`;
+        });
+
+        document.getElementById('btn-playit')?.addEventListener('click', () => {
+            window.location.href = `playit://playerv2/video?url=${encodeURIComponent(streamUrl)}&title=${encodeURIComponent("{{ file_name }}")}`;
+        });
+
+        // --- Action Handlers ---
+        document.getElementById('btn-open-tg')?.addEventListener('click', () => {
+            if (botUsername && startId) {
+                window.open(`https://t.me/${botUsername}?start=${startId}`, '_blank');
+            }
+        });
+
+        document.getElementById('btn-download')?.addEventListener('click', () => {
+            if (downloadUrl) window.open(downloadUrl, '_blank');
+        });
+
+        document.getElementById('btn-copy-stream')?.addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(streamUrl);
+                alert("Stream link copied!");
+            } catch (err) { console.error(err); }
+        });
+    </script>
+</body>
+
+</html>

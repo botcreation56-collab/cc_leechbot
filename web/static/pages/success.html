@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verification Successful</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            text-align: center;
+        }
+
+        .card {
+            background-color: #1e293b;
+            padding: 2rem;
+            border-radius: 1rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            max-width: 400px;
+        }
+
+        .icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }
+
+        h1 {
+            margin: 0 0 1rem 0;
+            color: #4ade80;
+        }
+
+        p {
+            margin-bottom: 2rem;
+            color: #cbd5e1;
+        }
+
+        .btn {
+            background-color: #3b82f6;
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .btn:hover {
+            background-color: #2563eb;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="card">
+        <div class="icon">🚀</div>
+        <h1>Priority Activated!</h1>
+        <p>You have successfully skipped the queue.<br>Your priority access is active for <strong>1 Hour</strong>.</p>
+        <a href="https://t.me/{{ bot_username }}?start={{ startid }}" class="btn">Return to Bot</a>
+    </div>
+</body>
+
+</html>
