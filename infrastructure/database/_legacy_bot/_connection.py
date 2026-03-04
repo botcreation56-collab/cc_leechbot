@@ -75,59 +75,74 @@ def get_db() -> AsyncIOMotorDatabase:
     return _db
 
 
-async def create_indexes(db: AsyncIOMotorDatabase) -> None:
-    """Create all necessary MongoDB indexes."""
+async def _safe_create_index(collection, keys, **kwargs) -> None:
+    """Create an index, silently skipping if an equivalent one already exists.
+
+    MongoDB error code 85 (IndexOptionsConflict) means the new DatabaseConnection
+    layer already created this index with an explicit name.  We skip it rather
+    than crashing so the legacy layer stays compatible with the new layer.
+    """
+    from pymongo.errors import OperationFailure
     try:
-        logger.info("🔄 Creating database indexes with Motor syntax...")
+        await collection.create_index(keys, **kwargs)
+    except OperationFailure as exc:
+        if exc.code == 85:          # IndexOptionsConflict — already exists, safe to skip
+            logger.debug("⏭ Index already exists (skipping): %s %s", keys, exc.details)
+        else:
+            raise
 
-        await db.users.create_index([("telegram_id", 1)], unique=True)
-        await db.users.create_index([("plan", 1)])
-        await db.users.create_index([("banned", 1)])
-        await db.users.create_index([("created_at", -1)])
-        await db.users.create_index([("role", 1)])
-        logger.info("✅ Users collection indexes created")
 
-        await db.tasks.create_index([("task_id", 1)], unique=True)
-        await db.tasks.create_index([("user_id", 1)])
-        await db.tasks.create_index([("status", 1)])
-        logger.info("✅ Tasks collection indexes created")
+async def create_indexes(db: AsyncIOMotorDatabase) -> None:
+    """Create all necessary MongoDB indexes.
 
-        await db.cloud_files.create_index([("user_id", 1)])
-        await db.cloud_files.create_index([("expiry_date", 1)])
-        logger.info("✅ Cloud files collection indexes created")
+    Each call is wrapped via _safe_create_index so that indexes already created
+    by the new DatabaseConnection layer (with explicit names) are skipped rather
+    than causing an IndexOptionsConflict crash.
+    """
+    logger.info("🔄 Creating database indexes with Motor syntax...")
 
-        await db.one_time_keys.create_index([("user_id", 1)])
-        await db.one_time_keys.create_index(
-            [("expires_at", 1)],
-            expireAfterSeconds=0,
-        )
+    await _safe_create_index(db.users, [("telegram_id", 1)], unique=True)
+    await _safe_create_index(db.users, [("plan", 1)])
+    await _safe_create_index(db.users, [("banned", 1)])
+    await _safe_create_index(db.users, [("created_at", -1)])
+    await _safe_create_index(db.users, [("role", 1)])
+    logger.info("✅ Users collection indexes created")
 
-        await db.admin_logs.create_index([("admin_id", 1)])
-        await db.admin_logs.create_index([("user_id", 1)])
-        await db.admin_logs.create_index([("timestamp", -1)])
+    await _safe_create_index(db.tasks, [("task_id", 1)], unique=True)
+    await _safe_create_index(db.tasks, [("user_id", 1)])
+    await _safe_create_index(db.tasks, [("status", 1)])
+    logger.info("✅ Tasks collection indexes created")
 
-        await db.rclone_configs.create_index([("service", 1)])
-        await db.rclone_configs.create_index([("plan", 1)])
+    await _safe_create_index(db.cloud_files, [("user_id", 1)])
+    await _safe_create_index(db.cloud_files, [("expiry_date", 1)])
+    logger.info("✅ Cloud files collection indexes created")
 
-        await db.config.create_index([("type", 1)], unique=True)
+    await _safe_create_index(db.one_time_keys, [("user_id", 1)])
+    await _safe_create_index(db.one_time_keys, [("expires_at", 1)], expireAfterSeconds=0)
 
-        await db.broadcasts.create_index([("status", 1)])
-        await db.broadcasts.create_index([("created_at", -1)])
+    await _safe_create_index(db.admin_logs, [("admin_id", 1)])
+    await _safe_create_index(db.admin_logs, [("user_id", 1)])
+    await _safe_create_index(db.admin_logs, [("timestamp", -1)])
 
-        await db.chatbox.create_index([("user_id", 1)])
-        await db.chatbox.create_index([("timestamp", -1)])
+    await _safe_create_index(db.rclone_configs, [("service", 1)])
+    await _safe_create_index(db.rclone_configs, [("plan", 1)])
 
-        await db.actions.create_index([("admin_id", 1)])
-        await db.actions.create_index([("timestamp", -1)])
+    await _safe_create_index(db.config, [("type", 1)], unique=True)
 
-        await db.sessions.create_index([("token", 1)], unique=True)
-        await db.sessions.create_index([("expires_at", 1)])
-        await db.sessions.create_index([("user_id", 1)])
-        logger.info("✅ All database indexes created successfully")
+    await _safe_create_index(db.broadcasts, [("status", 1)])
+    await _safe_create_index(db.broadcasts, [("created_at", -1)])
 
-    except Exception as e:
-        logger.error(f"❌ Index creation failed: {e}", exc_info=True)
-        raise
+    await _safe_create_index(db.chatbox, [("user_id", 1)])
+    await _safe_create_index(db.chatbox, [("timestamp", -1)])
+
+    await _safe_create_index(db.actions, [("admin_id", 1)])
+    await _safe_create_index(db.actions, [("timestamp", -1)])
+
+    await _safe_create_index(db.sessions, [("token", 1)], unique=True)
+    await _safe_create_index(db.sessions, [("expires_at", 1)])
+    await _safe_create_index(db.sessions, [("user_id", 1)])
+
+    logger.info("✅ All database indexes created successfully")
 
 
 async def ensure_channel_schema(db: AsyncIOMotorDatabase) -> None:
