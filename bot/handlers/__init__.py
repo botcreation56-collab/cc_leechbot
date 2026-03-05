@@ -21,6 +21,7 @@ from .admin import (
     handle_admin_terabox, handle_terabox_stats,
     handle_admin_set_log_channel, handle_admin_set_dump_channel,
     handle_admin_set_storage_channel, handle_admin_set_force_sub_channel,
+    handle_admin_add_log_channel, handle_admin_add_dump_channel, handle_admin_add_storage_channel,
     handle_admin_fsub_add, handle_admin_fsub_manage,
     handle_admin_fsub_toggle, handle_admin_fsub_link,
     handle_admin_fsub_req_toggle,

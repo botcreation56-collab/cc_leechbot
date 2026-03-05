@@ -924,16 +924,82 @@ async def handle_terabox_stats(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
 
 async def handle_admin_set_log_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show log channel management menu"""
+    config = await get_config() or {}
+    ch = config.get("channels", {}).get("log", {})
+    ch_id = ch.get("id")
+    ch_name = ch.get("metadata", {}).get("title") or str(ch_id) if ch_id else "Not set"
+
+    keyboard = []
+    if ch_id:
+        keyboard.append([InlineKeyboardButton(f"Channel: {ch_name}", callback_data="ignore")])
+        keyboard.append([InlineKeyboardButton("🗑️ Remove Channel", callback_data="admin_remove_log")])
+    else:
+        keyboard.append([InlineKeyboardButton("➕ Add Channel", callback_data="admin_add_log_channel")])
+    
+    keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="admin_config")])
+
+    await update.callback_query.message.edit_text(
+        "📌 **Log Channel Management**\n\nManage the channel where bot logs are sent.",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="Markdown"
+    )
+
+async def handle_admin_add_log_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Prompt admin to set log channel"""
     from bot.handlers.user import ask_channel_forward
     await ask_channel_forward(update, context, "log_channel")
 
 async def handle_admin_set_dump_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show dump channel management menu"""
+    config = await get_config() or {}
+    ch = config.get("channels", {}).get("dump", {})
+    ch_id = ch.get("id")
+    ch_name = ch.get("metadata", {}).get("title") or str(ch_id) if ch_id else "Not set"
+
+    keyboard = []
+    if ch_id:
+        keyboard.append([InlineKeyboardButton(f"Channel: {ch_name}", callback_data="ignore")])
+        keyboard.append([InlineKeyboardButton("🗑️ Remove Channel", callback_data="admin_remove_dump")])
+    else:
+        keyboard.append([InlineKeyboardButton("➕ Add Channel", callback_data="admin_add_dump_channel")])
+    
+    keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="admin_config")])
+
+    await update.callback_query.message.edit_text(
+        "💾 **Dump Channel Management**\n\nManage the channel where user files are stored securely.",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="Markdown"
+    )
+
+async def handle_admin_add_dump_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Prompt admin to set dump channel"""
     from bot.handlers.user import ask_channel_forward
     await ask_channel_forward(update, context, "dump_channel")
 
 async def handle_admin_set_storage_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show storage channel management menu"""
+    config = await get_config() or {}
+    ch = config.get("channels", {}).get("storage", {})
+    ch_id = ch.get("id")
+    ch_name = ch.get("metadata", {}).get("title") or str(ch_id) if ch_id else "Not set"
+
+    keyboard = []
+    if ch_id:
+        keyboard.append([InlineKeyboardButton(f"Channel: {ch_name}", callback_data="ignore")])
+        keyboard.append([InlineKeyboardButton("🗑️ Remove Channel", callback_data="admin_remove_storage")])
+    else:
+        keyboard.append([InlineKeyboardButton("➕ Add Channel", callback_data="admin_add_storage_channel")])
+    
+    keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="admin_config")])
+
+    await update.callback_query.message.edit_text(
+        "🗄️ **Storage Channel Management**\n\nManage the backend database channel.",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="Markdown"
+    )
+
+async def handle_admin_add_storage_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Prompt admin to set storage channel"""
     from bot.handlers.user import ask_channel_forward
     await ask_channel_forward(update, context, "storage_channel")
@@ -999,12 +1065,12 @@ async def handle_admin_fsub_manage(update: Update, context: ContextTypes.DEFAULT
         title = metadata.get("title") or channel.get("name") or str(channel_id)
         req_join = metadata.get("req_join", False)
         
-        # Toggle icon
-        req_icon = "✅ Green Tick (Req Join)" if req_join else "❌ Red Cross (Direct Join)"
+        # Current state icon: ✅ if req_join is on, ❌ if off (direct join)
+        req_icon = "✅" if req_join else "❌"
 
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton(f"Channel: {title}", callback_data="ignore")],
-            [InlineKeyboardButton(f"Req to Join: {req_icon}", callback_data=f"admin_fsub_req_toggle_{channel_id}")],
+            [InlineKeyboardButton(f"Req to Join : {req_icon}", callback_data=f"admin_fsub_req_toggle_{channel_id}")],
             [InlineKeyboardButton("🗑️ Remove Channel", callback_data=f"admin_fsub_remove_confirm_{channel_id}")],
             [
                 InlineKeyboardButton("🔙 Back", callback_data="admin_set_force_sub_channel"),
@@ -1119,11 +1185,13 @@ async def handle_admin_remove_log(update: Update, context: ContextTypes.DEFAULT_
     """Remove log channel from config"""
     try:
         config = await get_config() or {}
-        config.pop("log_channel_id", None)
+        channels = config.get("channels", {})
+        if "log" in channels:
+            channels.pop("log")
+        config["channels"] = channels
         await update_config(config, admin_id=update.effective_user.id)
         await update.callback_query.answer("✅ Log channel removed", show_alert=True)
-        from bot.handlers.settings import show_config_menu
-        await show_config_menu(update, context)
+        await handle_admin_set_log_channel(update, context)
     except Exception as e:
         logger.error(f"❌ Error removing log channel: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
@@ -1132,11 +1200,13 @@ async def handle_admin_remove_dump(update: Update, context: ContextTypes.DEFAULT
     """Remove dump channel from config"""
     try:
         config = await get_config() or {}
-        config.pop("dump_channel_id", None)
+        channels = config.get("channels", {})
+        if "dump" in channels:
+            channels.pop("dump")
+        config["channels"] = channels
         await update_config(config, admin_id=update.effective_user.id)
         await update.callback_query.answer("✅ Dump channel removed", show_alert=True)
-        from bot.handlers.settings import show_config_menu
-        await show_config_menu(update, context)
+        await handle_admin_set_dump_channel(update, context)
     except Exception as e:
         logger.error(f"❌ Error removing dump channel: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
@@ -1145,11 +1215,13 @@ async def handle_admin_remove_storage(update: Update, context: ContextTypes.DEFA
     """Remove storage channel from config"""
     try:
         config = await get_config() or {}
-        config.pop("storage_channel_id", None)
+        channels = config.get("channels", {})
+        if "storage" in channels:
+            channels.pop("storage")
+        config["channels"] = channels
         await update_config(config, admin_id=update.effective_user.id)
         await update.callback_query.answer("✅ Storage channel removed", show_alert=True)
-        from bot.handlers.settings import show_config_menu
-        await show_config_menu(update, context)
+        await handle_admin_set_storage_channel(update, context)
     except Exception as e:
         logger.error(f"❌ Error removing storage channel: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)

@@ -95,10 +95,9 @@ async def show_config_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🔗 Support Channel: `{config.get('support_channel', 'Not set')}`\n"
             f"⚡ Parallel Limit: `{config.get('parallel_global_limit', 5)}`\n"
             f"📦 Max File Size: `{config.get('max_file_size_gb', 10)} GB`\n"
-            f"📅 File Expiry: `{config.get('file_expiry_days', 7)} days`\n"
-            f"📌 Log Channel: `{config.get('log_channel_id', 'Not set')}`\n"
-            f"💾 Dump Channel: `{config.get('dump_channel_id', 'Not set')}`\n"
-            f"🗄️ Storage Channel: `{config.get('storage_channel_id', 'Not set')}`"
+            f"📌 Log Channel: `{config.get('channels', {}).get('log', {}).get('id', 'Not set')}`\n"
+            f"💾 Dump Channel: `{config.get('channels', {}).get('dump', {}).get('id', 'Not set')}`\n"
+            f"🗄️ Storage Channel: `{config.get('channels', {}).get('storage', {}).get('id', 'Not set')}`"
         )
 
         keyboard = InlineKeyboardMarkup([
