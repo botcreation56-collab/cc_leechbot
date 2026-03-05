@@ -121,26 +121,33 @@ async def _require_channels_setup(update: Update, context: ContextTypes.DEFAULT_
 
     # Build setup screen
     def ch_label(key, icon, name):
-        tick = "✅" if configured[key] else "⚠️"
         return InlineKeyboardButton(
-            f"{tick} {icon} {name}",
+            f"⚠️ {icon} Set {name}",
             callback_data=f"admin_set_{key}_channel"
         )
 
+    keyboard = []
+    
+    if not configured["log"]:
+        keyboard.append([ch_label("log", "📌", "Log Channel")])
+    if not configured["dump"]:
+        keyboard.append([ch_label("dump", "💾", "Dump Channel")])
+    if not configured["storage"]:
+        keyboard.append([ch_label("storage", "🗄️", "Storage Channel")])
+        
+    keyboard.append([InlineKeyboardButton("▶ Open Panel",  callback_data="admin_check_and_open")])
+    keyboard.append([InlineKeyboardButton("❌ Cancel",      callback_data="start")])
+    
+    setup_keyboard = InlineKeyboardMarkup(keyboard)
+
     done_count = sum(configured.values())
     missing_names = [k.title() for k, v in configured.items() if not v]
-    setup_keyboard = InlineKeyboardMarkup([
-        [ch_label("log",     "📌", "Log Channel")],
-        [ch_label("dump",    "💾", "Dump Channel")],
-        [ch_label("storage", "🗄️", "Storage Channel")],
-        [InlineKeyboardButton("▶ Open Panel",  callback_data="admin_check_and_open")],
-        [InlineKeyboardButton("❌ Cancel",      callback_data="start")],
-    ])
+    
     setup_text = (
         "⚙️ **Admin Setup — Global Channels**\n\n"
         f"Progress: `{done_count}/3` channels configured\n\n"
-        f"Still needed: {', '.join(missing_names)}\n\n"
-        "Tap a ⚠️ channel to set it, then press **▶ Open Panel**."
+        f"⚠️ **Not Configured:**\n"
+        f"Please set up the remaining channels below to access the panel."
     )
     query = update.callback_query
     if query:
@@ -205,45 +212,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         # ── Channel setup guard ──────────────────────────────────────
-        # Check nested config structure: channels.log / .dump / .storage
-        config = await get_config() or {}
-        ch = config.get("channels", {})
-
-        configured = {
-            "log":     bool(ch.get("log") or config.get("log_channel_id")),
-            "dump":    bool(ch.get("dump") or config.get("dump_channel_id")),
-            "storage": bool(ch.get("storage") or config.get("storage_channel_id")),
-        }
-        missing_any = not all(configured.values())
-
-        if missing_any:
-            # Build one button per channel — ✅ if set, ⚠️ if missing
-            def ch_label(key, icon, name):
-                tick = "✅" if configured[key] else "⚠️"
-                return InlineKeyboardButton(
-                    f"{tick} {icon} {name}",
-                    callback_data=f"admin_set_{key}_channel"
-                )
-
-            setup_keyboard = InlineKeyboardMarkup([
-                [ch_label("log",     "📌", "Log Channel")],
-                [ch_label("dump",    "💾", "Dump Channel")],
-                [ch_label("storage", "🗄️", "Storage Channel")],
-                [InlineKeyboardButton("▶ Open Panel",  callback_data="admin_check_and_open")],
-                [InlineKeyboardButton("❌ Cancel",      callback_data="start")],
-            ])
-            done_count = sum(configured.values())
-            setup_text = (
-                "⚙️ **Admin Setup — Global Channels**\n\n"
-                f"Progress: `{done_count}/3` channels configured\n\n"
-                "Forward a message from each channel to configure it.\n"
-                "The bot must be an **admin** in every channel.\n\n"
-                "Tap a channel button to set it up, then press **▶ Open Panel** when done."
-            )
-            if is_callback:
-                await message.edit_text(setup_text, reply_markup=setup_keyboard, parse_mode="Markdown")
-            else:
-                await message.reply_text(setup_text, reply_markup=setup_keyboard, parse_mode="Markdown")
+        if not await _require_channels_setup(update, context):
             return
         # ─────────────────────────────────────────────────────────────
 
@@ -275,13 +244,14 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
 
         # Build force-sub channel summary
+        config = await get_config() or {}
         fsub_channels = config.get("channels", {}).get("force_sub", [])
         if fsub_channels:
             fsub_names = ", ".join(
                 ch.get("metadata", {}).get("title") or ch.get("name") or str(ch.get("id", "?"))
                 for ch in fsub_channels
                 if isinstance(ch, dict)
-            ) or "None"
+            )
         else:
             fsub_names = "Not set"
 
@@ -798,94 +768,6 @@ async def handle_admin_upgrade_user(update: Update, context: ContextTypes.DEFAUL
         logger.error(f"❌ Error: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
 
-async def handle_admin_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Rclone configuration menu"""
-    try:
-        config = await get_config() or {}
-        rclone_config = config.get("rclone_config", {})
-
-        try:
-            active_configs = await get_rclone_configs(is_active=True)
-            active_count = len(active_configs) if active_configs else 0
-        except Exception as rc_err:
-            logger.error(f"Failed to get rclone configs: {rc_err}", exc_info=True)
-            active_count = 0
-
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("➕ Add Rclone Config", callback_data="admin_add_rclone")],
-            [InlineKeyboardButton("📋 List Remotes", callback_data="list_rclone_remotes")],
-            [InlineKeyboardButton("🧪 Test Rclone", callback_data="test_rclone")],
-            [InlineKeyboardButton("🚫 Disable Rclone", callback_data="disable_rclone")],
-            [InlineKeyboardButton("🔙 Back", callback_data="admin_back")]
-        ])
-
-        rclone_status = "✅ Enabled" if rclone_config.get("enabled") else "❌ Disabled"
-        rclone_text = (
-            f"🔧 **Rclone Configuration**\n\n"
-            f"Status: `{rclone_status}`\n"
-            f"Active configs: `{active_count}`"
-        )
-        await update.callback_query.message.edit_text(
-            rclone_text,
-            reply_markup=keyboard,
-            parse_mode="Markdown"
-        )
-        await log_admin_action(update.effective_user.id, "opened_rclone", {})
-        logger.info(f"✅ Rclone menu opened")
-    except Exception as e:
-        logger.error(f"❌ Error in rclone menu: {e}", exc_info=True)
-        await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
-
-async def handle_admin_add_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show existing rclone configs and option to add new"""
-    try:
-        existing_configs = await get_rclone_configs()
-        keyboard = []
-
-        if existing_configs:
-            config_text = f"📋 **Existing Rclone Configurations** ({len(existing_configs)}):\n\n"
-            for config in existing_configs:
-                service = config.get('service', 'unknown').upper()
-                plan = config.get('plan', 'free')
-                max_users = config.get('max_users', 0)
-                is_active = config.get('is_active', True)
-                config_id = str(config.get('_id', ''))
-                status_icon = "✅" if is_active else "❌"
-                keyboard.append([InlineKeyboardButton(
-                    f"{status_icon} {service} ({plan}) - {max_users} users",
-                    callback_data=f"view_rclone_{config_id}"
-                )])
-            config_text += "\n👇 Select a config to view/edit, or add a new one:"
-        else:
-            config_text = "📋 **No Rclone Configurations Yet**\n\nClick below to add your first rclone config:"
-
-        keyboard.append([InlineKeyboardButton("➕ Add New Rclone Config", callback_data="admin_add_rclone_wizard")])
-        keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="admin_rclone")])
-
-        await update.callback_query.message.edit_text(
-            config_text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="Markdown"
-        )
-        logger.info(f"✅ Rclone list shown: {len(existing_configs) if existing_configs else 0} configs")
-    except Exception as e:
-        logger.error(f"❌ Error in rclone add handler: {e}", exc_info=True)
-        await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
-
-async def handle_admin_add_rclone_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Start rclone wizard"""
-    try:
-        services_text = ", ".join(f"`{s}`" for s in RCLONE_SUPPORTED_SERVICES)
-        await update.callback_query.message.reply_text(
-            f"🔧 **Rclone Config Wizard**\n\nAvailable clouds: {services_text}\n\n"
-            f"Send the cloud name (e.g., `gdrive`, `onedrive`).\n\nUse /cancel to abort.",
-            parse_mode="Markdown"
-        )
-        context.user_data["rclone_step"] = "await_service"
-        logger.info("✅ Rclone wizard started")
-    except Exception as e:
-        logger.error(f"❌ Error in rclone wizard: {e}", exc_info=True)
-        await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
 
 async def handle_admin_terabox(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Terabox management menu"""
@@ -1051,11 +933,8 @@ async def handle_admin_set_force_sub_channel(update: Update, context: ContextTyp
         else:
             keyboard.append([InlineKeyboardButton("ℹ️ No channels configured", callback_data="ignore")])
 
-        # [Cancel] [Back]
-        keyboard.append([
-            InlineKeyboardButton("❌ Cancel", callback_data="admin_config"),
-            InlineKeyboardButton("🔙 Back", callback_data="admin_back")
-        ])
+        # [Back]
+        keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="admin_config")])
 
         query = update.callback_query
         await query.message.edit_text(
@@ -1073,12 +952,13 @@ async def handle_admin_fsub_add(update: Update, context: ContextTypes.DEFAULT_TY
     from bot.handlers.user import ask_channel_forward
     await ask_channel_forward(update, context, "force_sub_channel")
 
-async def handle_admin_fsub_manage(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_admin_fsub_manage(update: Update, context: ContextTypes.DEFAULT_TYPE, channel_id: int = None):
     """Manage a specific force-sub channel with req_join toggle"""
     try:
         query = update.callback_query
         await query.answer()
-        channel_id = int(query.data.replace("admin_fsub_manage_", ""))
+        if channel_id is None:
+            channel_id = int(query.data.replace("admin_fsub_manage_", ""))
 
         from bot.database import get_force_sub_channels
         channels = await get_force_sub_channels()
@@ -1131,7 +1011,7 @@ async def handle_admin_fsub_req_toggle(update: Update, context: ContextTypes.DEF
             current = channel.get("metadata", {}).get("req_join", False)
             await update_force_sub_metadata(channel_id, {"req_join": not current}, admin_id=update.effective_user.id)
             await query.answer("✅ Req to Join toggled", show_alert=False)
-            await handle_admin_fsub_manage(update, context)
+            await handle_admin_fsub_manage(update, context, channel_id=channel_id)
     except Exception as e:
         logger.error(f"❌ Error toggling req_join: {e}")
         await query.answer("❌ Error", show_alert=True)
@@ -1491,74 +1371,6 @@ async def handle_admin_forwards(update: Update, context: ContextTypes.DEFAULT_TY
         logger.error(f"❌ Error in handle_admin_forwards: {e}", exc_info=True)
         await update.message.reply_text("❌ Failed to save channel. Please try again.")
 
-async def handle_admin_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show rclone management menu."""
-    try:
-        if not await _require_channels_setup(update, context):
-            return
-        query = update.callback_query or None
-        if query:
-            await query.answer()
-            edit = query.message.edit_text
-        else:
-            edit = update.message.reply_text
-
-        from bot.database import get_rclone_configs
-        configs = await get_rclone_configs()
-        count = len(configs) if configs else 0
-
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("➕ Add New Remote", callback_data="admin_add_rclone_wizard")],
-            [InlineKeyboardButton("📋 List Remotes", callback_data="list_rclone_remotes")],
-            [InlineKeyboardButton("🔙 Back", callback_data="admin_back")],
-        ])
-        await edit(
-            f"🔧 **Rclone Management**\n\n"
-            f"Active remotes: `{count}`\n\n"
-            "Add a remote to enable cloud storage for users.",
-            reply_markup=keyboard,
-            parse_mode="Markdown"
-        )
-    except Exception as e:
-        logger.error(f"❌ handle_admin_rclone: {e}", exc_info=True)
-
-async def handle_admin_add_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Alias — shows the wizard start."""
-    await handle_admin_add_rclone_wizard(update, context)
-
-async def handle_admin_add_rclone_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Step 1 of rclone wizard — choose the cloud service."""
-    try:
-        query = update.callback_query
-        if query:
-            await query.answer()
-        msg = query.message if query else update.message
-
-        context.user_data["rclone_wizard"] = {}  # reset wizard state
-
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("☁️ Google Drive", callback_data="rclone_gdrive"),
-                InlineKeyboardButton("📁 OneDrive",     callback_data="rclone_onedrive"),
-            ],
-            [
-                InlineKeyboardButton("📦 Dropbox", callback_data="rclone_dropbox"),
-                InlineKeyboardButton("🌐 Mega",    callback_data="rclone_mega"),
-            ],
-            [
-                InlineKeyboardButton("☁️ Amazon S3", callback_data="rclone_s3"),
-                InlineKeyboardButton("🔧 Custom",   callback_data="rclone_custom"),
-            ],
-            [InlineKeyboardButton("❌ Cancel", callback_data="admin_rclone")],
-        ])
-        await msg.reply_text(
-            "🔧 **Add Rclone Remote — Step 1 / 4**\n\n"
-            "Select the cloud storage service:",
-            reply_markup=keyboard,
-            parse_mode="Markdown"
-        )
-    except Exception as e:
-        logger.error(f"❌ handle_admin_add_rclone_wizard: {e}", exc_info=True)
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /stats command"""

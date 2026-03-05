@@ -993,6 +993,8 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not awaiting:
             # If no awaiting state, check if it's a URL
             if validate_url(text)[0]:
+                if not await check_force_sub(update, context):
+                    return
                 await handle_url_input(update, context)
             return
 

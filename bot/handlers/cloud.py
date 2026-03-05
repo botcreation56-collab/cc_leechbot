@@ -9,6 +9,7 @@ from telegram.error import TelegramError
 from bot.middleware import admin_only
 from bot.database import (
     get_db,
+    get_config,
     get_user,
     get_all_users,
     ban_user,
@@ -76,6 +77,129 @@ logger.info("✅ User commands module loaded successfully")
 logger.info("User commands module loaded successfully")
 logger.info("✅ User settings module loaded with all handlers")
 WIZARD_TIMEOUT = 1200
+
+async def handle_admin_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Rclone configuration menu"""
+    try:
+        from bot.handlers.admin import _require_channels_setup
+        if not await _require_channels_setup(update, context):
+            return
+
+        from bot.database import get_config, get_rclone_configs
+        from bot.utils.logger import log_admin_action
+        
+        config = await get_config() or {}
+        rclone_config = config.get("rclone_config", {})
+
+        try:
+            active_configs = await get_rclone_configs(is_active=True)
+            active_count = len(active_configs) if active_configs else 0
+        except Exception as rc_err:
+            logger.error(f"Failed to get rclone configs: {rc_err}", exc_info=True)
+            active_count = 0
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("➕ Add Rclone Config", callback_data="admin_add_rclone")],
+            [InlineKeyboardButton("📋 List Remotes", callback_data="list_rclone_remotes")],
+            [InlineKeyboardButton("🧪 Test Rclone", callback_data="test_rclone")],
+            [InlineKeyboardButton("🚫 Disable Rclone", callback_data="disable_rclone")],
+            [InlineKeyboardButton("🔙 Back", callback_data="admin_back")]
+        ])
+
+        rclone_status = "✅ Enabled" if rclone_config.get("enabled") else "❌ Disabled"
+        rclone_text = (
+            f"🔧 **Rclone Configuration**\n\n"
+            f"Status: `{rclone_status}`\n"
+            f"Active configs: `{active_count}`"
+        )
+        await update.callback_query.message.edit_text(
+            rclone_text,
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+        await log_admin_action(update.effective_user.id, "opened_rclone", {})
+        logger.info(f"✅ Rclone menu opened")
+    except Exception as e:
+        logger.error(f"❌ Error in rclone menu: {e}", exc_info=True)
+        await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
+
+async def handle_admin_add_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show existing rclone configs and option to add new"""
+    try:
+        from bot.database import get_rclone_configs
+        existing_configs = await get_rclone_configs()
+        keyboard = []
+
+        if existing_configs:
+            config_text = f"📋 **Existing Rclone Configurations** ({len(existing_configs)}):\n\n"
+            for config in existing_configs:
+                service = config.get('service', 'unknown').upper()
+                plan = config.get('plan', 'free')
+                max_users = config.get('max_users', 0)
+                is_active = config.get('is_active', True)
+                config_id = str(config.get('_id', ''))
+                status_icon = "✅" if is_active else "❌"
+                keyboard.append([InlineKeyboardButton(
+                    f"{status_icon} {service} ({plan}) - {max_users} users",
+                    callback_data=f"view_rclone_{config_id}"
+                )])
+            config_text += "\n👇 Select a config to view/edit, or add a new one:"
+        else:
+            config_text = "📋 **No Rclone Configurations Yet**\n\nClick below to add your first rclone config:"
+
+        keyboard.append([InlineKeyboardButton("➕ Add New Rclone Config", callback_data="admin_add_rclone_wizard")])
+        keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="admin_rclone")])
+
+        await update.callback_query.message.edit_text(
+            config_text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        logger.error(f"❌ Error in rclone list: {e}", exc_info=True)
+        await update.callback_query.answer(f"❌ Error", show_alert=True)
+
+async def handle_admin_add_rclone_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Step 1 of rclone wizard — choose the cloud service."""
+    try:
+        query = update.callback_query
+        if query:
+            await query.answer()
+
+        context.user_data["rclone_wizard"] = {}  # reset wizard state
+
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("☁️ Google Drive", callback_data="rclone_gdrive"),
+                InlineKeyboardButton("📁 OneDrive",     callback_data="rclone_onedrive"),
+            ],
+            [
+                InlineKeyboardButton("📦 Dropbox", callback_data="rclone_dropbox"),
+                InlineKeyboardButton("🌐 Mega",    callback_data="rclone_mega"),
+            ],
+            [
+                InlineKeyboardButton("☁️ Amazon S3", callback_data="rclone_s3"),
+                InlineKeyboardButton("🔧 Custom",   callback_data="rclone_custom"),
+            ],
+            [InlineKeyboardButton("❌ Cancel", callback_data="admin_rclone")],
+        ])
+        
+        setup_text = (
+            "🔧 **Rclone Config Wizard**\n\n"
+            "**Step 1 / 5 — Cloud Service**\n\n"
+            "Choose your cloud storage provider:"
+        )
+
+        if query:
+            await query.message.edit_text(setup_text, reply_markup=keyboard, parse_mode="Markdown")
+        else:
+            await update.message.reply_text(setup_text, reply_markup=keyboard, parse_mode="Markdown")
+            
+        logger.info("✅ Rclone wizard started")
+    except Exception as e:
+        logger.error(f"❌ Error in rclone wizard start: {e}", exc_info=True)
+        if update.callback_query:
+            await update.callback_query.answer("❌ Error starting wizard", show_alert=True)
 
 async def handle_list_rclone_remotes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """List configured rclone remotes"""
@@ -186,71 +310,9 @@ async def handle_terabox_disable(update: Update, context: ContextTypes.DEFAULT_T
         logger.error(f"❌ Error disabling terabox: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
 
-async def rclone_service_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle rclone service selection (gdrive, onedrive, dropbox, mega, terabox, custom)"""
-    try:
-        query = update.callback_query
-        await query.answer()
-        # Extract service from "rclone_gdrive", "rclone_onedrive" etc.
-        service = query.data.replace("rclone_", "")
-        context.user_data["rclone_service"] = service
-        await query.message.edit_text(
-            f"🔧 **Rclone — {service.upper()} Selected**\n\n"
-            f"Now send your rclone config text for {service}.\n\n"
-            f"Use /cancel to abort.",
-            parse_mode="Markdown"
-        )
-        context.user_data["rclone_step"] = "await_config_text"
-    except Exception as e:
-        logger.error(f"❌ Error in rclone_service_callback: {e}", exc_info=True)
-        await update.callback_query.answer(f"❌ Error", show_alert=True)
 
-async def rclone_plan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle rclone plan selection (free or pro)"""
-    try:
-        query = update.callback_query
-        await query.answer()
-        # Extract plan from "rclone_plan_free" or "rclone_plan_pro"
-        plan = query.data.replace("rclone_plan_", "")
-        context.user_data["rclone_plan"] = plan
-        await query.message.edit_text(
-            f"⭐ **Rclone — {plan.upper()} Plan Selected**\n\n"
-            f"Now send the max users allowed for this config.\n\n"
-            f"Use /cancel to abort.",
-            parse_mode="Markdown"
-        )
-        context.user_data["rclone_step"] = "await_max_users"
-    except Exception as e:
-        logger.error(f"❌ Error in rclone_plan_callback: {e}", exc_info=True)
-        await update.callback_query.answer(f"❌ Error", show_alert=True)
 
-async def rclone_users_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle rclone users page navigation"""
-    try:
-        query = update.callback_query
-        await query.answer()
-        # pattern: rclone_users_<page>
-        try:
-            page = int(query.data.split("_")[-1])
-        except ValueError:
-            page = 0
-        # Re-use list remotes with pagination context
-        await handle_list_rclone_remotes(update, context)
-    except Exception as e:
-        logger.error(f"❌ Error in rclone_users_callback: {e}", exc_info=True)
-        await update.callback_query.answer(f"❌ Error", show_alert=True)
 
-async def handle_configure_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Alias for handle_admin_add_rclone"""
-    await handle_admin_add_rclone(update, context)
-
-async def handle_test_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Alias for handle_test_rclone_actual"""
-    await handle_test_rclone_actual(update, context)
-
-async def start_rclone_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Alias for handle_admin_add_rclone_wizard"""
-    await handle_admin_add_rclone_wizard(update, context)
 
 async def rclone_service_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Step 1 callback — user chose a service. Ask for plan (step 2)."""

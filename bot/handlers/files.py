@@ -139,14 +139,19 @@ async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE)
             context.user_data.pop('awaiting') # Clear state
             return
 
-        # 1️⃣ Get user - ✅ AWAIT FIX
-        user = await get_user(user_id)  # Was: get_user (sync call error)
+        # 1️⃣ Get user
+        user = await get_user(user_id)
         if not user:
             await update.message.reply_text("❌ User not found.")
             return
         
         if user.get("banned"):
             await update.message.reply_text(ERROR_MESSAGES.get("banned", "You are banned."))
+            return
+            
+        # 1.5️⃣ Check Force Sub
+        from bot.handlers.user import check_force_sub
+        if not await check_force_sub(update, context):
             return
         
         # 2️⃣ ✅ CHECK RCLONE IS CONFIGURED
@@ -373,6 +378,11 @@ async def handle_url_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
         if user.get("banned"):
             await update.message.reply_text(ERROR_MESSAGES["banned"])
+            return
+
+        # Check Force Sub
+        from bot.handlers.user import check_force_sub
+        if not await check_force_sub(update, context):
             return
 
         # Create task
