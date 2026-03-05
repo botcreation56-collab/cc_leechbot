@@ -752,7 +752,12 @@ async def health():
         except Exception:
             pass
     status = "healthy" if db_ok else "degraded"
-    return {"status": status, "bot_ready": bot_application is not None}
+    return {
+        "status": status,
+        "bot_ready": bot_application is not None,
+        "bot_username": settings.BOT_USERNAME,
+        "bot_link": settings.BOT_LINK
+    }
 
 
 # ============================================================

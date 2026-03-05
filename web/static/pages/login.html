@@ -117,6 +117,15 @@
             font-size: 13px;
         }
 
+        .helper-text {
+            margin-top: 25px;
+            padding: 15px;
+            background: rgba(0, 150, 255, 0.05);
+            border-radius: 12px;
+            border: 1px border dashed rgba(0, 150, 255, 0.2);
+            font-size: 14px;
+        }
+
         .btn-link {
             background: none;
             border: none;
@@ -169,12 +178,12 @@
                 Send Login Link
             </button>
 
-            <p style="margin-top: 20px; font-size: 13px; opacity: 0.5;">
-                Don't know your ID?
-                <a id="botLink" href="#" target="_blank" style="color: #0096FF; text-decoration: none; display:none;">
-                    Get My ID (Start Bot)
+            <div id="idHelper" class="helper-text hidden">
+                <p style="margin-bottom: 8px; opacity: 0.8;">Don't know your Telegram ID?</p>
+                <a id="botLink" href="#" target="_blank" class="link-text" style="font-weight: 600; font-size: 15px;">
+                    ⚡ Know your user id (Start Bot)
                 </a>
-            </p>
+            </div>
         </div>
 
         <!-- Loading State -->
@@ -215,6 +224,7 @@
                     console.log("[DEBUG] Health check returned:", data);
                     if (data.bot_link) {
                         const botLinkEl = document.getElementById('botLink');
+                        const idHelper = document.getElementById('idHelper');
                         let link = data.bot_link.trim();
 
                         // Clean trailing slash
@@ -237,7 +247,7 @@
 
                         console.log("[DEBUG] Final Bot Link href:", `${link}?start=id`);
                         botLinkEl.href = `${link}?start=id`;
-                        botLinkEl.style.display = 'inline';
+                        idHelper.classList.remove('hidden');
                     } else {
                         console.warn("[DEBUG] data.bot_link is missing or empty.");
                     }
