@@ -112,9 +112,9 @@ async def _require_channels_setup(update: Update, context: ContextTypes.DEFAULT_
     config = await get_config() or {}
     ch = config.get("channels", {})
     configured = {
-        "log":     bool(ch.get("log")),
-        "dump":    bool(ch.get("dump")),
-        "storage": bool(ch.get("storage")),
+        "log":     bool(ch.get("log") or config.get("log_channel_id")),
+        "dump":    bool(ch.get("dump") or config.get("dump_channel_id")),
+        "storage": bool(ch.get("storage") or config.get("storage_channel_id")),
     }
     if all(configured.values()):
         return True
@@ -210,9 +210,9 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ch = config.get("channels", {})
 
         configured = {
-            "log":     bool(ch.get("log")),
-            "dump":    bool(ch.get("dump")),
-            "storage": bool(ch.get("storage")),
+            "log":     bool(ch.get("log") or config.get("log_channel_id")),
+            "dump":    bool(ch.get("dump") or config.get("dump_channel_id")),
+            "storage": bool(ch.get("storage") or config.get("storage_channel_id")),
         }
         missing_any = not all(configured.values())
 
@@ -320,9 +320,9 @@ async def admin_check_and_open(update: Update, context: ContextTypes.DEFAULT_TYP
     ch = config.get("channels", {})
 
     configured = {
-        "log":     bool(ch.get("log")),
-        "dump":    bool(ch.get("dump")),
-        "storage": bool(ch.get("storage")),
+        "log":     bool(ch.get("log") or config.get("log_channel_id")),
+        "dump":    bool(ch.get("dump") or config.get("dump_channel_id")),
+        "storage": bool(ch.get("storage") or config.get("storage_channel_id")),
     }
 
     if all(configured.values()):
@@ -927,12 +927,21 @@ async def handle_admin_set_log_channel(update: Update, context: ContextTypes.DEF
     """Show log channel management menu"""
     config = await get_config() or {}
     ch = config.get("channels", {}).get("log", {})
-    ch_id = ch.get("id")
-    ch_name = ch.get("metadata", {}).get("title") or str(ch_id) if ch_id else "Not set"
+    ch_id = ch.get("id") or config.get("log_channel_id")
+    ch_name = ch.get("metadata", {}).get("title")
+
+    if ch_id and not ch_name:
+        try:
+            chat = await context.bot.get_chat(ch_id)
+            ch_name = chat.title
+        except:
+            ch_name = str(ch_id)
+
+    display_name = f"{ch_name} ({ch_id})" if ch_id else "Not set"
 
     keyboard = []
     if ch_id:
-        keyboard.append([InlineKeyboardButton(f"Channel: {ch_name}", callback_data="ignore")])
+        keyboard.append([InlineKeyboardButton(f"Channel: {display_name}", callback_data="ignore")])
         keyboard.append([InlineKeyboardButton("🗑️ Remove Channel", callback_data="admin_remove_log")])
     else:
         keyboard.append([InlineKeyboardButton("➕ Add Channel", callback_data="admin_add_log_channel")])
@@ -954,12 +963,21 @@ async def handle_admin_set_dump_channel(update: Update, context: ContextTypes.DE
     """Show dump channel management menu"""
     config = await get_config() or {}
     ch = config.get("channels", {}).get("dump", {})
-    ch_id = ch.get("id")
-    ch_name = ch.get("metadata", {}).get("title") or str(ch_id) if ch_id else "Not set"
+    ch_id = ch.get("id") or config.get("dump_channel_id")
+    ch_name = ch.get("metadata", {}).get("title")
+
+    if ch_id and not ch_name:
+        try:
+            chat = await context.bot.get_chat(ch_id)
+            ch_name = chat.title
+        except:
+            ch_name = str(ch_id)
+
+    display_name = f"{ch_name} ({ch_id})" if ch_id else "Not set"
 
     keyboard = []
     if ch_id:
-        keyboard.append([InlineKeyboardButton(f"Channel: {ch_name}", callback_data="ignore")])
+        keyboard.append([InlineKeyboardButton(f"Channel: {display_name}", callback_data="ignore")])
         keyboard.append([InlineKeyboardButton("🗑️ Remove Channel", callback_data="admin_remove_dump")])
     else:
         keyboard.append([InlineKeyboardButton("➕ Add Channel", callback_data="admin_add_dump_channel")])
@@ -981,12 +999,21 @@ async def handle_admin_set_storage_channel(update: Update, context: ContextTypes
     """Show storage channel management menu"""
     config = await get_config() or {}
     ch = config.get("channels", {}).get("storage", {})
-    ch_id = ch.get("id")
-    ch_name = ch.get("metadata", {}).get("title") or str(ch_id) if ch_id else "Not set"
+    ch_id = ch.get("id") or config.get("storage_channel_id")
+    ch_name = ch.get("metadata", {}).get("title")
+
+    if ch_id and not ch_name:
+        try:
+            chat = await context.bot.get_chat(ch_id)
+            ch_name = chat.title
+        except:
+            ch_name = str(ch_id)
+
+    display_name = f"{ch_name} ({ch_id})" if ch_id else "Not set"
 
     keyboard = []
     if ch_id:
-        keyboard.append([InlineKeyboardButton(f"Channel: {ch_name}", callback_data="ignore")])
+        keyboard.append([InlineKeyboardButton(f"Channel: {display_name}", callback_data="ignore")])
         keyboard.append([InlineKeyboardButton("🗑️ Remove Channel", callback_data="admin_remove_storage")])
     else:
         keyboard.append([InlineKeyboardButton("➕ Add Channel", callback_data="admin_add_storage_channel")])

@@ -86,6 +86,33 @@ async def show_config_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         config = await get_config() or {}
 
+        # Helper to get channel name
+        async def get_ch_name(nested_key, flat_key):
+            # 1. Try nested schema
+            ch = config.get("channels", {}).get(nested_key, {})
+            ch_id = ch.get("id")
+            ch_title = ch.get("metadata", {}).get("title")
+            # 2. Fallback to flat schema
+            if not ch_id:
+                ch_id = config.get(flat_key)
+            if not ch_id:
+                return "Not set"
+            # 3. Use title if we have it, else try to fetch
+            if ch_title:
+                return f"{ch_title} ({ch_id})"
+            try:
+                chat = await context.bot.get_chat(ch_id)
+                return f"{chat.title} ({ch_id})"
+            except:
+                return str(ch_id)
+
+        import asyncio
+        log_name, dump_name, storage_name = await asyncio.gather(
+            get_ch_name("log", "log_channel_id"),
+            get_ch_name("dump", "dump_channel_id"),
+            get_ch_name("storage", "storage_channel_id")
+        )
+
         # FIX: 'current_settings' was never defined. Build it here from config.
         current_settings = (
             f"⚙️ **Bot Configuration**\n\n"
@@ -95,9 +122,10 @@ async def show_config_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🔗 Support Channel: `{config.get('support_channel', 'Not set')}`\n"
             f"⚡ Parallel Limit: `{config.get('parallel_global_limit', 5)}`\n"
             f"📦 Max File Size: `{config.get('max_file_size_gb', 10)} GB`\n"
-            f"📌 Log Channel: `{config.get('channels', {}).get('log', {}).get('id', 'Not set')}`\n"
-            f"💾 Dump Channel: `{config.get('channels', {}).get('dump', {}).get('id', 'Not set')}`\n"
-            f"🗄️ Storage Channel: `{config.get('channels', {}).get('storage', {}).get('id', 'Not set')}`"
+            f"📅 File Expiry: `{config.get('file_expiry_days', 7)} days`\n"
+            f"📌 Log Channel: `{log_name}`\n"
+            f"💾 Dump Channel: `{dump_name}`\n"
+            f"🗄️ Storage Channel: `{storage_name}`"
         )
 
         keyboard = InlineKeyboardMarkup([
