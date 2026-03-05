@@ -1153,6 +1153,15 @@ class WizardHandler:
                 
             if query:
                 await query.edit_message_text(final_text, parse_mode="Markdown")
+                # Silently delete the wizard panel after a short grace period
+                import asyncio
+                async def _cleanup_msg():
+                    await asyncio.sleep(3)
+                    try:
+                        await query.message.delete()
+                    except Exception:
+                        pass
+                asyncio.create_task(_cleanup_msg())
             else:
                 await bot.send_message(user_id, text=final_text, parse_mode="Markdown")
             

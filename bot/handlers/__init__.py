@@ -23,6 +23,7 @@ from .admin import (
     handle_admin_set_storage_channel, handle_admin_set_force_sub_channel,
     handle_admin_fsub_add, handle_admin_fsub_manage,
     handle_admin_fsub_toggle, handle_admin_fsub_link,
+    handle_admin_fsub_req_toggle,
     handle_admin_fsub_remove_confirm, handle_admin_fsub_remove,
     handle_admin_remove_log, handle_admin_remove_dump, handle_admin_remove_storage,
     handle_admin_logs, handle_admin_chatbox,

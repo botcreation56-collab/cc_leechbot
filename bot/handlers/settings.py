@@ -81,6 +81,9 @@ WIZARD_TIMEOUT = 1200
 async def show_config_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Configuration menu with all settings"""
     try:
+        from bot.handlers.admin import _require_channels_setup
+        if not await _require_channels_setup(update, context):
+            return
         config = await get_config() or {}
 
         # FIX: 'current_settings' was never defined. Build it here from config.

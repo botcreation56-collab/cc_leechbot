@@ -102,6 +102,54 @@ async def get_queue_stats() -> Dict[str, Any]:
         logger.error(f"❌ get_queue_stats error: {e}")
         return {"pending": 0, "processing": 0, "completed_today": 0, "failed": 0}
 
+
+async def _require_channels_setup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Guard helper: returns True if all 3 global channels are configured.
+    If any channel is missing, shows the setup screen in-place and returns False.
+    Must be called from a callback_query handler.
+    """
+    from bot.database import get_config
+    config = await get_config() or {}
+    ch = config.get("channels", {})
+    configured = {
+        "log":     bool(ch.get("log")),
+        "dump":    bool(ch.get("dump")),
+        "storage": bool(ch.get("storage")),
+    }
+    if all(configured.values()):
+        return True
+
+    # Build setup screen
+    def ch_label(key, icon, name):
+        tick = "✅" if configured[key] else "⚠️"
+        return InlineKeyboardButton(
+            f"{tick} {icon} {name}",
+            callback_data=f"admin_set_{key}_channel"
+        )
+
+    done_count = sum(configured.values())
+    missing_names = [k.title() for k, v in configured.items() if not v]
+    setup_keyboard = InlineKeyboardMarkup([
+        [ch_label("log",     "📌", "Log Channel")],
+        [ch_label("dump",    "💾", "Dump Channel")],
+        [ch_label("storage", "🗄️", "Storage Channel")],
+        [InlineKeyboardButton("▶ Open Panel",  callback_data="admin_check_and_open")],
+        [InlineKeyboardButton("❌ Cancel",      callback_data="start")],
+    ])
+    setup_text = (
+        "⚙️ **Admin Setup — Global Channels**\n\n"
+        f"Progress: `{done_count}/3` channels configured\n\n"
+        f"Still needed: {', '.join(missing_names)}\n\n"
+        "Tap a ⚠️ channel to set it, then press **▶ Open Panel**."
+    )
+    query = update.callback_query
+    if query:
+        try:
+            await query.message.edit_text(setup_text, reply_markup=setup_keyboard, parse_mode="Markdown")
+        except Exception:
+            await query.message.reply_text(setup_text, reply_markup=setup_keyboard, parse_mode="Markdown")
+    return False
+
 def get_admin_ids() -> List[int]:
     """Get admin IDs with proper error handling"""
     try:
@@ -226,10 +274,22 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
         ])
 
+        # Build force-sub channel summary
+        fsub_channels = config.get("channels", {}).get("force_sub", [])
+        if fsub_channels:
+            fsub_names = ", ".join(
+                ch.get("metadata", {}).get("title") or ch.get("name") or str(ch.get("id", "?"))
+                for ch in fsub_channels
+                if isinstance(ch, dict)
+            ) or "None"
+        else:
+            fsub_names = "Not set"
+
         admin_message = (
             f"👑 **Admin Panel**\n"
             f"User: [{user.first_name}](tg://user?id={user_id})\n"
-            f"Role: `{role.upper()}`"
+            f"Role: `{role.upper()}`\n"
+            f"📢 Force Sub: `{fsub_names}`"
         )
 
         if is_callback:
@@ -303,6 +363,8 @@ async def handle_admin_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_admin_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """User management menu"""
     try:
+        if not await _require_channels_setup(update, context):
+            return
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔍 Find User", callback_data="admin_find_user")],
             [InlineKeyboardButton("📜 List All Users", callback_data="admin_list_users_0")],
@@ -449,6 +511,8 @@ async def handle_view_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show bot statistics"""
     try:
+        if not await _require_channels_setup(update, context):
+            return
         from bot.database import get_admin_stats
         
         db_stats = await get_admin_stats()
@@ -579,6 +643,8 @@ async def handle_unban_from_list(update: Update, context: ContextTypes.DEFAULT_T
 async def handle_admin_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Broadcast menu"""
     try:
+        if not await _require_channels_setup(update, context):
+            return
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("✉️ Send Message", callback_data="broadcast_compose")],
             [InlineKeyboardButton("📊 View Stats", callback_data="broadcast_stats")],
@@ -632,6 +698,8 @@ async def handle_broadcast_stats(update: Update, context: ContextTypes.DEFAULT_T
 async def handle_admin_filesize(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """File size management menu"""
     try:
+        if not await _require_channels_setup(update, context):
+            return
         config = await get_config() or {}
         max_size = config.get("max_file_size_gb", 10)
         storage_used = config.get("storage_used_gb", 0)
@@ -1321,6 +1389,8 @@ async def handle_admin_forwards(update: Update, context: ContextTypes.DEFAULT_TY
 async def handle_admin_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show rclone management menu."""
     try:
+        if not await _require_channels_setup(update, context):
+            return
         query = update.callback_query or None
         if query:
             await query.answer()

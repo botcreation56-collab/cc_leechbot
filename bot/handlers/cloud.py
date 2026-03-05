@@ -253,19 +253,25 @@ async def start_rclone_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE
     await handle_admin_add_rclone_wizard(update, context)
 
 async def rclone_service_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Step 1 callback — user chose a service. Ask for remote name (step 2)."""
+    """Step 1 callback — user chose a service. Ask for plan (step 2)."""
     try:
         query = update.callback_query
         await query.answer()
         service = query.data.replace("rclone_", "")  # e.g. "gdrive"
         context.user_data.setdefault("rclone_wizard", {})["service"] = service
-        context.user_data["awaiting"] = "rclone_name"
-        await query.message.reply_text(
+        # Step 2 — choose plan
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("🆓 Free", callback_data="rclone_plan_free"),
+                InlineKeyboardButton("💎 Pro",  callback_data="rclone_plan_pro"),
+            ],
+            [InlineKeyboardButton("❌ Cancel", callback_data="admin_rclone")],
+        ])
+        await query.message.edit_text(
             f"✅ Service selected: **{service.upper()}**\n\n"
-            f"**Step 2 / 4 — Remote Name**\n\n"
-            "Enter a short name for this remote (letters, numbers, hyphens).\n"
-            "Example: `my-gdrive-main`\n\n"
-            "Use /cancel to abort.",
+            f"**Step 2 / 5 — Plan**\n\n"
+            "Choose which user plan this remote will serve:",
+            reply_markup=keyboard,
             parse_mode="Markdown"
         )
     except Exception as e:
@@ -273,18 +279,20 @@ async def rclone_service_callback(update: Update, context: ContextTypes.DEFAULT_
         await update.callback_query.answer("❌ Error", show_alert=True)
 
 async def rclone_plan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle plan selection (free/pro) for a rclone remote."""
+    """Step 2 callback — user chose plan. Now ask for remote name (step 3)."""
     try:
         query = update.callback_query
         await query.answer()
         parts = query.data.split("_")  # rclone_plan_free / rclone_plan_pro
         plan = parts[-1] if parts else "free"
         context.user_data.setdefault("rclone_wizard", {})["plan"] = plan
-        context.user_data["awaiting"] = "rclone_config"
+        context.user_data["awaiting"] = "rclone_name"
         await query.message.reply_text(
             f"✅ Plan: **{plan.upper()}**\n\n"
-            "**Step 3 / 4 — Rclone Config**\n\n"
-            "Paste your rclone config block. Use /cancel to abort.",
+            "**Step 3 / 5 — Remote Name**\n\n"
+            "Enter a short name for this remote (letters, numbers, hyphens).\n"
+            "Example: `my-gdrive-main`\n\n"
+            "Use /cancel to abort.",
             parse_mode="Markdown"
         )
     except Exception as e:
@@ -366,7 +374,7 @@ async def rclone_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             wizard["name"] = text
             context.user_data["awaiting"] = "rclone_config"
             await update.message.reply_text(
-                "**Step 3 / 4 — Rclone Config Block**\n\n"
+                "**Step 4 / 5 — Rclone Config Block**\n\n"
                 "Paste your rclone config section for this remote.\n"
                 "It should look like:\n\n"
                 "```\n[remote-name]\ntype = drive\ntoken = {...}\n```\n\n"
@@ -386,7 +394,7 @@ async def rclone_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             wizard["config"] = text
             context.user_data["awaiting"] = "rclone_max_users"
             await update.message.reply_text(
-                "**Step 4 / 4 — Max Users**\n\n"
+                "**Step 5 / 5 — Max Simultaneous Users**\n\n"
                 "How many users can share this remote simultaneously?\n"
                 "Enter a number (e.g. `10`).\n\n"
                 "Use /cancel to abort.",
