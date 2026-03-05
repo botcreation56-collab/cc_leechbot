@@ -1216,6 +1216,8 @@ async def handle_admin_remove_log(update: Update, context: ContextTypes.DEFAULT_
         if "log" in channels:
             channels.pop("log")
         config["channels"] = channels
+        # Clear legacy key too
+        config.pop("log_channel_id", None)
         await update_config(config, admin_id=update.effective_user.id)
         await update.callback_query.answer("✅ Log channel removed", show_alert=True)
         await handle_admin_set_log_channel(update, context)
@@ -1231,6 +1233,8 @@ async def handle_admin_remove_dump(update: Update, context: ContextTypes.DEFAULT
         if "dump" in channels:
             channels.pop("dump")
         config["channels"] = channels
+        # Clear legacy key too
+        config.pop("dump_channel_id", None)
         await update_config(config, admin_id=update.effective_user.id)
         await update.callback_query.answer("✅ Dump channel removed", show_alert=True)
         await handle_admin_set_dump_channel(update, context)
@@ -1246,6 +1250,8 @@ async def handle_admin_remove_storage(update: Update, context: ContextTypes.DEFA
         if "storage" in channels:
             channels.pop("storage")
         config["channels"] = channels
+        # Clear legacy key too
+        config.pop("storage_channel_id", None)
         await update_config(config, admin_id=update.effective_user.id)
         await update.callback_query.answer("✅ Storage channel removed", show_alert=True)
         await handle_admin_set_storage_channel(update, context)
