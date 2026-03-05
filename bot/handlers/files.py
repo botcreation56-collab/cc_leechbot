@@ -607,30 +607,36 @@ async def handle_us_thumbnail_menu(update: Update, context: ContextTypes.DEFAULT
 
 async def handle_us_thumbnail(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """MessageHandler: receive the actual photo"""
-    awaiting = context.user_data.get("awaiting")
-    if awaiting != "us_thumbnail":
-        return
-
-    user_id = update.effective_user.id
     try:
+        awaiting = context.user_data.get("awaiting")
+        if awaiting != "us_thumbnail":
+            return
+
+        user_id = update.effective_user.id
         photo = update.message.photo[-1]
-        ...
-        # (rest of existing logic is correct — storage_channel fallback to dump_channel is fine)
-        
+
         # 1. Size Validation (Limit to 5MB)
         if photo.file_size > 5 * 1024 * 1024:
              await update.message.reply_text("❌ **Too Large**: Thumbnail must be under 5MB.")
              return
 
-        # 2. Get User
+        # 2. Get User (Create if missing)
         user = await get_user(user_id)
         if not user:
-            await update.message.reply_text("❌ User not found.")
-            return
+            from bot.database import create_user
+            username = update.effective_user.username or "Unknown"
+            first_name = update.effective_user.first_name or "User"
+            user = await create_user(user_id, first_name, username)
+            logger.info(f"🆕 User {user_id} created during thumbnail setup")
 
         # 3. Backup to Storage Channel (Availability Check)
-        config = await get_config()
-        storage_channel = config.get("storage_channel") or config.get("dump_channel")
+        from bot.database import get_storage_channel, get_dump_channel
+        
+        storage_config = await get_storage_channel()
+        dump_config = await get_dump_channel()
+        
+        storage_channel = (storage_config.get("id") if storage_config else None) or \
+                          (dump_config.get("id") if dump_config else None)
         
         final_file_id = photo.file_id
         

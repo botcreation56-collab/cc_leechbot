@@ -85,8 +85,7 @@ async def handle_admin_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE
         if not await _require_channels_setup(update, context):
             return
 
-        from bot.database import get_config, get_rclone_configs
-        from bot.utils.logger import log_admin_action
+        from bot.database import get_config, get_rclone_configs, log_admin_action
         
         config = await get_config() or {}
         rclone_config = config.get("rclone_config", {})

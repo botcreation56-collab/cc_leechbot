@@ -223,70 +223,81 @@ class UploadService:
     # Rclone Upload                                                         #
     # ------------------------------------------------------------------ #
 
+    _rclone_semaphore: Optional[asyncio.Semaphore] = None
+
+    @classmethod
+    def _get_rclone_semaphore(cls) -> asyncio.Semaphore:
+        if cls._rclone_semaphore is None:
+            from config.settings import get_settings
+            limit = int(os.getenv("PARALLEL_LIMIT", 5))
+            cls._rclone_semaphore = asyncio.Semaphore(limit)
+        return cls._rclone_semaphore
+
     async def upload_to_rclone(self, file_path: str, plan: str, display_name: str) -> str:
         """Upload via Rclone to the least-loaded config for the given plan.
 
         Returns the public cloud URL on success. Raises RcloneUploadError on failure.
         """
-        config = await self._rclone.pick_for_plan(plan)
-        if not config:
-            raise RcloneUploadError("none", file_path, "No active Rclone configuration found")
+        async with self._get_rclone_semaphore():
+            config = await self._rclone.pick_for_plan(plan)
+            if not config:
+                raise RcloneUploadError("none", file_path, "No active Rclone configuration found")
 
-        remote = config.get("remote_name", "")
-        remote_path = config.get("remote_path", "/uploads")
-        safe_name = sanitize_filename(display_name)
+            remote = config.get("remote_name", "")
+            remote_path = config.get("remote_path", "/uploads")
+            safe_name = sanitize_filename(display_name)
 
-        import tempfile
-        import os
-        from pathlib import Path
+            import tempfile
+            import os
+            from pathlib import Path
 
-        config_path = None
-        try:
-            # Bug Fix: Render/Docker containers lose /tmp or ~/.config files on restart.
-            # So, we write the securely DB-stored credentials to a temp file dynamically
-            # just for the duration of this rclone subprocess.
-            credentials = config.get("credentials", "")
-            fd, config_path = tempfile.mkstemp(suffix=".conf", prefix="rclone_")
-            with os.fdopen(fd, 'w') as f:
-                f.write(credentials)
+            config_path = None
+            try:
+                # Bug Fix: Render/Docker containers lose /tmp or ~/.config files on restart.
+                # So, we write the securely DB-stored credentials to a temp file dynamically
+                # just for the duration of this rclone subprocess.
+                credentials = config.get("credentials", "")
+                fd, config_path = tempfile.mkstemp(suffix=".conf", prefix="rclone_")
+                with os.fdopen(fd, 'w') as f:
+                    f.write(credentials)
 
-            cmd = [
-                "rclone", "copyto",
-                file_path,
-                f"{remote}:{remote_path}/{safe_name}",
-                "--progress",
-                "--config", config_path,
-            ]
+                cmd = [
+                    "rclone", "copyto",
+                    file_path,
+                    f"{remote}:{remote_path}/{safe_name}",
+                    "--progress",
+                    "--config", config_path,
+                ]
 
-            logger.info("☁️ Rclone upload → %s:%s/%s", remote, remote_path, safe_name)
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=3600)
-            if proc.returncode != 0:
-                err = stderr.decode(errors="ignore").strip()
-                raise RcloneUploadError(remote, file_path, err[:300])
-        except asyncio.TimeoutError:
-            raise RcloneUploadError(remote, file_path, "Upload timed out after 1 hour")
-        except RcloneUploadError:
-            raise
-        except Exception as exc:
-            raise RcloneUploadError(remote, file_path, str(exc)) from exc
-        finally:
-            config_path_file = Path(config_path) if config_path else None
-            if config_path_file and config_path_file.exists():
-                try:
-                    config_path_file.unlink()
-                except OSError:
-                    pass
+                logger.info("☁️ Rclone upload [PARALLEL SAFE] → %s:%s/%s", remote, remote_path, safe_name)
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                _, stderr = await asyncio.wait_for(proc.communicate(), timeout=3600)
+                if proc.returncode != 0:
+                    err = stderr.decode(errors="ignore").strip()
+                    raise RcloneUploadError(remote, file_path, err[:300])
+            except asyncio.TimeoutError:
+                raise RcloneUploadError(remote, file_path, "Upload timed out after 1 hour")
+            except RcloneUploadError:
+                raise
+            except Exception as exc:
+                raise RcloneUploadError(remote, file_path, str(exc)) from exc
+            finally:
+                config_path_file = Path(config_path) if config_path else None
+                if config_path_file and config_path_file.exists():
+                    try:
+                        config_path_file.unlink()
+                    except OSError:
+                        pass
 
-        # Build public URL from remote config
-        cdn_base = config.get("cdn_base_url", "")
-        cloud_url = f"{cdn_base}/{safe_name}" if cdn_base else ""
-        logger.info("✅ Rclone upload complete: %s", safe_name)
-        return cloud_url
+            # Build public URL from remote config
+            cdn_base = config.get("cdn_base_url", "")
+            cloud_url = f"{cdn_base}/{safe_name}" if cdn_base else ""
+            logger.info("✅ Rclone upload complete: %s", safe_name)
+            return cloud_url
 
     # ------------------------------------------------------------------ #
     # Persistent storage record + secure link generation                   #
