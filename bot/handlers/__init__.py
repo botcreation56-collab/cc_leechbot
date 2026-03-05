@@ -17,7 +17,6 @@ from .admin import (
     handle_storage_stats,
     handle_admin_find_user, handle_admin_ban_user,
     handle_admin_unban_user, handle_admin_upgrade_user,
-    handle_admin_rclone, handle_admin_add_rclone, handle_admin_add_rclone_wizard,
     handle_admin_terabox, handle_terabox_stats,
     handle_admin_set_log_channel, handle_admin_set_dump_channel,
     handle_admin_set_storage_channel, handle_admin_set_force_sub_channel,
@@ -43,11 +42,11 @@ from .broadcast import (
 
 # --- Cloud / Rclone / Terabox ------------------------------------------------
 from .cloud import (
+    handle_admin_rclone, handle_admin_add_rclone, handle_admin_add_rclone_wizard,
     handle_list_rclone_remotes, handle_test_rclone,
     handle_test_rclone_actual, handle_disable_rclone,
     handle_terabox_setup_key, handle_terabox_test, handle_terabox_disable,
     rclone_service_callback, rclone_plan_callback, rclone_users_callback,
-    handle_configure_rclone, start_rclone_wizard,
     rclone_command, rclone_text_input,
     terabox_command, terabox_text_input,
 )

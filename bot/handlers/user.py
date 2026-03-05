@@ -223,7 +223,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             handle_edit_plan, handle_add_shortener, handle_edit_force_subs,
             handle_broadcast_compose, handle_broadcast_stats, handle_broadcast_cancel,
             handle_admin_add_rclone, handle_admin_add_rclone_wizard, handle_list_rclone_remotes,
-            handle_test_rclone_actual, handle_disable_rclone, handle_configure_rclone,
+            handle_test_rclone_actual, handle_disable_rclone, handle_admin_rclone,
             handle_terabox_setup_key, handle_terabox_test, handle_terabox_stats,
             handle_terabox_disable, handle_set_max_filesize, handle_cleanup_old_files,
             handle_storage_stats, handle_admin_fsub_req_toggle, handle_us_dest_add,
@@ -385,7 +385,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elif data == "disable_rclone":
                 await handle_disable_rclone(update, context)
             elif data == "configure_rclone":
-                await handle_configure_rclone(update, context)
+                await handle_admin_rclone(update, context)
 
             # ── Terabox ──
             elif data == "terabox_setup_key":
