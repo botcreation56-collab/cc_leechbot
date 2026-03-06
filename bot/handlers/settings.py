@@ -285,6 +285,30 @@ async def handle_edit_file_expiry(update: Update, context: ContextTypes.DEFAULT_
         logger.error(f"❌ Error: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
 
+async def handle_edit_tos(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Edit Terms of Service string"""
+    try:
+        await update.callback_query.message.reply_text(
+            "📜 **Edit Terms of Service**\n\nSend the new Terms of Service text.\n\nYou can use HTML formatting tags like `<b>` and `<p>`.\n\nUse /cancel to abort.",
+            parse_mode="Markdown"
+        )
+        context.user_data["awaiting"] = "edit_tos"
+    except Exception as e:
+        logger.error(f"❌ Error: {e}", exc_info=True)
+        await update.callback_query.answer(f"❌ Error", show_alert=True)
+
+async def handle_edit_upgrade_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Edit custom text for User Upgrades"""
+    try:
+        await update.callback_query.message.reply_text(
+            "💎 **Edit Upgrade Text**\n\nSend the text shown when users attempt to upgrade and you want them to contact you.\n\nYou can use HTML formatting tags like `<b>` and `<p>`.\n\nUse /cancel to abort.",
+            parse_mode="Markdown"
+        )
+        context.user_data["awaiting"] = "edit_upgrade_text"
+    except Exception as e:
+        logger.error(f"❌ Error: {e}", exc_info=True)
+        await update.callback_query.answer(f"❌ Error", show_alert=True)
+
 async def handle_edit_force_subs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Alias for force sub management"""
     from bot.handlers.admin import handle_admin_set_force_sub_channel
@@ -349,6 +373,8 @@ async def handle_config_edit_input(update: Update, context: ContextTypes.DEFAULT
         "edit_parallel":        "parallel_limit",
         "edit_max_filesize":    "max_filesize_gb",
         "edit_file_expiry":     "file_expiry_days",
+        "edit_tos":             "tos_text",
+        "edit_upgrade_text":    "upgrade_text",
     }
 
     try:

@@ -453,7 +453,13 @@ async def upload_and_send_file(
             f"🔗 **Download Here:** {cloud_url}\n\n"
             f"⏰ Expires in {retention_days} days."
         )
-        keyboard = [[InlineKeyboardButton("📥 Download Now", url=cloud_url)]]
+        keyboard = [
+            [InlineKeyboardButton("📥 Download Now", url=cloud_url)],
+            [
+                InlineKeyboardButton("📺 VLC Player", url=f"vlc://{cloud_url}"),
+                InlineKeyboardButton("📱 MX Player", url=f"intent:{cloud_url}#Intent;package=com.mxtech.videoplayer.ad;S.title={filename};end")
+            ]
+        ]
 
         for attempt in range(3):
             try:

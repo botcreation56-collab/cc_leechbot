@@ -219,6 +219,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             handle_edit_watermark, handle_edit_support_contact, handle_edit_help_text,
             handle_edit_site_name, handle_edit_site_description, handle_edit_support_channel,
             handle_edit_parallel_limit, handle_edit_max_filesize, handle_edit_file_expiry,
+            handle_edit_tos, handle_edit_upgrade_text,
             handle_edit_plan, handle_add_shortener, handle_edit_force_subs,
             handle_broadcast_compose, handle_broadcast_stats, handle_broadcast_cancel,
             handle_admin_add_rclone, handle_admin_add_rclone_wizard, handle_list_rclone_remotes,
@@ -341,6 +342,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await handle_edit_support_contact(update, context)
             elif data == "edit_help_text":
                 await handle_edit_help_text(update, context)
+            elif data == "edit_tos":
+                await handle_edit_tos(update, context)
+            elif data == "edit_upgrade_text":
+                await handle_edit_upgrade_text(update, context)
             elif data == "edit_site_name":
                 await handle_edit_site_name(update, context)
             elif data == "edit_site_desc":
@@ -1944,17 +1949,26 @@ async def handle_callback_support(update: Update, context: ContextTypes.DEFAULT_
         query = update.callback_query
         await query.answer()
         config = await get_config() or {}
-        support_channel = config.get("support_channel") or config.get("channels", {}).get("support")
-        contact = config.get("support_contact", "")
-        text = (
-            "💬 **Support**\n\n"
-            f"{'Channel: ' + support_channel if support_channel else ''}"
-            f"{'\\n' if support_channel and contact else ''}"
-            f"{'Contact: ' + contact if contact else ''}"
-        ).strip() or "💬 **Support**\n\nPlease contact the admin for help."
+        
+        # Check for custom upgrade text
+        upgrade_text = config.get("upgrade_text")
+        if upgrade_text:
+            text = upgrade_text.replace("<p>", "\n\n").replace("</p>", "").strip()
+            parse_mode = "HTML"
+        else:
+            support_channel = config.get("support_channel") or config.get("channels", {}).get("support")
+            contact = config.get("support_contact", "")
+            text = (
+                "💬 **Support & Upgrades**\n\n"
+                f"{'Channel: ' + support_channel if support_channel else ''}"
+                f"{'\\n' if support_channel and contact else ''}"
+                f"{'Contact: ' + contact if contact else ''}"
+            ).strip() or "💬 **Support**\n\nPlease contact the admin for help."
+            parse_mode = "Markdown"
+            
         await query.message.edit_text(
             text,
-            parse_mode="Markdown",
+            parse_mode=parse_mode,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="start")]])
         )
     except Exception as e:

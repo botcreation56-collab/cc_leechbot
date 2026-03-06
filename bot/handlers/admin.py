@@ -240,6 +240,10 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [
                 InlineKeyboardButton("🗄️ File Size", callback_data="admin_filesize"),
                 InlineKeyboardButton("📋 Logs", callback_data="admin_logs")
+            ],
+            [
+                InlineKeyboardButton("📜 Terms of Service", callback_data="edit_tos"),
+                InlineKeyboardButton("💎 Upgrade Text", callback_data="edit_upgrade_text")
             ]
         ])
 
@@ -1091,12 +1095,9 @@ async def handle_admin_fsub_remove(update: Update, context: ContextTypes.DEFAULT
 async def handle_admin_remove_log(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Remove log channel from config"""
     try:
+        from bot.database import remove_channel_config, get_config, update_config
+        await remove_channel_config("log", admin_id=update.effective_user.id)
         config = await get_config() or {}
-        channels = config.get("channels", {})
-        if "log" in channels:
-            channels.pop("log")
-        config["channels"] = channels
-        # Clear legacy key too
         config.pop("log_channel_id", None)
         await update_config(config, admin_id=update.effective_user.id)
         await update.callback_query.answer("✅ Log channel removed", show_alert=True)
@@ -1108,12 +1109,9 @@ async def handle_admin_remove_log(update: Update, context: ContextTypes.DEFAULT_
 async def handle_admin_remove_dump(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Remove dump channel from config"""
     try:
+        from bot.database import remove_channel_config, get_config, update_config
+        await remove_channel_config("dump", admin_id=update.effective_user.id)
         config = await get_config() or {}
-        channels = config.get("channels", {})
-        if "dump" in channels:
-            channels.pop("dump")
-        config["channels"] = channels
-        # Clear legacy key too
         config.pop("dump_channel_id", None)
         await update_config(config, admin_id=update.effective_user.id)
         await update.callback_query.answer("✅ Dump channel removed", show_alert=True)
@@ -1125,12 +1123,9 @@ async def handle_admin_remove_dump(update: Update, context: ContextTypes.DEFAULT
 async def handle_admin_remove_storage(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Remove storage channel from config"""
     try:
+        from bot.database import remove_channel_config, get_config, update_config
+        await remove_channel_config("storage", admin_id=update.effective_user.id)
         config = await get_config() or {}
-        channels = config.get("channels", {})
-        if "storage" in channels:
-            channels.pop("storage")
-        config["channels"] = channels
-        # Clear legacy key too
         config.pop("storage_channel_id", None)
         await update_config(config, admin_id=update.effective_user.id)
         await update.callback_query.answer("✅ Storage channel removed", show_alert=True)
@@ -1516,22 +1511,10 @@ async def handle_admin_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
 
 async def handle_admin_shorteners(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Shortener management placeholder (future feature)"""
+    """Route Link Shorteners admin request to the main handler."""
     try:
-        query = update.callback_query
-        await query.answer()
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_back")]])
-        await query.message.edit_text(
-            "🔗 **URL Shorteners**\n\n"
-            "Shortener integration is not yet configured.\n\n"
-            "You can add API keys for services like:\n"
-            "• bit.ly\n"
-            "• cutt.ly\n"
-            "• tinyurl\n\n"
-            "_Feature coming soon._",
-            parse_mode="Markdown",
-            reply_markup=keyboard
-        )
+        from bot.handlers.user import show_shorteners_menu
+        await show_shorteners_menu(update, context)
     except Exception as e:
         logger.error(f"❌ Error in handle_admin_shorteners: {e}")
         await update.callback_query.answer("❌ Error", show_alert=True)
