@@ -1162,11 +1162,20 @@ class WizardHandler:
                 f"✅ **Processing Complete!**\n\n"
                 f"📄 File: `{custom_name}`\n"
             )
+            keyboard = []
             if stream_url:
-                final_text += f"🔗 Stream Link: {stream_url}\n\n⚠️ **Note**: If the file stream is not playable, please use an external player like MX Player, PlayIt, or VLC. Alternatively, use the Download button. Download speed restrictions remain unchanged."
-                
+                final_text += f"🔗 Stream Link: {stream_url}\n\n⚠️ **Note**: If the file stream is not playable, please use an external player like MX Player or VLC."
+                keyboard = [
+                    [
+                        InlineKeyboardButton("📺 VLC Player", url=f"vlc://{stream_url}"),
+                        InlineKeyboardButton("📱 MX Player", url=f"intent:{stream_url}#Intent;package=com.mxtech.videoplayer.ad;S.title={custom_name};end")
+                    ]
+                ]
+
+            reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
+            
             if query:
-                await query.edit_message_text(final_text, parse_mode="Markdown")
+                await query.edit_message_text(final_text, parse_mode="Markdown", reply_markup=reply_markup)
                 # Silently delete the wizard panel after a short grace period
                 import asyncio
                 async def _cleanup_msg():
@@ -1177,7 +1186,7 @@ class WizardHandler:
                         pass
                 asyncio.create_task(_cleanup_msg())
             else:
-                await bot.send_message(user_id, text=final_text, parse_mode="Markdown")
+                await bot.send_message(user_id, text=final_text, parse_mode="Markdown", reply_markup=reply_markup)
             
             # 7. Cleanup
             Path(input_path).unlink(missing_ok=True)
