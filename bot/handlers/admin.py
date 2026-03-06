@@ -188,7 +188,10 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         admin_ids = get_admin_ids()
         role = db_user.get("role", "user")
 
+        logger.info(f"🕵️ Admin Command Check: user={user_id} | role={role} | admins={admin_ids}")
+
         if role != "admin" and user_id not in admin_ids:
+            logger.warning(f"🚫 Admin Command Denied: user={user_id} | role={role} | admins={admin_ids}")
             text = "🚫 **Access Denied**\n\nYou are not an admin."
             if is_callback:
                 await message.edit_text(text, parse_mode="Markdown")

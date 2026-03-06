@@ -705,15 +705,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ── Static Files ───────────────────────────────────────────
-static_dir = project_root / "web" / "static"
-if static_dir.exists():
-    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
-    # Also mount pages for direct access to .html files without /static prefix
-    pages_dir = static_dir / "pages"
-    if pages_dir.exists():
-        app.mount("/", StaticFiles(directory=str(pages_dir), html=True), name="pages")
-
 # ── CORS ─────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
@@ -761,11 +752,16 @@ async def health():
         except Exception:
             pass
     status = "healthy" if db_ok else "degraded"
+    
+    # Debug: Check admin access stats or logs if needed
+    admin_ids = get_admin_ids()
+    
     return {
         "status": status,
         "bot_ready": bot_application is not None,
         "bot_username": settings.BOT_USERNAME,
-        "bot_link": settings.BOT_LINK
+        "bot_link": settings.BOT_LINK,
+        "admin_count": len(admin_ids)
     }
 
 

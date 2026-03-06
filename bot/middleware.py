@@ -45,8 +45,10 @@ def admin_only(func: Callable) -> Callable:
             user_id = update.effective_user.id
             admin_ids = get_admin_ids()
 
+            logger.info(f"🕵️ Admin check: user={user_id} | admins={admin_ids}")
+
             if user_id not in admin_ids:
-                logger.warning(f"🚫 Unauthorized admin access: {user_id}")
+                logger.warning(f"🚫 Unauthorized admin access: {user_id} (not in {admin_ids})")
                 if update.message:
                     await update.message.reply_text(
                         "⛔ You don't have permission to use this command."
