@@ -157,23 +157,7 @@ async def _require_channels_setup(update: Update, context: ContextTypes.DEFAULT_
             await query.message.reply_text(setup_text, reply_markup=setup_keyboard, parse_mode="Markdown")
     return False
 
-def get_admin_ids() -> List[int]:
-    """Get admin IDs with proper error handling"""
-    try:
-        from config.settings import get_admin_ids as settings_get_admin_ids
-        admin_ids = settings_get_admin_ids()
-        if not admin_ids:
-            logger.warning("⚠️ ADMIN_IDS is empty from settings")
-            return []
-        return admin_ids
-    except Exception as e:
-        logger.error(f"❌ Failed to get admin IDs: {e}")
-        import os
-        admin_str = os.getenv("ADMIN_IDS", "")
-        try:
-            return [int(x.strip()) for x in admin_str.split(",") if x.strip()]
-        except:
-            return []
+# Removing local get_admin_ids shadow
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Main admin panel entry point - Responsive"""
@@ -200,6 +184,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await message.reply_text(text)
             return
 
+        from config.settings import get_admin_ids
         admin_ids = get_admin_ids()
         role = db_user.get("role", "user")
 

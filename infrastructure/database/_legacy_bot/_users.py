@@ -36,9 +36,11 @@ async def create_user(user_id: int, first_name: str, username: str = "") -> Dict
         logger.info("   User not found, creating new document...")
 
         try:
-            from config.settings import get_settings
-            is_admin = user_id in get_settings().ADMIN_IDS
-        except Exception:
+            from config.settings import get_admin_ids
+            admin_ids = get_admin_ids()
+            is_admin = user_id in admin_ids
+        except Exception as e:
+            logger.error(f"Error checking admin status: {e}")
             is_admin = False
 
         user_doc = {

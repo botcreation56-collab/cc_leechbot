@@ -239,7 +239,9 @@ async def download_from_mega(
     from bot.database import get_db
     mega_email = ""
     mega_password = ""
-    if user_id in settings.ADMIN_IDS or user_id == int(str(settings.ADMIN_IDS).split(",")[0] if isinstance(settings.ADMIN_IDS, str) else settings.ADMIN_IDS[0]):
+    from config.settings import get_admin_ids
+    admin_ids = get_admin_ids()
+    if user_id in admin_ids:
         try:
             db_inst = get_db()
             mega_conf = await db_inst.rclone_configs.find_one({"user_id": user_id, "service": "mega"})
