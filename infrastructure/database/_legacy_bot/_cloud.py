@@ -68,12 +68,26 @@ async def get_user_cloud_files(user_id: int, limit: int = 50) -> List[Dict[str, 
 
 
 async def cleanup_old_cloud_files() -> Dict[str, int]:
-    """Remove expired cloud file metadata from database."""
+    """Remove expired cloud file metadata and their tracking URLs from database."""
     try:
         db = get_db()
-        result = await db.cloud_files.delete_many({"expiry_date": {"$lt": datetime.utcnow()}})
+        now = datetime.utcnow()
+        
+        # 1. Find all expired files first
+        expired = await db.cloud_files.find({"expiry_date": {"$lt": now}}, {"file_id": 1}).to_list(None)
+        expired_ids = [doc["file_id"] for doc in expired if "file_id" in doc]
+        
+        if not expired_ids:
+            return {"deleted_count": 0, "errors": 0}
+
+        # 2. Delete the actual cloud files
+        result = await db.cloud_files.delete_many({"file_id": {"$in": expired_ids}})
         deleted_count = result.deleted_count
-        logger.info(f"Cleanup completed: {deleted_count} expired cloud files removed from database")
+        
+        # 3. Clean up the tracked links duplicate schemas
+        await db.tracked_links.delete_many({"file_id": {"$in": expired_ids}})
+        
+        logger.info(f"Cleanup completed: {deleted_count} expired cloud files and tracked links removed")
         return {"deleted_count": deleted_count, "errors": 0}
     except Exception as e:
         logger.error(f"Cleanup old cloud files failed: {e}", exc_info=True)
@@ -81,15 +95,20 @@ async def cleanup_old_cloud_files() -> Dict[str, int]:
 
 
 async def delete_expired_cloud_files() -> int:
-    """Delete all expired cloud files and return count removed."""
+    """Delete all expired cloud files and tracked links, return count removed."""
     try:
         db = get_db()
         now = datetime.utcnow()
-        expired = await db.cloud_files.find({"expiry_date": {"$lt": now}}).to_list(None)
-        count = len(expired)
+        
+        expired = await db.cloud_files.find({"expiry_date": {"$lt": now}}, {"file_id": 1}).to_list(None)
+        expired_ids = [doc["file_id"] for doc in expired if "file_id" in doc]
+        count = len(expired_ids)
+        
         if count > 0:
-            await db.cloud_files.delete_many({"expiry_date": {"$lt": now}})
-            logger.info(f"✅ Deleted {count} expired files")
+            await db.cloud_files.delete_many({"file_id": {"$in": expired_ids}})
+            await db.tracked_links.delete_many({"file_id": {"$in": expired_ids}})
+            logger.info(f"✅ Deleted {count} expired files and tracked links")
+            
         return count
     except Exception as e:
         logger.error(f"❌ Delete expired failed: {e}")

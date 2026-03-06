@@ -282,11 +282,11 @@ async def process_file_task(context: ContextTypes.DEFAULT_TYPE):
 
     # 2. Upload + Send
     from bot.services import upload_and_send_file
-    from bot.database import get_user
+    from bot.database import get_user, get_channel_id
     
     user = await get_user(user_id)
     config = await get_config()
-    dump_channel = config.get("dump_channel_id")
+    dump_channel = await get_channel_id("dump") or config.get("dump_channel_id")
 
     visibility = user.get("settings", {}).get("visibility", "public")
 
@@ -662,17 +662,15 @@ async def handle_us_thumbnail(update: Update, context: ContextTypes.DEFAULT_TYPE
         user["settings"] = settings
         await update_user(user_id, user)
         
-        await update.message.reply_text(
-            "✅ **Custom Thumbnail Saved**\n\n"
-            "Your thumbnail has been securely stored!\n\n"
-            "It will be used for all your processed files.",
-            parse_mode="Markdown"
-        )
-        
         context.user_data.pop("awaiting", None)
         
         await log_user_update(context.bot, user_id, "set custom thumbnail")
         logger.info(f"✅ User {user_id} set custom thumbnail: {final_file_id}")
+        
+        # Call ussettings_command to display the new thumbnail with the settings menu
+        from bot.handlers import ussettings_command
+        await ussettings_command(update, context, photo_file_id=final_file_id)
+
         
     except Exception as e:
         logger.error(f"❌ Thumbnail upload error: {e}", exc_info=True)

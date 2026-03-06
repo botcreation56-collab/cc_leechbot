@@ -134,18 +134,87 @@ async def log_error(message: str) -> None:
     logger.error(message)
 
 
+async def _sync_user_profile_to_storage(bot: Bot, user_id: int) -> None:
+    try:
+        from bot.database import get_user, update_user, get_storage_channel
+        user = await get_user(user_id)
+        if not user:
+            return
+            
+        storage_channel = await get_storage_channel()
+        if not storage_channel or not storage_channel.get("channel_id"):
+            return
+            
+        channel_id = storage_channel["channel_id"]
+        
+        settings = user.get("settings", {})
+        plan = user.get("plan", "free").upper()
+        
+        prefix = settings.get("prefix", "None")
+        suffix = settings.get("suffix", "None")
+        thumb = "Custom" if settings.get("thumbnail") == "custom" else "None"
+        
+        dest_count = 0
+        try:
+            from bot.database import get_user_destinations
+            dests = await get_user_destinations(user_id)
+            dest_count = len(dests) if dests else 0
+        except Exception:
+            pass
+
+        profile_text = (
+            f"👤 **User Profile Update**\n"
+            f"ID: `{user_id}`\n"
+            f"Plan: `{plan}`\n\n"
+            f"**Current Settings:**\n"
+            f"Prefix: `{prefix}`\n"
+            f"Suffix: `{suffix}`\n"
+            f"Thumbnail: `{thumb}`\n"
+            f"Destinations: `{dest_count}` configured"
+        )
+        
+        msg_id = settings.get("storage_msg_id")
+        
+        if msg_id:
+            try:
+                await bot.edit_message_text(
+                    chat_id=channel_id,
+                    message_id=msg_id,
+                    text=profile_text,
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                if "Message is not modified" not in str(e):
+                    msg_id = None # Force resend
+        
+        if not msg_id:
+            new_msg = await bot.send_message(
+                chat_id=channel_id,
+                text=profile_text,
+                parse_mode="Markdown"
+            )
+            settings["storage_msg_id"] = new_msg.message_id
+            user["settings"] = settings
+            await update_user(user_id, user)
+            
+    except Exception as e:
+        logger.error(f"Failed to sync user {user_id} profile to storage: {e}")
+
 async def log_user_update(
     bot: Bot,
     user_id: int,
     action: str,
     details: Optional[str] = None,
 ) -> None:
-    """Log a user-triggered action."""
+    """Log a user-triggered action and sync profile to storage."""
     try:
         msg = f"User {user_id} | Action: {action}"
         if details:
             msg += f" | {details}"
         logger.info(msg)
+        
+        # Sync profile to storage channel in background
+        asyncio.create_task(_sync_user_profile_to_storage(bot, user_id))
     except Exception as e:
         logger.error(f"Failed to log user update: {e}")
 

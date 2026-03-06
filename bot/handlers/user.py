@@ -178,13 +178,12 @@ async def handle_add_shortener(update: Update, context: ContextTypes.DEFAULT_TYP
     try:
         await update.callback_query.message.reply_text(
             "🔗 **Add Link Shortener**\n\n"
-            "Send shortener details in this format:\n\n"
-            "`domain.com|your_api_key`\n\n"
-            "Example:\n`bit.ly|abc123xyz`\n\nUse /cancel to abort.",
+            "Step 1: **Send your API key** for the shortener.\n\n"
+            "Use /cancel to abort.",
             parse_mode="Markdown"
         )
-        context.user_data["awaiting"] = "add_shortener"
-        logger.info("✅ Add shortener prompt shown")
+        context.user_data["awaiting"] = "add_shortener_api"
+        logger.info("✅ Add shortener API prompt shown")
     except Exception as e:
         logger.error(f"❌ Error: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
@@ -483,11 +482,11 @@ async def generate_cloud_link(update: Update, context: ContextTypes.DEFAULT_TYPE
         if plan != "pro":
             try:
                 from bot.services import LinkShortener
-                shortened = await LinkShortener.shorten_url(raw_cloud_url)
+                shortened = await LinkShortener.track_and_shorten(file_id, user_id, raw_cloud_url)
                 if shortened:
                     display_cloud_url = shortened
             except Exception as e:
-                logger.error(f"Failed to apply shortener: {e}")
+                logger.error(f"Failed to apply tracking shortener: {e}")
 
         keyboard = [
             [InlineKeyboardButton("👁️ Watch", url=display_cloud_url),
@@ -1021,6 +1020,7 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         if awaiting.startswith("rclone_"):
+            from bot.handlers.cloud import rclone_text_input
             await rclone_text_input(update, context)
             return
 
@@ -1029,7 +1029,7 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         # BUG-10 FIX: edit_* config states were being discarded (fell through to warning)
-        if awaiting.startswith("edit_") or awaiting == "add_shortener":
+        if awaiting.startswith("edit_") or awaiting.startswith("add_shortener"):
             await handle_config_edit_input(update, context, awaiting)
             return
 

@@ -87,27 +87,31 @@ class LinkShortener:
 
     @staticmethod
     async def shorten_url(long_url: str) -> Optional[str]:
-        """Shorten a URL using the active shortener from config."""
+        """Shorten a URL using the active shortener from config, or TinyURL fallback."""
         try:
             import aiohttp
             from bot.database import get_config
+            from bot.services._link_shortener import CloudLinkGenerator
+
+            # Default fallback behaviour
+            async def _fallback():
+                logger.info("Using TinyURL fallback for LinkShortener")
+                return await CloudLinkGenerator.shorten_link(long_url, "tinyurl")
 
             config = await get_config()
             if not config:
-                logger.error("❌ No config found for shortener")
-                return None
+                return await _fallback()
 
             shorteners = config.get("link_shorteners", [])
             active_shortener = next((s for s in shorteners if s.get("active")), None)
 
             if not active_shortener:
-                logger.warning("⚠️ No active shortener configured")
-                return None
+                return await _fallback()
 
             domain = active_shortener.get("domain")
             api_key = active_shortener.get("api_key")
             if not domain or not api_key:
-                return None
+                return await _fallback()
 
             encoded_url = urllib.parse.quote(long_url)
             api_url = f"https://{domain}/api?api={api_key}&url={encoded_url}"
@@ -121,10 +125,75 @@ class LinkShortener:
                         logger.warning(f"⚠️ Unknown response format from {domain}: {data}")
                     else:
                         logger.error(f"❌ Shortener API failed: {response.status}")
-            return None
+            
+            # If the API request failed or returned unknown format, also fallback
+            return await _fallback()
+            
         except Exception as e:
             logger.error(f"❌ Shortener error: {e}")
-            return None
+            from bot.services._link_shortener import CloudLinkGenerator
+            return await CloudLinkGenerator.shorten_link(long_url, "tinyurl")
+
+    @staticmethod
+    async def track_and_shorten(file_id: str, user_id: int, master_url: str) -> Optional[str]:
+        """
+        Duplicate the master URL for tracking, shorten it, and log the relationship to MongoDB.
+        """
+        try:
+            import uuid
+            from datetime import datetime
+            
+            # 1. Create duplicate tracking URL
+            hash_id = uuid.uuid4().hex[:6]
+            separator = "&" if "?" in master_url else "?"
+            duplicate_url = f"{master_url}{separator}ref=user_{user_id}&hash={hash_id}"
+            
+            # 2. Shorten the duplicate URL
+            shortened_url = await LinkShortener.shorten_url(duplicate_url)
+            if not shortened_url:
+                return None
+                
+            # 3. Detect which service was used
+            from bot.database import get_config
+            config = await get_config()
+            service_domain = "tinyurl.com"
+            if config:
+                shorteners = config.get("link_shorteners", [])
+                active_shortener = next((s for s in shorteners if s.get("active")), None)
+                if active_shortener and active_shortener.get("domain"):
+                    service_domain = active_shortener.get("domain")
+                    
+            if service_domain not in shortened_url and "tinyurl" in shortened_url:
+                service_domain = "tinyurl.com"
+
+            # 4. Save to MongoDB
+            from bot.database import get_db
+            db = get_db()
+            
+            tracking_doc = {
+                "file_id": file_id,
+                "user_id": user_id,
+                "urls": {
+                    "master_url": master_url,
+                    "duplicate_url": duplicate_url,
+                    "shortened_url": shortened_url
+                },
+                "shortener_service": service_domain,
+                "status": {
+                    "is_active": True,
+                    "clicks": 0,
+                    "last_checked_available": datetime.utcnow()
+                },
+                "created_at": datetime.utcnow()
+            }
+            
+            await db.tracked_links.insert_one(tracking_doc)
+            logger.info(f"✅ Tracked new link for user {user_id} -> {service_domain}")
+            
+            return shortened_url
+        except Exception as e:
+            logger.error(f"❌ Error in track_and_shorten: {e}")
+            return await LinkShortener.shorten_url(master_url)
 
     @staticmethod
     async def get_verification_link(user_id: int) -> str:

@@ -373,7 +373,7 @@ async def upload_and_send_file(
     from bot.database import (
         store_cloud_file_metadata, delete_expired_cloud_files,
         get_config, pick_rclone_config_for_plan, delete_from_rclone,
-        get_user_destinations,
+        get_user_destinations, get_channel_id
     )
     from bot.services._file_processing import split_file, cleanup_split_files
 
@@ -386,7 +386,7 @@ async def upload_and_send_file(
     file_size_mb = file_size_bytes / (1024 * 1024)
 
     config = await get_config()
-    dump_channel_id = config.get("dump_channel_id")
+    dump_channel_id = await get_channel_id("dump") or config.get("dump_channel_id")
     rclone_config = await pick_rclone_config_for_plan(user_plan)
 
     max_tg_mb = 4000 if user_plan == "pro" else 2000

@@ -226,7 +226,9 @@ async def error_handler(update: Optional[Update], context: ContextTypes.DEFAULT_
 
         # Log to channel
         try:
-            log_channel_id = settings.LOG_CHANNEL_ID
+            from bot.database import get_channel_id
+            db_log_channel = await get_channel_id("log")
+            log_channel_id = db_log_channel if db_log_channel else settings.LOG_CHANNEL_ID
             if log_channel_id and context.bot:
                 report = (
                     f"🔴 **ERROR REPORT**\n\n"
@@ -244,23 +246,28 @@ async def error_handler(update: Optional[Update], context: ContextTypes.DEFAULT_
         except Exception as ch_err:
             logger.error(f"Failed to send error to log channel: {ch_err}")
 
-        # DM first admin
+        # DM admins
         try:
             admin_ids = get_admin_ids()
             if admin_ids and context.bot:
+                user_link = f"[{user_id}](tg://user?id={user_id})" if user_id else "`System`"
                 alert = (
                     f"⚠️ **Bot Error Alert**\n\n"
                     f"Type: `{error_type}`\n"
-                    f"User: `{user_id}`\n"
+                    f"User: {user_link}\n"
                     f"Time: `{timestamp}`\n\n"
                     f"Message: `{error_msg[:200]}`\n\n"
                     f"_Check log channel for full details_"
                 )
-                await context.bot.send_message(
-                    chat_id=admin_ids[0],
-                    text=alert,
-                    parse_mode="Markdown",
-                )
+                for admin_id in admin_ids:
+                    try:
+                        await context.bot.send_message(
+                            chat_id=admin_id,
+                            text=alert,
+                            parse_mode="Markdown",
+                        )
+                    except Exception:
+                        pass
         except Exception:
             pass
 

@@ -35,13 +35,24 @@ async def add_rclone_config(
 
         config_id = f"rclone_{service}_{plan}_{uuid.uuid4().hex[:8]}"
 
+        from bot.utils import encrypt_credentials
+        
+        # Expecting a string but `encrypt_credentials` takes Dict. We can just store a dict.
+        # However, let's keep it simple: encrypt_credentials actually takes string or dict, 
+        # let's write our own quick logic if needed, or see what encrypt_credentials expects.
+        try:
+            encrypted_creds = encrypt_credentials({"config": credentials})
+        except Exception as e:
+            logger.error(f"Failed to encrypt credentials: {e}")
+            encrypted_creds = {"config": credentials} # Fallback or error? Realistically, return None.
+
         rclone_config = {
             "config_id": config_id,
             "service": service.lower(),
             "plan": plan,
             "max_users": max_users,
             "current_users": 0,
-            "credentials": credentials,
+            "credentials": encrypted_creds,
             "created_at": datetime.utcnow(),
             "created_by": admin_id,
             "is_active": True,

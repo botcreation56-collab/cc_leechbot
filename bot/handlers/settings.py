@@ -383,38 +383,53 @@ async def handle_config_edit_input(update: Update, context: ContextTypes.DEFAULT
             else:
                 await update.message.reply_text("❌ Failed to save config. Please try again.")
 
-        elif state == "add_shortener":
-            # Expected format: domain.com|api_key
-            parts = text.split("|", 1)
-            if len(parts) != 2:
-                await update.message.reply_text(
-                    "❌ **Invalid Format**\n\n"
-                    "Use: `domain.com|your_api_key`\n"
-                    "Example: `bit.ly|abc123xyz`",
-                    parse_mode="Markdown"
-                )
+        elif state == "add_shortener_api":
+            if len(text) < 5:
+                await update.message.reply_text("❌ API key seems too short. Try again.")
                 return
-            domain, api_key = parts[0].strip(), parts[1].strip()
+            context.user_data["temp_shortener_api"] = text
+            context.user_data["awaiting"] = "add_shortener_url"
+            await update.message.reply_text(
+                "🔗 **Step 2: Send Site Link**\n\n"
+                "Example: `https://gplinks.com/`\n\n"
+                "Use /cancel to abort.",
+                parse_mode="Markdown"
+            )
+            return
+
+        elif state == "add_shortener_url":
+            api_key = context.user_data.pop("temp_shortener_api", None)
+            if not api_key:
+                await update.message.reply_text("❌ Missing API key. Please start over.")
+                context.user_data.pop("awaiting", None)
+                return
+
+            domain = text.strip()
+            if not domain.startswith("http"):
+                domain = f"https://{domain}"
+
             from bot.database import set_config, get_config
             config = await get_config() or {}
             shorteners = config.get("shorteners", [])
             # Remove existing entry for same domain
-            shorteners = [s for s in shorteners if s.get("domain") != domain]
+            shorteners = [s for s in shorteners if s.get("domain") == domain]
             shorteners.append({"domain": domain, "api_key": api_key})
             ok = await set_config({"shorteners": shorteners})
             if ok:
                 await update.message.reply_text(
-                    f"✅ **Shortener Added**\n\nDomain: `{domain}`",
+                    f"✅ **Shortener Added**\n\nSite: `{domain}`",
                     parse_mode="Markdown"
                 )
                 await log_admin_action(user_id, "added_shortener", {"domain": domain})
             else:
                 await update.message.reply_text("❌ Failed to save shortener.")
+            
+            context.user_data.pop("awaiting", None)
+
         else:
             logger.warning(f"Unhandled config edit state: {state}")
             await update.message.reply_text("❌ Unknown config state. Please try again from the admin menu.")
-
-        context.user_data.pop("awaiting", None)
+            context.user_data.pop("awaiting", None)
 
     except Exception as e:
         logger.error(f"❌ Error in handle_config_edit_input (state={state}): {e}", exc_info=True)
@@ -462,7 +477,7 @@ async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
 
-async def ussettings_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def ussettings_command(update: Update, context: ContextTypes.DEFAULT_TYPE, photo_file_id: str = None) -> None:
     """User settings handler - displays settings menu"""
     try:
         # Check force subscription
@@ -538,13 +553,36 @@ async def ussettings_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
             f"💎 Plan: `{plan.upper()}`"
         )
 
-        if is_callback:
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        # If a photo ID is provided or if the user has a custom thumbnail, show it.
+        show_photo_id = photo_file_id
+        if not show_photo_id and not is_callback and settings.get("thumbnail") == "custom":
+            show_photo_id = settings.get("thumbnail_file_id")
+
+        if show_photo_id:
             try:
-                await message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-            except Exception:
-                await message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+                if is_callback:
+                    await message.delete()
+                await context.bot.send_photo(
+                    chat_id=user_id,
+                    photo=show_photo_id,
+                    caption=text,
+                    reply_markup=reply_markup,
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                logger.warning(f"Could not send settings photo: {e}")
+                # Fallback to text
+                await message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
         else:
-            await message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+            if is_callback:
+                try:
+                    await message.edit_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+                except Exception:
+                    await message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+            else:
+                await message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
 
         logger.info(f"✅ Settings menu shown to {user_id}")
 

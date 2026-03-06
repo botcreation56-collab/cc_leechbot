@@ -250,13 +250,29 @@ class UploadService:
             import tempfile
             import os
             from pathlib import Path
+            from bot.utils import decrypt_credentials
 
             config_path = None
             try:
                 # Bug Fix: Render/Docker containers lose /tmp or ~/.config files on restart.
                 # So, we write the securely DB-stored credentials to a temp file dynamically
                 # just for the duration of this rclone subprocess.
-                credentials = config.get("credentials", "")
+                enc_creds = config.get("credentials", "")
+                
+                credentials = ""
+                if isinstance(enc_creds, dict) and "config" in enc_creds:
+                    # It's an unencrypted dict (migration fallback if encryption failed)
+                    credentials = enc_creds["config"]
+                elif isinstance(enc_creds, str) and enc_creds.strip():
+                    # It's an encrypted string
+                    try:
+                        decrypted = decrypt_credentials(enc_creds)
+                        credentials = decrypted.get("config", "")
+                    except Exception as e:
+                        logger.error(f"Failed to decrypt rclone credentials: {e}")
+                else:
+                    credentials = str(enc_creds)
+
                 fd, config_path = tempfile.mkstemp(suffix=".conf", prefix="rclone_")
                 with os.fdopen(fd, 'w') as f:
                     f.write(credentials)
