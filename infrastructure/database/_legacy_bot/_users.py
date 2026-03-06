@@ -30,7 +30,15 @@ async def create_user(user_id: int, first_name: str, username: str = "") -> Dict
         logger.info("   Checking if user exists...")
         existing = await db.users.find_one({"telegram_id": user_id})
         if existing:
-            logger.info(f"✅ User already exists: {user_id}")
+            # Sync role if user is admin in settings but not in DB
+            try:
+                from config.settings import get_admin_ids
+                if user_id in get_admin_ids() and existing.get("role") != "admin":
+                    await db.users.update_one({"telegram_id": user_id}, {"$set": {"role": "admin"}})
+                    existing["role"] = "admin"
+                    logger.info(f"⬆️ Promoted existing user {user_id} to admin based on settings")
+            except Exception:
+                pass
             return existing
 
         logger.info("   User not found, creating new document...")

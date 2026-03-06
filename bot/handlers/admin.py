@@ -201,6 +201,18 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         # ─────────────────────────────────────────────────────────────
 
+        # Get updates channel from config
+        updates_ch = config.get("updates_channel")
+        if updates_ch:
+            if not updates_ch.startswith("http") and not updates_ch.startswith("@"):
+                updates_ch = f"@{updates_ch}"
+            if updates_ch.startswith("@"):
+                updates_url = f"https://t.me/{updates_ch[1:]}"
+            else:
+                updates_url = updates_ch
+        else:
+            updates_url = f"https://t.me/{settings.BOT_USERNAME or 'cc_leechbot'}"
+
         keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("👥 Users", callback_data="admin_users"),
@@ -229,6 +241,10 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [
                 InlineKeyboardButton("📜 Terms of Service", callback_data="edit_tos"),
                 InlineKeyboardButton("💎 Upgrade Text", callback_data="edit_upgrade_text")
+            ],
+            [
+                InlineKeyboardButton("📢 Updates Channel", callback_data="edit_updates_channel"),
+                InlineKeyboardButton("🔄 Telegram Redirect", url=updates_url)
             ]
         ])
 

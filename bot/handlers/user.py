@@ -11,6 +11,7 @@ from bot.database import (
     get_db,
     get_user,
     get_all_users,
+    get_config,
     ban_user,
     unban_user,
     update_user,
@@ -1392,6 +1393,7 @@ async def cancel_task_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             parse_mode="Markdown"
         )
 
+from bot.database import get_config
 async def unknown_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle unknown commands sent by users"""
     try:
@@ -1432,9 +1434,29 @@ async def unknown_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Build response message
         commands_list = "\n".join(available_commands)
 
+        # Get updates channel from config for the URL
+        config = await get_config() or {}
+        updates_ch = config.get("updates_channel")
+        if updates_ch:
+            if not updates_ch.startswith("http") and not updates_ch.startswith("@"):
+                updates_ch = f"@{updates_ch}"
+            if updates_ch.startswith("@"):
+                updates_url = f"https://t.me/{updates_ch[1:]}"
+            else:
+                updates_url = updates_ch
+        else:
+            updates_url = f"https://t.me/{settings.BOT_USERNAME or 'cc_leechbot'}"
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📢 Join Updates Channel", url=updates_url)]
+        ])
+
         await update.message.reply_text(
             f"❓ **Unknown command:** `{command}`\n\n"
-            f"**Available commands:**\n{commands_list}",
+            "I'm sorry, I don't recognize that command. "
+            "Here are the available commands:\n\n"
+            f"{commands_list}",
+            reply_markup=keyboard,
             parse_mode="Markdown"
         )
     except Exception as e:

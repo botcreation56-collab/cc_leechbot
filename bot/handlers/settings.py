@@ -309,6 +309,18 @@ async def handle_edit_upgrade_text(update: Update, context: ContextTypes.DEFAULT
         logger.error(f"❌ Error: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
 
+async def handle_edit_updates_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Edit updates channel link"""
+    try:
+        await update.callback_query.message.reply_text(
+            "📢 **Edit Updates Channel**\n\nSend your updates/news channel handle or link:\n\nFormat: `@yourchannel` or `https://t.me/yourchannel`\n\nUse /cancel to abort.",
+            parse_mode="Markdown"
+        )
+        context.user_data["awaiting"] = "edit_updates_channel"
+    except Exception as e:
+        logger.error(f"❌ Error: {e}", exc_info=True)
+        await update.callback_query.answer(f"❌ Error", show_alert=True)
+
 async def handle_edit_force_subs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Alias for force sub management"""
     from bot.handlers.admin import handle_admin_set_force_sub_channel
@@ -375,6 +387,7 @@ async def handle_config_edit_input(update: Update, context: ContextTypes.DEFAULT
         "edit_file_expiry":     "file_expiry_days",
         "edit_tos":             "tos_text",
         "edit_upgrade_text":    "upgrade_text",
+        "edit_updates_channel": "updates_channel",
     }
 
     try:
@@ -555,8 +568,23 @@ async def ussettings_command(update: Update, context: ContextTypes.DEFAULT_TYPE,
             [InlineKeyboardButton("🗑️ Remove", callback_data="us_remove"),
              InlineKeyboardButton("📂 My Files", callback_data="us_myfiles")
             ],
-            [InlineKeyboardButton("🔙 Back", callback_data="us_close")],
+            [
+                InlineKeyboardButton("📢 Updates Channel", url="https://t.me/cc_leechbot"),
+                InlineKeyboardButton("🔙 Back", callback_data="us_close")
+            ],
         ]
+
+        # Get updates channel from config for the URL
+        config = await get_config() or {}
+        updates_ch = config.get("updates_channel")
+        if updates_ch:
+            if not updates_ch.startswith("http") and not updates_ch.startswith("@"):
+                updates_ch = f"@{updates_ch}"
+            if updates_ch.startswith("@"):
+                updates_url = f"https://t.me/{updates_ch[1:]}"
+            else:
+                updates_url = updates_ch
+            keyboard[-1][0].url = updates_url
 
         # Get user settings
         settings = user.get("settings", {})
