@@ -18,6 +18,7 @@ import secrets
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
+import os
 
 from core.exceptions import RcloneUploadError, TelegramUploadError
 from core.security import TokenGenerator, sanitize_filename

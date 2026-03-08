@@ -13,7 +13,8 @@ Public API (unchanged — all callers continue to work):
 
 import logging
 from typing import Optional
-
+import datetime
+from datetime import datetime as dt_class # Fallback for `datetime.utcnow()`
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 logger = logging.getLogger("filebot.db.connection")

@@ -32,9 +32,18 @@ from bot.database import (
     get_admin_stats,
     create_task,
     update_task,
+    get_admin_logs, # Added
+    get_user_position, # Added
+    get_task, # Added
+    add_auto_rename_rule # Added
 )
-from bot.utils import log_info, log_error, log_user_update, validate_url
+from bot.utils import log_info, log_error, log_user_update, validate_url, format_size # Added format_size
 from bot.services import create_or_update_storage_message, FFmpegService
+from bot.keyboards import user_settings_keyboard, build_plans_keyboard # Added
+from bot.handlers.admin import handle_admin_list_users
+from bot.handlers.files import handle_url_input
+from bot.handlers.cloud import terabox_text_input
+from bot.handlers.settings import handle_config_edit_input, ussettings_command
 from config.constants import ERROR_MESSAGES, BROADCAST_RATE_LIMIT
 from config.settings import get_settings, get_admin_ids
 settings = get_settings()
@@ -503,7 +512,7 @@ async def generate_cloud_link(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         link_msg = (
             f"☁️ **Cloud Link Generated**\n\n"
-            f"`{cloud_url}`\n\n"
+            f"`{display_cloud_url}`\n\n"
             f"⏰ Expires in 7 days\n"
             f"📊 Views: 0"
         )

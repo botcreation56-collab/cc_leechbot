@@ -128,9 +128,14 @@ class QueueWorker:
                 except Exception as msg_err:
                     logger.warning(f"Could not notify user {user_id}: {msg_err}")
 
-                if task.get("task_type") == "file":
-                    from bot.handlers import execute_processing_flow_by_task
-                    await execute_processing_flow_by_task(self.bot, task)
+                task_type = task.get("type") or task.get("task_type")
+                if task_type in ["file", "upload"]:
+                    if "session" in task:
+                        from bot.handlers.files import WizardHandler
+                        await WizardHandler.process_session_background(self.bot, user_id, task["session"])
+                    else:
+                        from bot.handlers import execute_processing_flow_by_task
+                        await execute_processing_flow_by_task(self.bot, task)
 
                 await update_task(task_id, {"status": "completed", "completed_at": datetime.utcnow()})
 

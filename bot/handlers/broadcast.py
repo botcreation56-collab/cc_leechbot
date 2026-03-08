@@ -15,6 +15,7 @@ from bot.database import (
     unban_user,
     update_user,
     update_config,
+    get_config,
     add_action,
     get_chatbox_messages,
     add_chatbox_message,

@@ -11,32 +11,30 @@ from bot.database import (
     get_db,
     get_user,
     get_all_users,
+    update_user,
+    get_banned_users,
     ban_user,
     unban_user,
-    update_user,
-    get_config,
     update_config,
-    add_action,
-    get_chatbox_messages,
-    add_chatbox_message,
-    get_banned_users,
-    get_user_files,
+    get_config,
     add_rclone_config,
     get_rclone_configs,
-    pick_rclone_config_for_plan,
-    cleanup_old_cloud_files,
+    remove_rclone_config,
+    update_rclone_config,
     log_admin_action,
-    create_broadcast_draft,
-    get_user_cloud_files,
     get_user_tasks,
     get_admin_stats,
     create_task,
     update_task,
+    get_chatbox_messages,
+    add_chatbox_message,
     get_force_sub_channels,
     update_force_sub_metadata,
     set_channel_config,
+    set_channel_metadata
 )
 from bot.utils import log_info, log_error, log_user_update, validate_url
+from bot.handlers.user import paginate_keyboard
 from bot.services import create_or_update_storage_message, FFmpegService
 from config.constants import ERROR_MESSAGES, BROADCAST_RATE_LIMIT
 from config.settings import get_settings, get_admin_ids
@@ -155,6 +153,8 @@ async def _require_channels_setup(update: Update, context: ContextTypes.DEFAULT_
             await query.message.edit_text(setup_text, reply_markup=setup_keyboard, parse_mode="Markdown")
         except Exception:
             await query.message.reply_text(setup_text, reply_markup=setup_keyboard, parse_mode="Markdown")
+    elif update.message:
+        await update.message.reply_text(setup_text, reply_markup=setup_keyboard, parse_mode="Markdown")
     return False
 
 # Removing local get_admin_ids shadow
@@ -204,6 +204,8 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         # ─────────────────────────────────────────────────────────────
 
+        config = await get_config() or {}
+
         # Get updates channel from config
         updates_ch = config.get("updates_channel")
         if updates_ch:
@@ -215,6 +217,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 updates_url = updates_ch
         else:
             updates_url = f"https://t.me/{settings.BOT_USERNAME or 'cc_leechbot'}"
+
 
         keyboard = InlineKeyboardMarkup([
             [
@@ -400,9 +403,7 @@ async def handle_admin_list_users(update: Update, context: ContextTypes.DEFAULT_
                     callback_data=f"view_user_{uid}"
                 )
             )
-
         keyboard = paginate_keyboard(buttons, page, per_page=6, prefix="listusers_page")
-
         keyboard_buttons = list(keyboard.inline_keyboard)
         keyboard_buttons.append([InlineKeyboardButton("🔙 Back", callback_data="admin_users")])
         keyboard = InlineKeyboardMarkup(keyboard_buttons)
@@ -522,8 +523,8 @@ async def handle_admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE)
             parse_mode="Markdown"
         )
 
-        await log_admin_action(update.effective_user.id, "viewed_stats", {"total_users": total})
-        logger.info(f"✅ Stats displayed: {total} users")
+        await log_admin_action(update.effective_user.id, "viewed_stats", {"total_users": db_stats.get('total_users', 0)})
+        logger.info(f"✅ Stats displayed: {db_stats.get('total_users', 0)} users")
 
     except Exception as e:
         logger.error(f"❌ Error in stats: {e}", exc_info=True)
