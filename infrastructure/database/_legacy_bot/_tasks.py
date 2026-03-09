@@ -119,7 +119,7 @@ async def fail_task(task_id: str, error_msg: str) -> bool:
 
 
 async def get_active_task_count(user_id: int) -> int:
-    \"\"\"Count tasks currently in 'processing' status for a specific user.\"\"\"
+    """Count tasks currently in 'processing' status for a specific user."""
     try:
         db = get_db()
         count = await db.tasks.count_documents({
