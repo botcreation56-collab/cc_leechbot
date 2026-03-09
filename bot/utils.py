@@ -480,8 +480,8 @@ def validate_url(url: str) -> Tuple[bool, str]:
     if scheme in _BLOCKED_SCHEMES:
         return False, f"Blocked scheme: {scheme}"
 
-    if not (url.lower().startswith("https://") or url.lower().startswith("http://")):
-        return False, "Only HTTP/HTTPS URLs are accepted"
+    if not url.lower().startswith("https://"):
+        return False, "Only HTTPS URLs are securely accepted"
 
     if not _URL_RE.match(url):
         return False, "Invalid URL format"

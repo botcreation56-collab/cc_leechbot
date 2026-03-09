@@ -327,18 +327,55 @@ async def handle_edit_force_subs(update: Update, context: ContextTypes.DEFAULT_T
     await handle_admin_set_force_sub_channel(update, context)
 
 async def handle_edit_plan(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Edit plan configuration"""
+    """Edit plan configuration - handles both menu and field prompts"""
     try:
         query = update.callback_query
+        data = query.data
         await query.answer()
 
-        plan_name = query.data.split("_")[-1]
+        parts = data.split("_")
+        # data format: edit_plan_FREE, edit_price_FREE, edit_plan_parallel_FREE, etc.
+        plan_name = parts[-1] 
+        field = parts[1] if parts[0] == "edit" else None
 
         config = await get_config() or {}
         plans = config.get("plans", {})
         plan_data = plans.get(plan_name, {})
 
-        # FIX: 'plan_text' was never defined. Build it here.
+        if field in ("price", "daily", "expiry") or "parallel" in data:
+            # We want to prompt for a specific field
+            labels = {
+                "price": "💰 Plan Price ($)",
+                "plan_parallel": "⚡ Parallel Tasks",
+                "daily": "📦 Daily Limit (GB)",
+                "expiry": "📅 Dump Expiry (Days)"
+            }
+            # Special case for parallel because it has 'plan' in parts[1]
+            label_key = "plan_parallel" if "parallel" in data else field
+            label = labels.get(label_key, field.title())
+            
+            # Map callback field to internal plan_data key
+            key_map = {
+                "price": "price",
+                "plan_parallel": "parallel",
+                "daily": "storage_per_day",
+                "expiry": "dump_expiry_days"
+            }
+            internal_key = key_map.get(label_key)
+            current = plan_data.get(internal_key, "Not Set")
+
+            await query.message.edit_text(
+                f"{label}\n\n"
+                f"Plan: **{plan_name.upper()}**\n"
+                f"Current Value: `{current}`\n\n"
+                f"Please send the new value below.\n\n"
+                f"Use /cancel to abort.",
+                parse_mode="Markdown"
+            )
+            context.user_data["awaiting"] = f"edit_plan_field_{plan_name}_{internal_key}"
+            return
+
+        # Default: Show the plan menu
         plan_text = (
             f"⭐ **Edit {plan_name.upper()} Plan**\n\n"
             f"Price: ${plan_data.get('price', 0)}\n"
@@ -432,6 +469,48 @@ async def handle_config_edit_input(update: Update, context: ContextTypes.DEFAULT
                 await log_admin_action(user_id, f"updated_config_{config_key}", {"value": str(value)[:100]})
             else:
                 await update.message.reply_text("❌ Failed to save config. Please try again.")
+
+        elif state.startswith("edit_plan_field_"):
+            # Format: edit_plan_field_{plan_name}_{internal_key}
+            parts = state.split("_")
+            plan_name = parts[3]
+            field_key = parts[4]
+
+            # Numeric validation
+            try:
+                if field_key in ("price", "parallel", "storage_per_day", "dump_expiry_days"):
+                    value = float(text)
+                    if field_key in ("parallel", "dump_expiry_days"):
+                        value = int(value)
+                else:
+                    value = text
+            except ValueError:
+                await update.message.reply_text("❌ Please enter a valid number.")
+                return
+
+            from bot.database import get_config, set_config
+            config = await get_config() or {}
+            plans = config.get("plans", {})
+            if plan_name not in plans:
+                plans[plan_name] = {}
+            
+            plans[plan_name][field_key] = value
+            ok = await set_config({"plans": plans})
+
+            if ok:
+                await update.message.reply_text(
+                    f"✅ **Plan Updated**\n\n"
+                    f"Plan: `{plan_name.upper()}`\n"
+                    f"Field: `{field_key}`\n"
+                    f"New Value: `{value}`",
+                    parse_mode="Markdown"
+                )
+                await log_admin_action(user_id, f"updated_plan_{plan_name}_{field_key}", {"value": str(value)})
+            else:
+                await update.message.reply_text("❌ Failed to save plan configuration.")
+            
+            context.user_data.pop("awaiting", None)
+            return
 
         elif state == "add_shortener_api":
             if len(text) < 5:

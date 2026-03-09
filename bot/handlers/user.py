@@ -116,16 +116,26 @@ async def show_plans_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if plans:
             for plan_name, plan_data in plans.items():
                 plans_text += f"**{plan_name.upper()}**\n"
-                plans_text += f"- Price: ${plan_data.get('price', 0)}\n"
                 plans_text += f"- Parallel: {plan_data.get('parallel', 1)}\n"
                 plans_text += f"- Daily Limit: {plan_data.get('storage_per_day', 5)} GB\n"
                 plans_text += f"- Expiry: {plan_data.get('dump_expiry_days', 0)} days\n\n"
-        else:
-            plans_text += "No plans configured yet.\n"
+        
+        up_text = config.get("upgrade_text", "Not Set")
+        if up_text and len(up_text) > 50:
+            up_text = up_text[:47] + "..."
+        
+        plans_text += (
+            f"⚡ **Universal Parallel**: `{config.get('parallel_global_limit', 5)}`\n"
+            f"💎 **Upgrade Text**: `{up_text}`\n"
+        )
 
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🆓 Edit Free Plan", callback_data="edit_plan_free")],
-            [InlineKeyboardButton("💎 Edit Premium Plan", callback_data="edit_plan_premium")],
+            [
+                InlineKeyboardButton("🆓 Free Plan", callback_data="edit_plan_free"),
+                InlineKeyboardButton("💎 Pro Plan", callback_data="edit_plan_premium")
+            ],
+            [InlineKeyboardButton("📝 Edit Upgrade Text", callback_data="edit_upgrade_text")],
+            [InlineKeyboardButton("⚡ Universal Parallel", callback_data="edit_parallel")],
             [InlineKeyboardButton("🔙 Back", callback_data="admin_back")]
         ])
 
@@ -390,7 +400,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await handle_edit_max_filesize(update, context)
             elif data == "edit_file_expiry":
                 await handle_edit_file_expiry(update, context)
-            elif data.startswith("edit_plan_"):
+            elif data.startswith(("edit_plan_", "edit_price_", "edit_daily_", "edit_expiry_")):
                 await handle_edit_plan(update, context)
             elif data == "add_shortener":
                 await handle_add_shortener(update, context)
