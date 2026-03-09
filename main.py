@@ -819,12 +819,6 @@ if _static_dir.exists():
     # Mount assets (CSS, JS) under /static
     app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
-    # Explicit root route for GET/HEAD to satisfy uptime monitors
-    @app.get("/", include_in_schema=False)
-    @app.head("/", include_in_schema=False)
-    async def root_redirect():
-        from fastapi.responses import RedirectResponse
-        return RedirectResponse(url="/login.html")
 
 
     # Mount HTML pages under / so they are accessible as /login.html, /dashboard.html etc.

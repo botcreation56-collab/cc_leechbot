@@ -24,9 +24,10 @@ settings = get_settings()
 from fastapi.responses import RedirectResponse
 
 @router.get("/")
-async def redirect_to_login():
-    """Redirect root path to the login page."""
-    return RedirectResponse(url="/login.html")
+async def serve_root():
+    """Serve the login page directly at the root path."""
+    login_page = Path(__file__).parent.parent / "static" / "pages" / "login.html"
+    return FileResponse(str(login_page))
 
 
 class FileMetadata(BaseModel):
