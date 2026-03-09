@@ -38,8 +38,10 @@ from .admin import (
     get_broadcast_stats, handle_admin_forwards,
     handle_admin_shorteners,
     stats_command,
-    get_admin_ids, get_queue_stats,
+    get_queue_stats,
 )
+
+from config.settings import get_admin_ids
 
 # --- Broadcast ---------------------------------------------------------------
 from .broadcast import (
