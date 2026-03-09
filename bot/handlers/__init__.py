@@ -101,6 +101,7 @@ from .user import (
     get_progress_bar, send_progress_message, finalize_progress,
     handle_text_input, handle_photo_input,
     check_force_sub,
+    handle_chat_join_request, handle_check_subscription,
     start_command, help_command, cancel_command,
     cancel_task_command, unknown_handler,
     handle_callback_support, handle_callback_help, support_command,

@@ -109,7 +109,7 @@ async def handle_set_max_filesize(update: Update, context: ContextTypes.DEFAULT_
     # Delegates to the text-prompt handler
     await handle_edit_max_filesize(update, context)
 
-async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE, resumed_file=False):
     """Handle direct file uploads"""
     try:
         user_id = update.effective_user.id
@@ -155,8 +155,9 @@ async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE)
             
         # 1.5️⃣ Check Force Sub
         from bot.handlers.user import check_force_sub
-        if not await check_force_sub(update, context):
-            return
+        if not resumed_file:
+            if not await check_force_sub(update, context, pending_data={"type": "file"}):
+                return
         
         # 2️⃣ ✅ CHECK RCLONE IS CONFIGURED
         config = await get_config()
@@ -375,11 +376,11 @@ async def process_file_task(context: ContextTypes.DEFAULT_TYPE):
 
     logger.info(f"✅ Full flow complete: {task_id}")
 
-async def handle_url_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def handle_url_input(update: Update, context: ContextTypes.DEFAULT_TYPE, resumed_url=None) -> None:
     """Handle URL input from user"""
     try:
         user_id = update.effective_user.id
-        url = update.message.text.strip()
+        url = resumed_url or update.message.text.strip()
 
         # Validate URL
         from bot.utils import validate_url
@@ -391,17 +392,20 @@ async def handle_url_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         # Get user
         user = await get_user(user_id)
         if not user:
-            await update.message.reply_text("❌ User not found.")
+            if update.message:
+                await update.message.reply_text("❌ User not found.")
             return
 
         if user.get("banned"):
-            await update.message.reply_text(ERROR_MESSAGES["banned"])
+            if update.message:
+                await update.message.reply_text(ERROR_MESSAGES["banned"])
             return
 
         # Check Force Sub
         from bot.handlers.user import check_force_sub
-        if not await check_force_sub(update, context):
-            return
+        if not resumed_url:
+            if not await check_force_sub(update, context, pending_data={"type": "url", "url": url}):
+                return
 
         # Create task
         user = await get_user(user_id)

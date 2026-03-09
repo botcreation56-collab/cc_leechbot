@@ -1048,19 +1048,37 @@ async def handle_chat_join_request(update: Update, context: ContextTypes.DEFAULT
         logger.error(f"❌ Failed to approve join request: {e}")
 
 async def handle_check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Callback for '✅ I Joined' button. Retriggers force-sub check."""
+    """Callback for '✅ I Joined' button. Retriggers force-sub check & resumes task."""
     query = update.callback_query
     await query.answer("Checking subscription...")
     
-    # Just inform them if they still haven't joined, 
-    # check_force_sub will re-send the message if needed.
     if await check_force_sub(update, context):
         await query.edit_message_text(
             "✅ **Subscription Verified!**\n\n"
-            "You can now continue using the bot.\n"
-            "Try sending a link or file now!",
+            "Resuming your request...",
             parse_mode="Markdown"
         )
+        
+        # RESUME LOGIC
+        pending = context.user_data.pop("pending_fsub_data", None)
+        if pending:
+            logger.info(f"🔄 Resuming pending task for {update.effective_user.id}: {pending.get('type')}")
+            
+            if pending["type"] == "url":
+                # We need to simulate the message for handle_url_input
+                # or just call it if we can
+                from bot.handlers.files import handle_url_input
+                await handle_url_input(update, context, resumed_url=pending["url"])
+            elif pending["type"] == "file":
+                from bot.handlers.files import handle_file_upload
+                await handle_file_upload(update, context, resumed_file=True)
+        else:
+            await query.edit_message_text(
+                "✅ **Subscription Verified!**\n\n"
+                "You can now continue using the bot.\n"
+                "Try sending a link or file now!",
+                parse_mode="Markdown"
+            )
     else:
         await query.answer("⚠️ You haven't joined all channels yet!", show_alert=True)
 
@@ -1117,7 +1135,7 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not awaiting:
             # If no awaiting state, check if it's a URL
             if validate_url(text)[0]:
-                if not await check_force_sub(update, context):
+                if not await check_force_sub(update, context, pending_data={"type": "url", "url": text}):
                     return
                 await handle_url_input(update, context)
             return
@@ -1226,9 +1244,10 @@ async def handle_photo_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
     except Exception as e:
         logger.error(f"❌ Error handling photo: {e}", exc_info=True)
 
-async def check_force_sub(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+async def check_force_sub(update: Update, context: ContextTypes.DEFAULT_TYPE, pending_data: dict = None) -> bool:
     """Check if user has joined all required force-subscription channels.
     Returns True if user can proceed, False if channels must be joined first.
+    If False, saves pending_data to resume later.
     """
     try:
         from bot.database import get_force_sub_channels
@@ -1251,10 +1270,16 @@ async def check_force_sub(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 if member.status not in ["member", "administrator", "creator"]:
                     not_joined.append(channel)
             except TelegramError as e:
-                await log_error(f"Error checking membership for {channel_id}: {str(e)}")
+                # If bot is not in channel, we can't check
+                logger.error(f"Error checking membership for {channel_id}: {str(e)}")
                 continue
 
         if not_joined:
+            # SAVE FOR RESUME
+            if pending_data:
+                context.user_data["pending_fsub_data"] = pending_data
+                logger.info(f"💾 Saved pending data for {user_id} during FSub interruption")
+
             keyboard = []
 
             for channel in not_joined:
@@ -1455,12 +1480,12 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if awaiting and awaiting in STATE_MESSAGES:
             what, where = STATE_MESSAGES[awaiting]
             msg = (
-                f"✅ **{what} cancelled.**\n\n"
+                f"✅ The **{what}** has been cancelled.\n\n"
                 f"Nothing was saved.\n\n"
                 f"Return via {where}."
             )
         elif awaiting:
-            msg = "✅ **Current operation cancelled.**\n\nNothing was saved."
+            msg = "✅ The **current operation** has been cancelled.\n\nNothing was saved."
         else:
             msg = (
                 "ℹ️ **Nothing to cancel.**\n\n"
