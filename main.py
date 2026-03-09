@@ -219,7 +219,7 @@ def setup_handlers(application: Application) -> None:
         go_back_to_settings, handle_us_close, handle_us_mode,
         handle_us_mode_video, handle_us_mode_document,
         handle_us_prefix, handle_us_suffix, handle_us_metadata,
-        handle_meta_title, handle_meta_author, handle_meta_year,
+        handle_meta_title, handle_meta_author,
         handle_us_thumbnail, handle_us_thumbnail_menu, handle_us_visibility,
         handle_us_destination_button, handle_us_remove_confirm,
         handle_us_reset_confirm_yes, handle_us_myfiles, handle_us_plan,
@@ -551,7 +551,6 @@ def setup_handlers(application: Application) -> None:
         for pattern, handler in [
             ("^meta_title$",    handle_meta_title),
             ("^meta_author$",   handle_meta_author),
-            ("^meta_year$",     handle_meta_year),
             ("^meta_subtitle$", handle_meta_subtitle),
             ("^meta_video$",    handle_meta_video),
             ("^meta_audio$",    handle_meta_audio),
