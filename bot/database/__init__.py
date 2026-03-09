@@ -63,6 +63,7 @@ from infrastructure.database._legacy_bot._tasks import (
     complete_task,
     fail_task,
     get_user_position,
+    get_active_task_count,
     cleanup_old_tasks,
 )
 
@@ -147,7 +148,7 @@ __all__ = [
     "_get_from_settings", "_initialize_config_from_settings",
     # Tasks
     "create_task", "get_task", "update_task", "get_user_tasks",
-    "complete_task", "fail_task", "get_user_position", "cleanup_old_tasks",
+    "complete_task", "fail_task", "get_user_position", "get_active_task_count", "cleanup_old_tasks",
     # Cloud
     "store_cloud_file_metadata", "get_user_files", "get_user_cloud_files",
     "cleanup_old_cloud_files", "delete_expired_cloud_files", "get_user_storage_path",

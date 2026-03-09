@@ -15,18 +15,36 @@ logger = logging.getLogger("filebot.services.queue")
 
 
 class QueueWorker:
-    """
-    Background worker that accepts 'queued' tasks from MongoDB
-    and processes them within the PARALLEL_LIMIT.
-    """
+    _instance: 'QueueWorker' = None
 
-    def __init__(self, bot):
+    def __new__(cls, *args, **kwargs):
+        if not cls._instance:
+            cls._instance = super(QueueWorker, cls).__new__(cls)
+        return cls._instance
+
+    def __init__(self, bot=None):
+        if hasattr(self, '_initialized'): return
         self.bot = bot
         self.running = False
-        self.limit = int(os.getenv("PARALLEL_LIMIT", 5))
+        from bot.database import get_config_sync
+        config = get_config_sync() or {}
+        self.limit = int(config.get("parallel_global_limit") or os.getenv("PARALLEL_LIMIT", 5))
         self.semaphore = asyncio.Semaphore(self.limit)
         self.sleep_interval = 2
         self.active_tasks: Set[asyncio.Task] = set()
+        self._initialized = True
+
+    @classmethod
+    def get_instance(cls) -> 'QueueWorker':
+        if not cls._instance:
+            raise RuntimeError("QueueWorker NOT initialized! Call QueueWorker(bot) first.")
+        return cls._instance
+
+    def update_limit(self, new_limit: int):
+        """Update the global parallel limit at runtime."""
+        self.limit = new_limit
+        self.semaphore = asyncio.Semaphore(new_limit)
+        logger.info(f"⚡ QueueWorker limit updated to: {new_limit}")
 
     async def start(self):
         """Start the worker loop."""
@@ -109,10 +127,23 @@ class QueueWorker:
                 
                 task = task[0]
                 user_id = task.get("user_id")
-                from bot.database import get_user
+                from bot.database import get_user, get_config, get_active_task_count
                 user = await get_user(user_id)
-                is_pro = user.get("plan", "free").lower() != "free"
+                plan_name = user.get("plan", "free").lower()
+                is_pro = plan_name != "free"
                 
+                # Check per-user parallel limit from plan
+                plans_config = await get_config("plans") or {}
+                plan_limit = plans_config.get(plan_name, {}).get("parallel", 1)
+                user_active_count = await get_active_task_count(user_id)
+                
+                if user_active_count >= plan_limit:
+                    # User already at their limit, skip this task for now
+                    # (In a real system we might want to prioritize others, 
+                    # but for now we'll just sleep a bit to avoid CPU spin)
+                    await asyncio.sleep(1)
+                    continue
+
                 if is_pro:
                     # Pro: Immediately process
                     task = await db.tasks.find_one_and_update(

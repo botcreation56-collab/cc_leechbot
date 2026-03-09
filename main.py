@@ -662,6 +662,15 @@ async def lifespan(app: FastAPI):
         bot_application = await build_bot_application(deps)
         app.state.bot = bot_application.bot
 
+        # Start background workers
+        try:
+            from bot.services import QueueWorker
+            worker = QueueWorker(bot_application.bot)
+            asyncio.create_task(worker.start())
+            logger.info("🚀 QueueWorker started in background")
+        except Exception as e:
+            logger.error(f"❌ Failed to start QueueWorker: {e}")
+
         # Fetch bot identity for display
         try:
             me = await bot_application.bot.get_me()

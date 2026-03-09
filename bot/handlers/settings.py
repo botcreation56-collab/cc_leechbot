@@ -382,7 +382,7 @@ async def handle_config_edit_input(update: Update, context: ContextTypes.DEFAULT
         "edit_site_name":       "site_name",
         "edit_site_desc":       "site_description",
         "edit_support_channel": "support_channel",
-        "edit_parallel":        "parallel_limit",
+        "edit_parallel":        "parallel_global_limit",
         "edit_max_filesize":    "max_filesize_gb",
         "edit_file_expiry":     "file_expiry_days",
         "edit_tos":             "tos_text",
@@ -395,11 +395,22 @@ async def handle_config_edit_input(update: Update, context: ContextTypes.DEFAULT
             config_key = STATE_TO_CONFIG_KEY[state]
 
             # Type coercion for numeric fields
-            if config_key in ("parallel_limit", "max_filesize_gb", "file_expiry_days"):
+            if config_key in ("parallel_global_limit", "max_filesize_gb", "file_expiry_days"):
                 try:
                     value = float(text)
-                    if config_key in ("parallel_limit", "file_expiry_days"):
+                    if config_key in ("parallel_global_limit", "file_expiry_days"):
                         value = int(value)
+                        if config_key == "parallel_global_limit":
+                            try:
+                                from bot.services import FFmpegService, QueueWorker
+                                FFmpegService.set_parallel_limit(value)
+                                try:
+                                    worker = QueueWorker.get_instance()
+                                    worker.update_limit(value)
+                                except Exception:
+                                    pass # Worker might not be running yet
+                            except Exception as e:
+                                logger.error(f"Failed to update service limits: {e}")
                 except ValueError:
                     await update.message.reply_text(
                         f"❌ **Invalid Value**\n\nPlease enter a number.",

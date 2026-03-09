@@ -142,10 +142,10 @@ async def _sync_user_profile_to_storage(bot: Bot, user_id: int) -> None:
             return
             
         storage_channel = await get_storage_channel()
-        if not storage_channel or not storage_channel.get("channel_id"):
+        if not storage_channel or not storage_channel.get("id"):
             return
             
-        channel_id = storage_channel["channel_id"]
+        channel_id = storage_channel["id"]
         
         settings = user.get("settings", {})
         plan = user.get("plan", "free").upper()

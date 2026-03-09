@@ -1250,13 +1250,23 @@ class WizardHandler:
         import uuid
         
         user = await get_user(user_id)
-        plan = user.get("plan", "free")
+        plan_name = user.get("plan", "free").lower()
+        
+        from infrastructure.database._legacy_bot._config import get_config
+        plans_config = await get_config("plans") or {}
+        plan_limit = plans_config.get(plan_name, {}).get("parallel", 1)
+        
+        from infrastructure.database._legacy_bot._tasks import get_active_task_count
+        user_active_count = await get_active_task_count(user_id)
         
         # Determine if we should Queue instead of processing inline
         db_position = await get_user_position(user_id)
         
-        # If queue has items OR FFmpeg semaphore is locked, and user is Free
-        if (db_position > 0 or FFmpegService._get_semaphore().locked()) and plan != "pro":
+        # If user is at their plan limit OR (Free user and queue/semaphore busy)
+        is_at_plan_limit = user_active_count >= plan_limit
+        global_busy = (db_position > 0 or FFmpegService._get_semaphore().locked())
+        
+        if is_at_plan_limit or (global_busy and plan_name != "pro"):
             position = db_position + 1
             # Generate Bypass verification token
             verify_token = f"bypass_{uuid.uuid4().hex[:8]}"

@@ -118,6 +118,20 @@ async def fail_task(task_id: str, error_msg: str) -> bool:
     return await update_task(task_id, {"status": "failed", "error": error_msg, "progress": 0})
 
 
+async def get_active_task_count(user_id: int) -> int:
+    \"\"\"Count tasks currently in 'processing' status for a specific user.\"\"\"
+    try:
+        db = get_db()
+        count = await db.tasks.count_documents({
+            "user_id": user_id,
+            "status": "processing",
+        })
+        return count
+    except Exception as e:
+        logger.error(f"❌ get_active_task_count({user_id}) failed: {e}")
+        return 0
+
+
 async def get_user_position(user_id: int) -> int:
     """Get user's approximate queue position based on pending tasks ahead."""
     try:
