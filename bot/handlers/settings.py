@@ -627,25 +627,46 @@ async def ussettings_command(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
         if show_photo_id:
             try:
-                if is_callback:
-                    await message.delete()
-                await context.bot.send_photo(
-                    chat_id=user_id,
-                    photo=show_photo_id,
-                    caption=text,
-                    reply_markup=reply_markup,
-                    parse_mode="Markdown"
-                )
+                # If already a photo message, edit it
+                if is_callback and message.photo:
+                    from telegram import InputMediaPhoto
+                    await message.edit_media(
+                        media=InputMediaPhoto(media=show_photo_id, caption=text, parse_mode="Markdown"),
+                        reply_markup=reply_markup
+                    )
+                else:
+                    # Not a photo message or not a callback -> send new or replace
+                    if is_callback:
+                        try:
+                            await message.delete()
+                        except: pass
+                    
+                    await context.bot.send_photo(
+                        chat_id=user_id,
+                        photo=show_photo_id,
+                        caption=text,
+                        reply_markup=reply_markup,
+                        parse_mode="Markdown"
+                    )
             except Exception as e:
-                logger.warning(f"Could not send settings photo: {e}")
+                logger.warning(f"Could not update/send settings photo: {e}")
                 # Fallback to text
-                await message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
-        else:
-            if is_callback:
-                try:
+                if is_callback:
                     await message.edit_text(text, reply_markup=reply_markup, parse_mode="Markdown")
-                except Exception:
+                else:
                     await message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        else:
+            # No thumbnail -> Text Only
+            if is_callback:
+                if message.photo:
+                    # Message was a photo but now we have no thumb? Delete and send text.
+                    await message.delete()
+                    await context.bot.send_message(user_id, text, reply_markup=reply_markup, parse_mode="Markdown")
+                else:
+                    try:
+                        await message.edit_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+                    except Exception:
+                        await message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
             else:
                 await message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
 
@@ -730,13 +751,8 @@ async def handle_user_settings_text(update: Update, context: ContextTypes.DEFAUL
                 )
                 return
 
-            metadata = settings.get("metadata", {})
             tag_name = state.replace("us_meta_", "")
-            metadata[tag_name] = text
-            settings["metadata"] = metadata
-            user["settings"] = settings
-            
-            await update_user(user_id, user)
+            await update_user(user_id, {f"settings.metadata.{tag_name}": text})
             
             await update.message.reply_text(
                 f"✅ **Default {tag_name.title()} Set**\n\n"
@@ -754,11 +770,7 @@ async def handle_user_settings_text(update: Update, context: ContextTypes.DEFAUL
             text_lower = text.lower()
             
             if text_lower in ["none", "no", "disable", "off"]:
-                metadata = settings.get("metadata", {})
-                metadata["subtitle"] = "none"
-                settings["metadata"] = metadata
-                user["settings"] = settings
-                await update_user(user_id, user)
+                await update_user(user_id, {"settings.metadata.subtitle": "none"})
                 
                 await update.message.reply_text(
                     "✅ **Subtitles Disabled**\n\n"
@@ -766,11 +778,7 @@ async def handle_user_settings_text(update: Update, context: ContextTypes.DEFAUL
                     parse_mode="Markdown"
                 )
             else:
-                metadata = settings.get("metadata", {})
-                metadata["subtitle"] = text
-                settings["metadata"] = metadata
-                user["settings"] = settings
-                await update_user(user_id, user)
+                await update_user(user_id, {"settings.metadata.subtitle": text})
                 
                 await update.message.reply_text(
                     f"✅ **Subtitle Language Set**\n\n"
@@ -787,9 +795,7 @@ async def handle_user_settings_text(update: Update, context: ContextTypes.DEFAUL
 
         elif state == "us_thumbnail":
             if text.lower() in ["auto", "automatic", "default"]:
-                settings["thumbnail"] = "auto"
-                user["settings"] = settings
-                await update_user(user_id, user)
+                await update_user(user_id, {"settings.thumbnail": "auto"})
                 
                 await update.message.reply_text(
                     "✅ **Thumbnail Set to Auto**\n\n"
@@ -875,11 +881,7 @@ async def handle_us_mode_video(update: Update, context: ContextTypes.DEFAULT_TYP
             await query.answer("❌ User not found", show_alert=True)
             return
 
-        settings = user.get("settings", {})
-        settings["mode"] = "video"
-        user["settings"] = settings
-
-        await update_user(user_id, user)
+        await update_user(user_id, {"settings.mode": "video"})
 
         await query.answer("✅ Mode set to VIDEO", show_alert=True)
 
@@ -904,11 +906,7 @@ async def handle_us_mode_document(update: Update, context: ContextTypes.DEFAULT_
             await query.answer("❌ User not found", show_alert=True)
             return
 
-        settings = user.get("settings", {})
-        settings["mode"] = "document"
-        user["settings"] = settings
-
-        await update_user(user_id, user)
+        await update_user(user_id, {"settings.mode": "document"})
 
         await query.answer("✅ Mode set to DOCUMENT", show_alert=True)
 

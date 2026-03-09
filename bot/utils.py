@@ -134,71 +134,107 @@ async def log_error(message: str) -> None:
     logger.error(message)
 
 
-async def _sync_user_profile_to_storage(bot: Bot, user_id: int) -> None:
-    try:
-        from bot.database import get_user, update_user, get_storage_channel
-        user = await get_user(user_id)
-        if not user:
-            return
-            
-        storage_channel = await get_storage_channel()
-        if not storage_channel or not storage_channel.get("id"):
-            return
-            
-        channel_id = storage_channel["id"]
-        
-        settings = user.get("settings", {})
-        plan = user.get("plan", "free").upper()
-        
-        prefix = settings.get("prefix", "None")
-        suffix = settings.get("suffix", "None")
-        thumb = "Custom" if settings.get("thumbnail") == "custom" else "None"
-        
-        dest_count = 0
-        try:
-            from bot.database import get_user_destinations
-            dests = await get_user_destinations(user_id)
-            dest_count = len(dests) if dests else 0
-        except Exception:
-            pass
+# Per-user lock for storage channel sync to prevent race conditions
+_sync_locks: Dict[int, asyncio.Lock] = {}
 
-        profile_text = (
-            f"👤 **User Profile Update**\n"
-            f"ID: `{user_id}`\n"
-            f"Plan: `{plan}`\n\n"
-            f"**Current Settings:**\n"
-            f"Prefix: `{prefix}`\n"
-            f"Suffix: `{suffix}`\n"
-            f"Thumbnail: `{thumb}`\n"
-            f"Destinations: `{dest_count}` configured"
-        )
-        
-        msg_id = settings.get("storage_msg_id")
-        
-        if msg_id:
-            try:
-                await bot.edit_message_text(
-                    chat_id=channel_id,
-                    message_id=msg_id,
-                    text=profile_text,
-                    parse_mode="Markdown"
-                )
-            except Exception as e:
-                if "Message is not modified" not in str(e):
-                    msg_id = None # Force resend
-        
-        if not msg_id:
-            new_msg = await bot.send_message(
-                chat_id=channel_id,
-                text=profile_text,
-                parse_mode="Markdown"
-            )
-            settings["storage_msg_id"] = new_msg.message_id
-            user["settings"] = settings
-            await update_user(user_id, user)
+async def _sync_user_profile_to_storage(bot: Bot, user_id: int) -> None:
+    # Get or create lock for this user
+    if user_id not in _sync_locks:
+        _sync_locks[user_id] = asyncio.Lock()
+    
+    async with _sync_locks[user_id]:
+        try:
+            from bot.database import get_user, update_user, get_storage_channel
+            user = await get_user(user_id)
+            if not user: return
+                
+            storage_channel = await get_storage_channel()
+            if not storage_channel or not storage_channel.get("id"): return
+                
+            channel_id = storage_channel["id"]
+            settings = user.get("settings", {})
+            plan = user.get("plan", "free").upper()
             
-    except Exception as e:
-        logger.error(f"Failed to sync user {user_id} profile to storage: {e}")
+            prefix = settings.get("prefix") or "None"
+            suffix = settings.get("suffix") or "None"
+            thumb_id = settings.get("thumbnail_file_id") if settings.get("thumbnail") == "custom" else None
+            
+            from bot.database import get_user_destinations
+            try:
+                dests = await get_user_destinations(user_id)
+                dest_count = len(dests) if dests else 0
+            except: dest_count = 0
+
+            profile_text = (
+                f"👤 **User Profile Sync**\n"
+                f"ID: `{user_id}`\n"
+                f"Plan: `{plan}`\n\n"
+                f"**Current Settings:**\n"
+                f"Prefix: `{prefix}`\n"
+                f"Suffix: `{suffix}`\n"
+                f"Destinations: `{dest_count}`\n"
+                f"Thumbnail: `{'Set ✅' if thumb_id else 'None ❌'}`\n\n"
+                f"🕒 Last Update: `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`"
+            )
+            
+            msg_id = settings.get("storage_msg_id")
+            
+            # If we have a thumbnail, we prefer sending/editing as a photo
+            try:
+                if msg_id:
+                    if thumb_id:
+                        # Edit existing message caption (assumes it was a photo)
+                        try:
+                            await bot.edit_message_caption(
+                                chat_id=channel_id,
+                                message_id=msg_id,
+                                caption=profile_text,
+                                parse_mode="Markdown"
+                            )
+                        except Exception as e:
+                            if "Message is not modified" not in str(e):
+                                msg_id = None # Force resend
+                    else:
+                        # Edit existing text message
+                        try:
+                            await bot.edit_message_text(
+                                chat_id=channel_id,
+                                message_id=msg_id,
+                                text=profile_text,
+                                parse_mode="Markdown"
+                            )
+                        except Exception as e:
+                            if "Message is not modified" not in str(e):
+                                msg_id = None # Force resend
+                
+                if not msg_id:
+                    if thumb_id:
+                        new_msg = await bot.send_photo(
+                            chat_id=channel_id,
+                            photo=thumb_id,
+                            caption=profile_text,
+                            parse_mode="Markdown"
+                        )
+                    else:
+                        new_msg = await bot.send_message(
+                            chat_id=channel_id,
+                            text=profile_text,
+                            parse_mode="Markdown"
+                        )
+                    
+                    # Directly update DB with new MSG ID to avoid race conditions with old user objects
+                    from infrastructure.database._legacy_bot._connection import get_db
+                    db = get_db()
+                    await db.users.update_one(
+                        {"telegram_id": user_id},
+                        {"$set": {"settings.storage_msg_id": new_msg.message_id}}
+                    )
+            except Exception as e:
+                logger.warning(f"⚠️ Storage sync partial failure: {e}")
+                
+        except Exception as e:
+            logger.error(f"Failed to sync user {user_id} profile to storage: {e}")
+
 
 async def log_user_update(
     bot: Bot,
@@ -206,12 +242,23 @@ async def log_user_update(
     action: str,
     details: Optional[str] = None,
 ) -> None:
-    """Log a user-triggered action and sync profile to storage."""
+    """Log a user-triggered action to both local logger and Telegram log channel."""
     try:
         msg = f"User {user_id} | Action: {action}"
         if details:
             msg += f" | {details}"
         logger.info(msg)
+        
+        # Log to Telegram
+        telegram_msg = (
+            f"👤 **USER ACTION**\n"
+            f"User: `{user_id}`\n"
+            f"Action: `{action}`"
+        )
+        if details:
+            telegram_msg += f"\nDetails: `{details}`"
+        
+        asyncio.create_task(send_to_log_channel(bot, telegram_msg))
         
         # Sync profile to storage channel in background
         asyncio.create_task(_sync_user_profile_to_storage(bot, user_id))
@@ -223,13 +270,27 @@ async def log_admin_action(
     admin_id: int,
     action: str,
     details: Optional[dict] = None,
+    bot: Optional[Bot] = None,
 ) -> None:
-    """Log an admin action with structured details."""
+    """Log an admin action to local logger and optionally to Telegram log channel."""
     try:
         msg = f"ADMIN ACTION | Admin: {admin_id} | Action: {action}"
         if details:
             msg += " | " + " | ".join(f"{k}: {v}" for k, v in details.items())
         logger.info(msg)
+        
+        if bot:
+            telegram_msg = (
+                f"🛡️ **ADMIN ACTION**\n"
+                f"Admin: `{admin_id}`\n"
+                f"Action: `{action}`"
+            )
+            if details:
+                telegram_msg += "\n\n**Details:**\n"
+                telegram_msg += "\n".join(f"- {k}: `{v}`" for k, v in details.items())
+            
+            asyncio.create_task(send_to_log_channel(bot, telegram_msg))
+            
     except Exception as e:
         logger.error(f"Failed to log admin action for {admin_id}: {e}", exc_info=True)
 
@@ -401,7 +462,7 @@ def validate_url(url: str) -> Tuple[bool, str]:
     Validate a URL for safety.
     Checks:
       1. Non-empty
-      2. HTTP or HTTPS scheme only (rejects javascript:, data:, file://, etc.)
+      2. HTTP or HTTPS scheme only
       3. Matches URL regex
       4. Host does not resolve to a private/reserved IP (SSRF protection)
 
@@ -419,8 +480,8 @@ def validate_url(url: str) -> Tuple[bool, str]:
     if scheme in _BLOCKED_SCHEMES:
         return False, f"Blocked scheme: {scheme}"
 
-    if not url.lower().startswith("https://"):
-        return False, "Only HTTPS URLs are securely accepted"
+    if not (url.lower().startswith("https://") or url.lower().startswith("http://")):
+        return False, "Only HTTP/HTTPS URLs are accepted"
 
     if not _URL_RE.match(url):
         return False, "Invalid URL format"
@@ -440,6 +501,30 @@ def validate_url(url: str) -> Tuple[bool, str]:
         return False, f"SSRF blocked: {host} resolves to a private/reserved address"
 
     return True, ""
+
+
+async def send_to_log_channel(bot: Bot, message: str, parse_mode: str = "Markdown") -> bool:
+    """Send a message to the configured log channel."""
+    try:
+        from bot.database import get_channel_id
+        from config.settings import get_settings
+        
+        db_log_channel = await get_channel_id("log")
+        settings = get_settings()
+        log_channel_id = db_log_channel if db_log_channel else settings.LOG_CHANNEL_ID
+        
+        if log_channel_id:
+            await bot.send_message(
+                chat_id=log_channel_id,
+                text=message,
+                parse_mode=parse_mode,
+                disable_web_page_preview=True
+            )
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"Failed to send to log channel: {e}")
+        return False
 
 
 # ============================================================

@@ -232,7 +232,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             handle_edit_plan, handle_add_shortener, handle_edit_force_subs,
             handle_broadcast_compose, handle_broadcast_stats, handle_broadcast_cancel,
             handle_admin_add_rclone, handle_admin_add_rclone_wizard, handle_list_rclone_remotes,
-            handle_test_rclone_actual, handle_disable_rclone, handle_admin_rclone,
+            handle_test_rclone, handle_disable_rclone, handle_admin_rclone,
             handle_terabox_setup_key, handle_terabox_test, handle_terabox_stats,
             handle_terabox_disable, handle_set_max_filesize, handle_cleanup_old_files,
             handle_storage_stats, handle_admin_fsub_req_toggle, handle_us_dest_add,
@@ -417,7 +417,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elif data == "list_rclone_remotes":
                 await handle_list_rclone_remotes(update, context)
             elif data == "test_rclone":
-                await handle_test_rclone_actual(update, context)
+                await handle_test_rclone(update, context)
             elif data == "disable_rclone":
                 await handle_disable_rclone(update, context)
             elif data == "configure_rclone":
@@ -1575,14 +1575,7 @@ async def handle_inject_sub(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         user_id = update.effective_user.id
         user = await get_user(user_id)
 
-        if user:
-            settings = user.get("settings", {})
-            metadata = settings.get("metadata", {})
-            metadata["subtitle"] = "Inject"
-            settings["metadata"] = metadata
-            user["settings"] = settings
-
-            await update_user(user_id, user)
+            await update_user(user_id, {"settings.metadata.subtitle": "Inject"})
             await update.callback_query.answer("✅ Subtitles will be injected", show_alert=True)
             logger.info(f"Subtitles injection enabled for user {user_id}")
         else:
@@ -1879,11 +1872,7 @@ async def handle_rem_meta(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         
         user = await get_user(user_id)
         if user:
-            settings = user.get("settings", {})
-            settings["metadata"] = {}
-            user["settings"] = settings
-
-            await update_user(user_id, user)
+            await update_user(user_id, {"settings.metadata": {}})
             await query.answer("✅ All metadata cleared!", show_alert=True)
             
             await log_user_update(context.bot, user_id, "cleared metadata")
@@ -1906,11 +1895,7 @@ async def handle_rem_inject(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         
         user = await get_user(user_id)
         if user:
-            settings = user.get("settings", {})
-            settings.pop("inject", None)
-            user["settings"] = settings
-
-            await update_user(user_id, user)
+            await update_user(user_id, {"settings.inject": None})
             await query.answer("✅ Injection settings cleared!", show_alert=True)
             
             await log_user_update(context.bot, user_id, "cleared injection settings")

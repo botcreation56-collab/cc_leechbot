@@ -125,7 +125,7 @@ async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE)
             
             # Download
             wait_msg = await update.message.reply_text("📥 Receving injection file...")
-            path = await file_obj.get_file().download_to_drive()
+            path = await (await file_obj.get_file()).download_to_drive()
             await wait_msg.delete()
             
             session = context.user_data.get('wizard')
@@ -235,7 +235,7 @@ async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE)
         internal_path = DOWNLOADS_DIR / str(user_id) / internal_filename
         internal_path.parent.mkdir(parents=True, exist_ok=True)
         
-        file_path = await file_obj.get_file().download_to_drive(custom_path=internal_path)
+        file_path = await (await file_obj.get_file()).download_to_drive(custom_path=internal_path)
         file_path = str(file_path) # Path object to string
         
         await progress_msg.delete()
@@ -282,7 +282,7 @@ async def process_file_task(context: ContextTypes.DEFAULT_TYPE):
         # This process_file_task seems to be for URL tasks or legacy flow.
         # If it's used for direct files, we need to handle it.
         # But based on code, this is primarily triggered for URLs or if handle_file_upload queues it.
-        file_path = await file_obj.get_file().download_to_drive()  # Temp path
+        file_path = await (await file_obj.get_file()).download_to_drive()  # Temp path
 
     # 2. Upload + Send
     from bot.services import upload_and_send_file
@@ -660,11 +660,10 @@ async def handle_us_thumbnail(update: Update, context: ContextTypes.DEFAULT_TYPE
                 # Fallback to original ID (might expire strictly speaking, but usually works for bots)
         
         # 4. Save to DB
-        settings = user.get("settings", {})
-        settings["thumbnail_file_id"] = final_file_id
-        settings["thumbnail"] = "custom"
-        user["settings"] = settings
-        await update_user(user_id, user)
+        await update_user(user_id, {
+            "settings.thumbnail_file_id": final_file_id,
+            "settings.thumbnail": "custom"
+        })
         
         context.user_data.pop("awaiting", None)
         
@@ -1368,7 +1367,7 @@ async def execute_processing_flow_by_task(bot, task: dict) -> None:
             ext = _Path(task.get("filename", "file")).suffix or ".tmp"
             dest = DOWNLOADS_DIR / str(user_id) / f"{uuid.uuid4()}{ext}"
             dest.parent.mkdir(parents=True, exist_ok=True)
-            await tg_file.download_to_drive(custom_path=dest)
+            await (await tg_file.get_file()).download_to_drive(custom_path=dest)
             file_path = str(dest)
             display_name = task.get("filename", "file")
 

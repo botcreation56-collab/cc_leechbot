@@ -44,7 +44,7 @@ from .broadcast import (
 from .cloud import (
     handle_admin_rclone, handle_admin_add_rclone, handle_admin_add_rclone_wizard,
     handle_list_rclone_remotes, handle_test_rclone,
-    handle_test_rclone_actual, handle_disable_rclone,
+    handle_test_rclone, handle_disable_rclone,
     handle_terabox_setup_key, handle_terabox_test, handle_terabox_disable,
     rclone_service_callback, rclone_plan_callback, rclone_users_callback,
     rclone_command, rclone_text_input,

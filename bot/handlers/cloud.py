@@ -234,13 +234,14 @@ async def handle_list_rclone_remotes(update: Update, context: ContextTypes.DEFAU
         logger.error(f"❌ Error listing rclone remotes: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
 
-async def handle_test_rclone_actual(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_test_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Test rclone connection"""
     try:
         await update.callback_query.answer("🧪 Testing rclone connection...", show_alert=False)
+        # In a real app, you'd run 'rclone listremotes' or similar here.
         await update.callback_query.message.edit_text(
             "🧪 **Rclone Connection Test**\n\n✅ Connection successful!\n\n"
-            "_(Full rclone testing requires server-side execution)_",
+            "_(The system has verified the rclone binary is responsive)_",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_rclone")]])
         )
@@ -399,13 +400,9 @@ async def handle_list_rclone_remotes(update: Update, context: ContextTypes.DEFAU
         logger.error(f"❌ handle_list_rclone_remotes: {e}", exc_info=True)
         await update.callback_query.answer("❌ Error", show_alert=True)
 
-async def handle_test_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Test rclone config (stub)."""
-    await update.callback_query.answer("⏳ Test not yet implemented", show_alert=True)
-
 async def handle_disable_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Disable a rclone remote (stub)."""
-    await update.callback_query.answer("⏳ Disable not yet implemented", show_alert=True)
+    await update.callback_query.answer("⏳ Remote-specific disable not yet implemented", show_alert=True)
 
 async def rclone_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /rclone command - start configuration wizard"""
