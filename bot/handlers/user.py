@@ -37,7 +37,6 @@ from bot.database import (
 )
 from bot.utils import log_info, log_error, log_user_update, validate_url
 from bot.services import create_or_update_storage_message, FFmpegService
-from bot.handlers.admin import handle_admin_list_users
 from bot.handlers.files import handle_url_input
 from bot.handlers.cloud import terabox_text_input
 from bot.handlers.settings import handle_config_edit_input, ussettings_command
@@ -213,7 +212,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Import needed handlers locally to avoid circularity
         from bot.handlers import (
-            handle_admin_back, handle_admin_users, handle_admin_stats, show_config_menu,
+            handle_admin_list_users, handle_admin_back, handle_admin_users, handle_admin_stats, show_config_menu,
             show_plans_menu, show_shorteners_menu, handle_admin_broadcast, handle_admin_rclone,
             handle_admin_terabox, handle_admin_filesize, handle_admin_logs, show_banned_users,
             handle_admin_chatbox, handle_admin_set_log_channel, handle_admin_set_dump_channel,
