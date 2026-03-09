@@ -149,28 +149,29 @@ async def ensure_channel_schema(db: AsyncIOMotorDatabase) -> None:
         logger.info("🔄 Ensuring global config document exists...")
         existing = await db.config.find_one({"type": "global"})
 
+        default_channels = {"log": None, "dump": None, "storage": None, "force_sub": []}
+
         if not existing:
             logger.info("📝 Creating initial global config document with nested channel structure")
             await db.config.insert_one({
                 "type": "global",
-                "channels": {"log": None, "dump": None, "storage": None, "force_sub": []},
+                "channels": default_channels,
                 "created_at": datetime.utcnow(),
                 "updated_at": datetime.utcnow(),
             })
             logger.info("✅ Global config document created")
         else:
-            if "channels" not in existing:
-                logger.info("📝 Adding 'channels' structure to existing global config")
+            # Fix: If channels is missing OR explicitly null, reset to default structure
+            if not existing.get("channels"):
+                logger.info("📝 Fixing 'channels' structure (null or missing) in global config")
                 await db.config.update_one(
                     {"type": "global"},
-                    {"$set": {"channels": {
-                        "log": existing.get("channels", {}).get("log"),
-                        "dump": existing.get("channels", {}).get("dump"),
-                        "storage": existing.get("channels", {}).get("storage"),
-                        "force_sub": existing.get("channels", {}).get("force_sub", []),
-                    }}},
+                    {"$set": {
+                        "channels": default_channels,
+                        "updated_at": datetime.utcnow()
+                    }},
                 )
-                logger.info("✅ Channels structure added to global config")
+                logger.info("✅ Channels structure repaired")
             else:
                 logger.info("✅ Global config document already has proper structure")
 

@@ -103,9 +103,8 @@ async def _require_channels_setup(update: Update, context: ContextTypes.DEFAULT_
     If any channel is missing, shows the setup screen in-place and returns False.
     Must be called from a callback_query handler.
     """
-    from bot.database import get_config
     config = await get_config() or {}
-    ch = config.get("channels", {})
+    ch = config.get("channels") or {}
     configured = {
         "log":     bool(ch.get("log") or config.get("log_channel_id")),
         "dump":    bool(ch.get("dump") or config.get("dump_channel_id")),
@@ -293,9 +292,8 @@ async def admin_check_and_open(update: Update, context: ContextTypes.DEFAULT_TYP
     query = update.callback_query
     await query.answer()
 
-    from bot.database import get_config
     config = await get_config() or {}
-    ch = config.get("channels", {})
+    ch = config.get("channels") or {}
 
     configured = {
         "log":     bool(ch.get("log") or config.get("log_channel_id")),
@@ -814,7 +812,7 @@ async def handle_terabox_stats(update: Update, context: ContextTypes.DEFAULT_TYP
 async def handle_admin_set_log_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show log channel management menu"""
     config = await get_config() or {}
-    ch = config.get("channels", {}).get("log", {})
+    ch = (config.get("channels") or {}).get("log") or {}
     ch_id = ch.get("id") or config.get("log_channel_id")
     ch_name = ch.get("metadata", {}).get("title")
 
@@ -850,7 +848,7 @@ async def handle_admin_add_log_channel(update: Update, context: ContextTypes.DEF
 async def handle_admin_set_dump_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show dump channel management menu"""
     config = await get_config() or {}
-    ch = config.get("channels", {}).get("dump", {})
+    ch = (config.get("channels") or {}).get("dump") or {}
     ch_id = ch.get("id") or config.get("dump_channel_id")
     ch_name = ch.get("metadata", {}).get("title")
 
@@ -886,7 +884,7 @@ async def handle_admin_add_dump_channel(update: Update, context: ContextTypes.DE
 async def handle_admin_set_storage_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show storage channel management menu"""
     config = await get_config() or {}
-    ch = config.get("channels", {}).get("storage", {})
+    ch = (config.get("channels") or {}).get("storage") or {}
     ch_id = ch.get("id") or config.get("storage_channel_id")
     ch_name = ch.get("metadata", {}).get("title")
 

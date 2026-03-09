@@ -742,6 +742,7 @@ app.include_router(logs_router, tags=["AdminLogs"], prefix="/api/admin")
 # ============================================================
 
 @app.get("/health", include_in_schema=False)
+@app.head("/health", include_in_schema=False)
 async def health():
     deps = getattr(app.state, "deps", {})
     db_ok = False

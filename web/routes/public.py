@@ -24,10 +24,17 @@ settings = get_settings()
 from fastapi.responses import RedirectResponse
 
 @router.get("/")
+@router.head("/")
 async def serve_root():
     """Serve the login page directly at the root path."""
     login_page = Path(__file__).parent.parent / "static" / "pages" / "login.html"
     return FileResponse(str(login_page))
+
+@router.get("/favicon.ico", include_in_schema=False)
+@router.head("/favicon.ico", include_in_schema=False)
+async def favicon_noop():
+    """Handle favicon requests with No Content to prevent 404 logs."""
+    return Response(status_code=204)
 
 
 class FileMetadata(BaseModel):
