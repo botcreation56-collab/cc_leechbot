@@ -168,7 +168,7 @@ async def ensure_channel_schema(db: AsyncIOMotorDatabase) -> None:
                     {"type": "global"},
                     {"$set": {
                         "channels": default_channels,
-                        "updated_at": datetime.utcnow()
+                        "updated_at": dt_class.utcnow()
                     }},
                 )
                 logger.info("✅ Channels structure repaired")
@@ -229,7 +229,7 @@ async def migrate_flat_to_nested(db: AsyncIOMotorDatabase) -> None:
             update_doc: dict = {}
             if set_updates:
                 update_doc["$set"] = set_updates
-                update_doc["$set"]["updated_at"] = datetime.utcnow()
+                update_doc["$set"]["updated_at"] = dt_class.utcnow()
             if unset_keys:
                 update_doc["$unset"] = unset_keys
             result = await db.config.update_one({"type": "global"}, update_doc)

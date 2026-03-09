@@ -1256,6 +1256,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                  if not user:
                      await create_user(user_id, first_name, username)
                      logger.info(f"🆕 New user registered via /start id: {user_id} ({first_name})")
+                     await log_user_update(context.bot, user_id, "registered via start ID")
                      
                  await update.message.reply_text(f"`{user_id}`", parse_mode="Markdown")
                  return
