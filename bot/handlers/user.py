@@ -240,18 +240,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         # Admin-only callbacks
-        if data.startswith("admin") or data.startswith("edit_") or data.startswith("broadcast_") \
-                or data.startswith("banned_") or data.startswith("listusers_") \
-                or data.startswith("unban_user_") or data.startswith("view_user_") \
-                or data.startswith("rclone_") or data.startswith("terabox_") \
-                or data.startswith("set_max_") or data.startswith("cleanup_") \
-                or data.startswith("storage_") or data.startswith("shortener_") \
-                or data.startswith("admin_fsub_") or data.startswith("upgrade_user_"):
-
-            if user_id not in admin_ids:
-                return
-
-        # Queue start button (Free users responding to turn notification)
         if data.startswith("queue_start_"):
             task_id = data.replace("queue_start_", "")
             db = get_db()
@@ -274,232 +262,242 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.info(f"✅ User {user_id} clicked Start for task {task_id}")
             return
 
+        # Admin-only callbacks check
+        if data.startswith("admin") or data.startswith("edit_") or data.startswith("broadcast_") \
+                or data.startswith("banned_") or data.startswith("listusers_") \
+                or data.startswith("unban_user_") or data.startswith("view_user_") \
+                or data.startswith("rclone_") or data.startswith("terabox_") \
+                or data.startswith("set_max_") or data.startswith("cleanup_") \
+                or data.startswith("storage_") or data.startswith("shortener_") \
+                or data.startswith("admin_fsub_") or data.startswith("upgrade_user_"):
+
+            if user_id not in admin_ids:
                 await query.answer("❌ Unauthorized. Admin only.", show_alert=True)
                 return
 
-            # ── Main menu ──
-            if data == "admin_back":
-                await handle_admin_back(update, context)
-            elif data == "admin_users":
-                await handle_admin_users(update, context)
-            elif data == "admin_stats":
-                await handle_admin_stats(update, context)
-            elif data == "admin_config":
-                await show_config_menu(update, context)
-            elif data == "admin_plans":
-                await show_plans_menu(update, context)
-            elif data == "admin_shorteners":
-                await show_shorteners_menu(update, context)
-            elif data == "admin_broadcast":
-                await handle_admin_broadcast(update, context)
-            elif data == "admin_rclone":
-                await handle_admin_rclone(update, context)
-            elif data == "admin_terabox":
-                await handle_admin_terabox(update, context)
-            elif data == "admin_filesize":
-                await handle_admin_filesize(update, context)
-            elif data == "admin_logs":
-                await handle_admin_logs(update, context)
-            elif data == "admin_bans":
-                await show_banned_users(update, context, 0)
-            elif data == "admin_chatbox":
-                await handle_admin_chatbox(update, context)
+        # ── Main menu ──
+        if data == "admin_back":
+            await handle_admin_back(update, context)
+        elif data == "admin_users":
+            await handle_admin_users(update, context)
+        elif data == "admin_stats":
+            await handle_admin_stats(update, context)
+        elif data == "admin_config":
+            await show_config_menu(update, context)
+        elif data == "admin_plans":
+            await show_plans_menu(update, context)
+        elif data == "admin_shorteners":
+            await show_shorteners_menu(update, context)
+        elif data == "admin_broadcast":
+            await handle_admin_broadcast(update, context)
+        elif data == "admin_rclone":
+            await handle_admin_rclone(update, context)
+        elif data == "admin_terabox":
+            await handle_admin_terabox(update, context)
+        elif data == "admin_filesize":
+            await handle_admin_filesize(update, context)
+        elif data == "admin_logs":
+            await handle_admin_logs(update, context)
+        elif data == "admin_bans":
+            await show_banned_users(update, context, 0)
+        elif data == "admin_chatbox":
+            await handle_admin_chatbox(update, context)
 
-            # ── Channel setup ──
-            elif data == "admin_set_log_channel":
-                await handle_admin_set_log_channel(update, context)
-            elif data == "admin_set_dump_channel":
-                await handle_admin_set_dump_channel(update, context)
-            elif data == "admin_set_storage_channel":
-                await handle_admin_set_storage_channel(update, context)
-            elif data == "admin_set_force_sub_channel":
-                await handle_admin_set_force_sub_channel(update, context)
+        # ── Channel setup ──
+        elif data == "admin_set_log_channel":
+            await handle_admin_set_log_channel(update, context)
+        elif data == "admin_set_dump_channel":
+            await handle_admin_set_dump_channel(update, context)
+        elif data == "admin_set_storage_channel":
+            await handle_admin_set_storage_channel(update, context)
+        elif data == "admin_set_force_sub_channel":
+            await handle_admin_set_force_sub_channel(update, context)
 
-            # ── Force-sub management ──
-            elif data == "admin_fsub_add":
-                await handle_admin_fsub_add(update, context)
-            elif data.startswith("admin_fsub_manage_"):
-                await handle_admin_fsub_manage(update, context)
-            elif data.startswith("admin_fsub_toggle_"):
-                await handle_admin_fsub_toggle(update, context)
-            elif data.startswith("admin_fsub_req_toggle_"):
-                from bot.handlers.admin import handle_admin_fsub_req_toggle
-                await handle_admin_fsub_req_toggle(update, context)
-            elif data.startswith("admin_fsub_link_"):
-                await handle_admin_fsub_link(update, context)
-            elif data.startswith("admin_fsub_remove_confirm_"):
-                await handle_admin_fsub_remove_confirm(update, context)
-            elif data.startswith("admin_fsub_remove_"):
-                await handle_admin_fsub_remove(update, context)
+        # ── Force-sub management ──
+        elif data == "admin_fsub_add":
+            await handle_admin_fsub_add(update, context)
+        elif data.startswith("admin_fsub_manage_"):
+            await handle_admin_fsub_manage(update, context)
+        elif data.startswith("admin_fsub_toggle_"):
+            await handle_admin_fsub_toggle(update, context)
+        elif data.startswith("admin_fsub_req_toggle_"):
+            from bot.handlers.admin import handle_admin_fsub_req_toggle
+            await handle_admin_fsub_req_toggle(update, context)
+        elif data.startswith("admin_fsub_link_"):
+            await handle_admin_fsub_link(update, context)
+        elif data.startswith("admin_fsub_remove_confirm_"):
+            await handle_admin_fsub_remove_confirm(update, context)
+        elif data.startswith("admin_fsub_remove_"):
+            await handle_admin_fsub_remove(update, context)
 
-            # ── Channel removal ──
-            elif data == "admin_remove_log":
-                await handle_admin_remove_log(update, context)
-            elif data == "admin_remove_dump":
-                await handle_admin_remove_dump(update, context)
-            elif data == "admin_remove_storage":
-                await handle_admin_remove_storage(update, context)
+        # ── Channel removal ──
+        elif data == "admin_remove_log":
+            await handle_admin_remove_log(update, context)
+        elif data == "admin_remove_dump":
+            await handle_admin_remove_dump(update, context)
+        elif data == "admin_remove_storage":
+            await handle_admin_remove_storage(update, context)
 
-            # ── Paginated lists ──
-            elif data.startswith("banned_page_"):
-                await show_banned_users(update, context)
-            elif data == "admin_list_users_0" or data.startswith("listusers_page_"):
-                await handle_admin_list_users(update, context)
-            elif data.startswith("shortener_page_"):
-                await show_shorteners_menu(update, context)
+        # ── Paginated lists ──
+        elif data.startswith("banned_page_"):
+            await show_banned_users(update, context)
+        elif data == "admin_list_users_0" or data.startswith("listusers_page_"):
+            await handle_admin_list_users(update, context)
+        elif data.startswith("shortener_page_"):
+            await show_shorteners_menu(update, context)
 
-            # ── User-specific actions ──
-            elif data.startswith("view_user_"):
-                await handle_view_user(update, context)
-            elif data.startswith("unban_user_"):
-                await handle_unban_from_list(update, context)
-            elif data.startswith("admin_ban_user_"):
-                context.user_data["ban_user_id"] = int(data.split("_")[-1])
-                await handle_admin_ban_user(update, context)
-            elif data == "admin_find_user":
-                await handle_admin_find_user(update, context)
-            elif data == "admin_ban_user":
-                await handle_admin_ban_user(update, context)
-            elif data == "admin_unban_user":
-                await handle_admin_unban_user(update, context)
-            elif data == "admin_upgrade_user":
-                await handle_admin_upgrade_user(update, context)
-            elif data.startswith("upgrade_user_"):
-                await handle_admin_upgrade_user(update, context)
+        # ── User-specific actions ──
+        elif data.startswith("view_user_"):
+            await handle_view_user(update, context)
+        elif data.startswith("unban_user_"):
+            await handle_unban_from_list(update, context)
+        elif data.startswith("admin_ban_user_"):
+            context.user_data["ban_user_id"] = int(data.split("_")[-1])
+            await handle_admin_ban_user(update, context)
+        elif data == "admin_find_user":
+            await handle_admin_find_user(update, context)
+        elif data == "admin_ban_user":
+            await handle_admin_ban_user(update, context)
+        elif data == "admin_unban_user":
+            await handle_admin_unban_user(update, context)
+        elif data == "admin_upgrade_user":
+            await handle_admin_upgrade_user(update, context)
+        elif data.startswith("upgrade_user_"):
+            await handle_admin_upgrade_user(update, context)
 
-            # ── Edit config prompts ──
-            elif data == "edit_start_msg":
-                await handle_edit_start_message(update, context)
-            elif data == "edit_watermark":
-                await handle_edit_watermark(update, context)
-            elif data == "edit_contact":
-                await handle_edit_support_contact(update, context)
-            elif data == "edit_help_text":
-                await handle_edit_help_text(update, context)
-            elif data == "edit_tos":
-                await handle_edit_tos(update, context)
-            elif data == "edit_upgrade_text":
-                await handle_edit_upgrade_text(update, context)
-            elif data == "edit_site_name":
-                await handle_edit_site_name(update, context)
-            elif data == "edit_site_desc":
-                await handle_edit_site_description(update, context)
-            elif data == "edit_support_channel":
-                await handle_edit_support_channel(update, context)
-            elif data == "edit_parallel":
-                await handle_edit_parallel_limit(update, context)
-            elif data == "edit_max_filesize":
-                await handle_edit_max_filesize(update, context)
-            elif data == "edit_file_expiry":
-                await handle_edit_file_expiry(update, context)
-            elif data.startswith("edit_plan_"):
-                await handle_edit_plan(update, context)
-            elif data == "add_shortener":
-                await handle_add_shortener(update, context)
-            elif data.startswith("edit_shortener_"):
-                await handle_add_shortener(update, context)
-            elif data == "edit_force_subs":
-                await handle_edit_force_subs(update, context)
+        # ── Edit config prompts ──
+        elif data == "edit_start_msg":
+            await handle_edit_start_message(update, context)
+        elif data == "edit_watermark":
+            await handle_edit_watermark(update, context)
+        elif data == "edit_contact":
+            await handle_edit_support_contact(update, context)
+        elif data == "edit_help_text":
+            await handle_edit_help_text(update, context)
+        elif data == "edit_tos":
+            await handle_edit_tos(update, context)
+        elif data == "edit_upgrade_text":
+            await handle_edit_upgrade_text(update, context)
+        elif data == "edit_site_name":
+            await handle_edit_site_name(update, context)
+        elif data == "edit_site_desc":
+            await handle_edit_site_description(update, context)
+        elif data == "edit_support_channel":
+            await handle_edit_support_channel(update, context)
+        elif data == "edit_parallel":
+            await handle_edit_parallel_limit(update, context)
+        elif data == "edit_max_filesize":
+            await handle_edit_max_filesize(update, context)
+        elif data == "edit_file_expiry":
+            await handle_edit_file_expiry(update, context)
+        elif data.startswith("edit_plan_"):
+            await handle_edit_plan(update, context)
+        elif data == "add_shortener":
+            await handle_add_shortener(update, context)
+        elif data.startswith("edit_shortener_"):
+            await handle_add_shortener(update, context)
+        elif data == "edit_force_subs":
+            await handle_edit_force_subs(update, context)
 
-            # ── Broadcast ──
-            elif data == "broadcast_compose":
-                await handle_broadcast_compose(update, context)
-            elif data == "broadcast_stats":
-                await handle_broadcast_stats(update, context)
-            elif data == "broadcast_cancel_input":
-                await handle_broadcast_cancel(update, context)
-            elif data == "broadcast_pending":
-                await handle_admin_broadcast(update, context)
+        # ── Broadcast ──
+        elif data == "broadcast_compose":
+            await handle_broadcast_compose(update, context)
+        elif data == "broadcast_stats":
+            await handle_broadcast_stats(update, context)
+        elif data == "broadcast_cancel_input":
+            await handle_broadcast_cancel(update, context)
+        elif data == "broadcast_pending":
+            await handle_admin_broadcast(update, context)
 
-            # ── Rclone ──
-            elif data == "admin_add_rclone":
-                await handle_admin_add_rclone(update, context)
-            elif data == "admin_add_rclone_wizard":
-                await handle_admin_add_rclone_wizard(update, context)
-            elif data == "list_rclone_remotes":
-                await handle_list_rclone_remotes(update, context)
-            elif data == "test_rclone":
-                await handle_test_rclone_actual(update, context)
-            elif data == "disable_rclone":
-                await handle_disable_rclone(update, context)
-            elif data == "configure_rclone":
-                await handle_admin_rclone(update, context)
+        # ── Rclone ──
+        elif data == "admin_add_rclone":
+            await handle_admin_add_rclone(update, context)
+        elif data == "admin_add_rclone_wizard":
+            await handle_admin_add_rclone_wizard(update, context)
+        elif data == "list_rclone_remotes":
+            await handle_list_rclone_remotes(update, context)
+        elif data == "test_rclone":
+            await handle_test_rclone_actual(update, context)
+        elif data == "disable_rclone":
+            await handle_disable_rclone(update, context)
+        elif data == "configure_rclone":
+            await handle_admin_rclone(update, context)
 
-            # ── Terabox ──
-            elif data == "terabox_setup_key":
-                await handle_terabox_setup_key(update, context)
-            elif data == "terabox_test":
-                await handle_terabox_test(update, context)
-            elif data == "terabox_stats":
-                await handle_terabox_stats(update, context)
-            elif data == "terabox_disable":
-                await handle_terabox_disable(update, context)
+        # ── Terabox ──
+        elif data == "terabox_setup_key":
+            await handle_terabox_setup_key(update, context)
+        elif data == "terabox_test":
+            await handle_terabox_test(update, context)
+        elif data == "terabox_stats":
+            await handle_terabox_stats(update, context)
+        elif data == "terabox_disable":
+            await handle_terabox_disable(update, context)
 
-            # ── File size / storage ──
-            elif data == "set_max_filesize":
-                await handle_set_max_filesize(update, context)
-            elif data == "cleanup_old_files":
-                await handle_cleanup_old_files(update, context)
-            elif data == "storage_stats":
-                await handle_storage_stats(update, context)
+        # ── File size / storage ──
+        elif data == "set_max_filesize":
+            await handle_set_max_filesize(update, context)
+        elif data == "cleanup_old_files":
+            await handle_cleanup_old_files(update, context)
+        elif data == "storage_stats":
+            await handle_storage_stats(update, context)
 
-            # ── Logs ──
-            elif data == "view_logs_0" or data.startswith("logs_page_"):
-                await handle_admin_logs(update, context)
-            elif data in ("filter_logs_user", "view_error_logs", "download_logs", "clear_old_logs"):
-                await query.message.reply_text("📋 Feature coming soon.", parse_mode="Markdown")
+        # ── Logs ──
+        elif data == "view_logs_0" or data.startswith("logs_page_"):
+            await handle_admin_logs(update, context)
+        elif data in ("filter_logs_user", "view_error_logs", "download_logs", "clear_old_logs"):
+            await query.message.reply_text("📋 Feature coming soon.", parse_mode="Markdown")
 
-            else:
-                logger.warning(f"⚠️ Unknown admin callback: {data}")
-
-        # Non-admin callbacks
         else:
-            if data == "us_destination":
-                await handle_us_destination_button(update, context)
-            elif data == "us_dest_add":
-                await handle_us_dest_add(update, context)
-            elif data.startswith("us_dest_manage_"):
-                await handle_us_dest_manage(update, context)
-            elif data.startswith("us_dest_remove_confirm_"):
-                await handle_us_dest_remove_confirm(update, context)
-            elif data.startswith("us_dest_remove_do_"):
-                await handle_us_dest_remove_do(update, context)
-            elif data.startswith("refresh_q_"):
-                task_id = data.replace("refresh_q_", "")
-                from bot.database import get_task, get_user_position
-                task = await get_task(task_id)
-                if not task or task.get("status") != "queued":
-                    await query.answer("Your task is no longer in the queue. It may be processing now.", show_alert=True)
-                    return
-                    
-                pos = await get_user_position(user_id)
-                if pos == 0:
-                    await query.answer("Your turn is up! Processing will start momentarily.", show_alert=True)
-                else:
-                    await query.answer(f"Your current queue position is {pos + 1}", show_alert=True)
-                    
-            elif data.startswith("bypass_q_"):
-                bypass_url = context.user_data.get("bypass_url")
-                if not bypass_url:
-                    await query.answer("Bypass link expired or invalid.", show_alert=True)
-                    return
-                
-                from bot.database import get_config
-                config = await get_config() or {}
-                # The user requested "ref teh help text in /admin"
-                help_url = config.get("shorten_help_link", config.get("help_text_url", "https://t.me/your_support_channel"))
+            logger.warning(f"⚠️ Unknown admin callback: {data}")
 
-                keyboard = [
-                    [InlineKeyboardButton("Use me to proceed", url=bypass_url)],
-                    [InlineKeyboardButton("How to use ?", url=help_url)]
-                ]
-                await query.edit_message_text(
-                    "🔥 **Queue Bypass Activated**\n\nClick the button below to verify and instantly bypass the processing queue.",
-                    reply_markup=InlineKeyboardMarkup(keyboard),
-                    parse_mode="Markdown"
-                )
+    # Non-admin callbacks
+    else:
+        if data == "us_destination":
+            await handle_us_destination_button(update, context)
+        elif data == "us_dest_add":
+            await handle_us_dest_add(update, context)
+        elif data.startswith("us_dest_manage_"):
+            await handle_us_dest_manage(update, context)
+        elif data.startswith("us_dest_remove_confirm_"):
+            await handle_us_dest_remove_confirm(update, context)
+        elif data.startswith("us_dest_remove_do_"):
+            await handle_us_dest_remove_do(update, context)
+        elif data.startswith("refresh_q_"):
+            task_id = data.replace("refresh_q_", "")
+            from bot.database import get_task, get_user_position
+            task = await get_task(task_id)
+            if not task or task.get("status") != "queued":
+                await query.answer("Your task is no longer in the queue. It may be processing now.", show_alert=True)
+                return
+            
+            pos = await get_user_position(user_id)
+            if pos == 0:
+                await query.answer("Your turn is up! Processing will start momentarily.", show_alert=True)
             else:
-                logger.debug(f"Non-admin callback not handled by fallback: {data}")
+                await query.answer(f"Your current queue position is {pos + 1}", show_alert=True)
+                
+        elif data.startswith("bypass_q_"):
+            bypass_url = context.user_data.get("bypass_url")
+            if not bypass_url:
+                await query.answer("Bypass link expired or invalid.", show_alert=True)
+                return
+            
+            from bot.database import get_config
+            config = await get_config() or {}
+            # The user requested "ref teh help text in /admin"
+            help_url = config.get("shorten_help_link", config.get("help_text_url", "https://t.me/your_support_channel"))
+
+            keyboard = [
+                [InlineKeyboardButton("Use me to proceed", url=bypass_url)],
+                [InlineKeyboardButton("How to use ?", url=help_url)]
+            ]
+            await query.edit_message_text(
+                "🔥 **Queue Bypass Activated**\n\nClick the button below to verify and instantly bypass the processing queue.",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="Markdown"
+            )
+        else:
+            logger.debug(f"Non-admin callback not handled by fallback: {data}")
 
     except Exception as e:
         logger.error(f"❌ Error in callback_handler: {e}", exc_info=True)
