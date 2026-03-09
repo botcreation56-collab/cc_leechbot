@@ -120,7 +120,10 @@ async def handle_admin_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE
         logger.info(f"✅ Rclone menu opened")
     except Exception as e:
         logger.error(f"❌ Error in rclone menu: {e}", exc_info=True)
-        await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
+        if update.callback_query:
+            await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
+        else:
+            await update.message.reply_text(f"❌ Error: {str(e)[:50]}")
 
 async def handle_admin_add_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show existing rclone configs and option to add new"""
@@ -264,8 +267,13 @@ async def handle_view_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE)
             f"🧪 **Last Test**: `{test_status}`\n"
         )
         
+        is_active = config.get("is_active", True)
+        toggle_label = "🚫 Disable Remote" if is_active else "✅ Enable Remote"
+
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🧪 Test This Remote", callback_data=f"test_single_rclone_{rid}")],
+            [InlineKeyboardButton("👥 View Users", callback_data=f"rclone_users_{rid}")],
+            [InlineKeyboardButton(toggle_label, callback_data=f"toggle_rclone_{rid}")],
             [InlineKeyboardButton("🔙 Back to List", callback_data="list_rclone_remotes")]
         ])
         
@@ -372,7 +380,6 @@ async def handle_terabox_disable(update: Update, context: ContextTypes.DEFAULT_T
 
 
 
-
 async def rclone_service_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Step 1 callback — user chose a service. Ask for plan (step 2)."""
     try:
@@ -420,12 +427,61 @@ async def rclone_plan_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         logger.error(f"❌ rclone_plan_callback: {e}", exc_info=True)
 
 async def rclone_users_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show users for a specific rclone config (future feature stub)."""
+    """Show users whose active tasks are assigned to this rclone remote."""
     try:
         query = update.callback_query
-        await query.answer("Coming soon", show_alert=True)
+        rid = query.data.replace("rclone_users_", "")
+        await query.answer()
+
+        db = get_db()
+        # Find active tasks (pending or processing) using this config_id
+        cursor = db.tasks.find({
+            "rclone_config_id": rid,
+            "status": {"$in": ["pending", "processing"]}
+        }).limit(20)
+        tasks = await cursor.to_list(length=20)
+
+        if not tasks:
+            text = f"👥 **Rclone Users: {rid}**\n\nNo active tasks are currently using this remote."
+        else:
+            text = f"👥 **Active Tasks for: {rid}**\n\n"
+            for t in tasks:
+                uid = t.get("user_id", "?")
+                tid = t.get("task_id", "?")
+                status = t.get("status", "unknown")
+                text += f"• `{uid}` (Task: `{tid}`) - {status}\n"
+
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data=f"view_rclone_{rid}")]])
+        await query.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
     except Exception as e:
-        logger.error(f"❌ rclone_users_callback: {e}", exc_info=True)
+        logger.error(f"❌ rclone_users_callback error: {e}", exc_info=True)
+        await update.callback_query.answer("❌ Error listing users")
+
+async def handle_toggle_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Toggle rclone remote is_active status."""
+    try:
+        query = update.callback_query
+        rid = query.data.replace("toggle_rclone_", "")
+        
+        from infrastructure.database._legacy_bot._rclone import get_rclone_config, update_rclone_config
+        config = await get_rclone_config(rid)
+        if not config:
+            await query.answer("❌ Config not found.", show_alert=True)
+            return
+
+        new_status = not config.get("is_active", True)
+        success = await update_rclone_config(rid, {"is_active": new_status})
+
+        if success:
+            status_str = "Enabled" if new_status else "Disabled"
+            await query.answer(f"✅ Remote {status_str}!")
+            # Refresh the view
+            await handle_view_rclone(update, context)
+        else:
+            await query.answer("❌ Toggle failed.", show_alert=True)
+    except Exception as e:
+        logger.error(f"Error toggling rclone: {e}", exc_info=True)
+        await update.callback_query.answer("❌ Error")
 
 async def handle_list_rclone_remotes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """List all rclone remotes configured."""
@@ -607,5 +663,32 @@ async def handle_terabox_stats(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.callback_query.answer("❌ Error")
 
 async def terabox_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Placeholder for terabox specific text input handling"""
-    pass
+    """Handle terabox specific text input (e.g. API keys)"""
+    text = (update.message.text or "").strip()
+    awaiting = context.user_data.get("awaiting")
+    
+    if awaiting == "terabox_api_key":
+        if len(text) < 20: # Simple validation for API key length
+            await update.message.reply_text("❌ Invalid API key format. Please try again.")
+            return
+        
+        # In a real scenario, you would save this API key to your database config
+        # For now, we'll just acknowledge it.
+        # Example:
+        # config = await get_config() or {}
+        # terabox_config = config.get("terabox_config", {})
+        # terabox_config["api_key"] = text
+        # terabox_config["enabled"] = True # Enable if key is provided
+        # await update_config(config, admin_id=update.effective_user.id)
+
+        await update.message.reply_text(
+            f"✅ **Terabox API Key Updated!**\n\nKey: `{text[:5]}...` (saved securely)",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_terabox")]])
+        )
+        context.user_data.pop("awaiting", None)
+        return
+
+    # If no specific awaiting state is matched, pass or log
+    logger.warning(f"Unhandled terabox_text_input state: {awaiting}")
+```

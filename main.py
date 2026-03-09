@@ -250,7 +250,11 @@ def setup_handlers(application: Application) -> None:
         handle_admin_fsub_req_toggle,
         handle_admin_fsub_toggle,
         handle_admin_list_users,
+        handle_admin_logs_menu,
         handle_admin_logs,
+        handle_admin_download_logs,
+        handle_admin_clear_logs,
+        handle_view_error_logs,
         handle_admin_rclone,
         handle_admin_remove_dump,
         handle_admin_remove_log,
@@ -300,6 +304,7 @@ def setup_handlers(application: Application) -> None:
         rclone_plan_callback,
         rclone_service_callback,
         rclone_users_callback,
+        handle_toggle_rclone,
         show_banned_users,
         show_config_menu,
         show_plans_menu,
@@ -480,6 +485,7 @@ def setup_handlers(application: Application) -> None:
             ("^list_rclone_remotes$",     handle_list_rclone_remotes),
             ("^view_rclone_",             handle_view_rclone),
             ("^test_single_rclone_",      handle_test_single_rclone),
+            ("^toggle_rclone_",           handle_toggle_rclone),
             ("^test_rclone$",             handle_test_rclone),
             ("^disable_rclone$",          handle_disable_rclone),
             ("^rclone_plan_(free|pro)$",  rclone_plan_callback),
@@ -548,7 +554,17 @@ def setup_handlers(application: Application) -> None:
             handle_text_input,
         ))
 
-        # 14. FALLBACKS (must be last)
+        # 14. ADMIN LOGS
+        for pattern, handler in [
+            ("^view_admin_logs$",   handle_admin_logs_menu),
+            ("^view_logs_",         handle_admin_logs),
+            ("^download_logs$",     handle_admin_download_logs),
+            ("^clear_old_logs$",    handle_admin_clear_logs),
+            ("^view_error_logs$",   handle_view_error_logs),
+        ]:
+            application.add_handler(CallbackQueryHandler(handler, pattern=pattern))
+
+        # 15. FALLBACKS (must be last)
         application.add_handler(CallbackQueryHandler(callback_handler))
         application.add_handler(MessageHandler(filters.COMMAND, unknown_handler))
         application.add_error_handler(error_handler)

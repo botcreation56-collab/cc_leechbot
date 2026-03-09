@@ -592,6 +592,7 @@ async def handle_unban_from_list(update: Update, context: ContextTypes.DEFAULT_T
         await query.answer()
 
         user_id = int(query.data.split("_")[-1])
+        from infrastructure.database._legacy_bot._users import unban_user
         result = await unban_user(user_id, admin_id=update.effective_user.id)
 
         if result:
@@ -604,15 +605,15 @@ async def handle_unban_from_list(update: Update, context: ContextTypes.DEFAULT_T
                 )
             except:
                 pass
-            await show_banned_users(update, context, page=0)
+            # Refresh the list
+            await show_banned_users(update, context)
+            from bot.utils import log_admin_action
             await log_admin_action(update.effective_user.id, "unbanned_user", {"user_id": user_id})
-            logger.info(f"✅ Admin {update.effective_user.id} unbanned user {user_id}")
         else:
             await query.answer("❌ Failed to unban user", show_alert=True)
-
     except Exception as e:
         logger.error(f"❌ Error unbanning from list: {e}", exc_info=True)
-        await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
+        await update.callback_query.answer(f"❌ Error", show_alert=True)
 
 async def handle_admin_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Broadcast menu"""
@@ -1134,15 +1135,18 @@ async def handle_admin_remove_storage(update: Update, context: ContextTypes.DEFA
         logger.error(f"❌ Error removing storage channel: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
 
-async def handle_admin_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show admin logs menu"""
+async def handle_admin_logs_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show admin logs menu with management options"""
     try:
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📋 View Recent", callback_data="view_logs_0")],
+            [InlineKeyboardButton("📋 View Database Logs", callback_data="view_logs_0")],
+            [InlineKeyboardButton("📥 Download bot.log", callback_data="download_logs")],
+            [InlineKeyboardButton("⚠️ View Error Snippets", callback_data="view_error_logs")],
+            [InlineKeyboardButton("🧹 Clear bot.log", callback_data="clear_old_logs")],
             [InlineKeyboardButton("🔙 Back", callback_data="admin_back")]
         ])
         await update.callback_query.message.edit_text(
-            "📋 **Admin Logs**\n\nView recent bot activity.",
+            "📋 **Admin Logs Management**\n\nMonitor and manage bot activity logs.",
             reply_markup=keyboard,
             parse_mode="Markdown"
         )
@@ -1475,12 +1479,11 @@ async def handle_admin_chatbox(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
 
 async def handle_admin_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show recent admin action logs"""
+    """Show recent admin action logs from DB (paginated)"""
     try:
         query = update.callback_query
         await query.answer()
 
-        # Extract page from callback data (view_logs_0, view_logs_1, etc.)
         page = 0
         if query.data and query.data.startswith("view_logs_"):
             try:
@@ -1511,17 +1514,83 @@ async def handle_admin_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
             nav.append(InlineKeyboardButton("⬅ Prev", callback_data=f"view_logs_{page-1}"))
         if (page + 1) * 10 < total:
             nav.append(InlineKeyboardButton("Next ➡", callback_data=f"view_logs_{page+1}"))
+        
         keyboard = [nav] if nav else []
-        keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="admin_back")])
+        keyboard.append([InlineKeyboardButton("🔙 Back to Logs Menu", callback_data="view_admin_logs")])
 
-        await query.message.edit_text(
-            text,
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
+        await query.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
     except Exception as e:
         logger.error(f"❌ Error in handle_admin_logs: {e}", exc_info=True)
-        await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
+        await update.callback_query.answer(f"❌ Error", show_alert=True)
+
+async def handle_admin_download_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send bot.log file to admin"""
+    try:
+        from config.settings import get_settings
+        settings = get_settings()
+        log_file = settings.LOG_FILE
+        
+        if not os.path.exists(log_file):
+            await update.callback_query.answer("❌ Log file not found.", show_alert=True)
+            return
+
+        await update.callback_query.answer("📤 Sending logs...")
+        await update.effective_chat.send_document(
+            document=open(log_file, 'rb'),
+            filename=f"bot_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
+            caption="📄 **Bot Logs**"
+        )
+    except Exception as e:
+        logger.error(f"Error downloading logs: {e}", exc_info=True)
+        await update.callback_query.answer("❌ Error sending file", show_alert=True)
+
+async def handle_admin_clear_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Clear the content of bot.log"""
+    try:
+        from config.settings import get_settings
+        settings = get_settings()
+        log_file = settings.LOG_FILE
+
+        if os.path.exists(log_file):
+            with open(log_file, 'w') as f:
+                f.write(f"--- Log cleared at {datetime.now()} ---\n")
+            await update.callback_query.answer("🧹 Logs cleared successfully!", show_alert=True)
+        else:
+            await update.callback_query.answer("❌ Log file not found.")
+    except Exception as e:
+        logger.error(f"Error clearing logs: {e}", exc_info=True)
+        await update.callback_query.answer("❌ Error", show_alert=True)
+
+async def handle_view_error_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show last few ERROR lines from the log file"""
+    try:
+        from config.settings import get_settings
+        settings = get_settings()
+        log_file = settings.LOG_FILE
+
+        if not os.path.exists(log_file):
+            await update.callback_query.answer("❌ Log file not found.", show_alert=True)
+            return
+
+        errors = []
+        with open(log_file, 'r', encoding='utf-8') as f:
+            # Simple tail implementation for errors
+            for line in f:
+                if "ERROR" in line:
+                    errors.append(line.strip())
+                    if len(errors) > 10:
+                        errors.pop(0)
+
+        if not errors:
+            text = "✅ **No ERRORS found in recent logs.**"
+        else:
+            text = "⚠️ **Last 10 Errors Found:**\n\n" + "\n\n".join([f"`{e[:100]}...`" if len(e) > 100 else f"`{e}`" for e in errors])
+
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="view_admin_logs")]])
+        await update.callback_query.message.edit_text(text, parse_mode="Markdown", reply_markup=keyboard)
+    except Exception as e:
+        logger.error(f"Error reading errors: {e}", exc_info=True)
+        await update.callback_query.answer("❌ Error", show_alert=True)
 
 async def handle_admin_shorteners(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Route Link Shorteners admin request to the main handler."""

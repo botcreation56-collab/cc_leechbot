@@ -1585,6 +1585,7 @@ async def handle_inject_sub(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         user_id = update.effective_user.id
         user = await get_user(user_id)
 
+        if user:
             await update_user(user_id, {"settings.metadata.subtitle": "Inject"})
             await update.callback_query.answer("✅ Subtitles will be injected", show_alert=True)
             logger.info(f"Subtitles injection enabled for user {user_id}")

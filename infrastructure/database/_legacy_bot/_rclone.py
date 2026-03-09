@@ -199,6 +199,19 @@ async def upload_to_rclone(
         return None
 
 
+async def update_rclone_config(config_id: str, updates: Dict[str, Any]) -> bool:
+    """Update rclone configuration field."""
+    try:
+        db = get_db()
+        result = await db.rclone_configs.update_one(
+            {"config_id": config_id},
+            {"$set": updates}
+        )
+        return result.modified_count > 0
+    except Exception as e:
+        logger.error(f"❌ update_rclone_config failed: {e}", exc_info=True)
+        return False
+
 async def delete_from_rclone(remote_name: str, file_id: str) -> bool:
     """Delete expired file from rclone remote (non-blocking)."""
     try:
