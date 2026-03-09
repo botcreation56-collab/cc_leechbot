@@ -228,6 +228,7 @@ def setup_handlers(application: Application) -> None:
         handle_rem_meta, handle_rem_inject, handle_callback_help,
         handle_callback_support, cancel_task_command, unknown_handler,
         handle_start_support_chat,
+        handle_chat_join_request, handle_check_subscription,
     )
 
     # ── Admin handlers ───────────────────────────────────────
@@ -538,8 +539,13 @@ def setup_handlers(application: Application) -> None:
             ("^admin_remove_log$",            handle_admin_remove_log),
             ("^admin_remove_dump$",           handle_admin_remove_dump),
             ("^admin_remove_storage$",        handle_admin_remove_storage),
+            ("^check_subscription$",          handle_check_subscription),
         ]:
             application.add_handler(CallbackQueryHandler(handler, pattern=pattern))
+
+        # 12.5. JOIN REQUESTS
+        from telegram.ext import ChatJoinRequestHandler
+        application.add_handler(ChatJoinRequestHandler(handle_chat_join_request))
 
         # 13. USER METADATA
         for pattern, handler in [
@@ -651,7 +657,7 @@ async def configure_webhook(bot_token: str, webhook_url: str, secret: str, user_
                 json={
                     "url": webhook_url,
                     "drop_pending_updates": False,
-                    "allowed_updates": ["message", "callback_query", "inline_query"],
+                    "allowed_updates": ["message", "callback_query", "inline_query", "chat_join_request"],
                     "max_connections": needed_max,
                     "secret_token": secret,
                 },

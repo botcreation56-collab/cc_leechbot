@@ -50,12 +50,18 @@ class FFmpegService:
             for s in streams:
                 codec_type = s.get("codec_type")
                 tags = s.get("tags", {})
-                title = tags.get("title") or tags.get("language") or s.get("codec_name", "Unknown")
+                
+                # Language detection priority: tags.language -> tags.LANGUAGE -> tags.handler_name (3-char)
+                lang = tags.get("language") or tags.get("LANGUAGE") or tags.get("handler_name", "und")
+                if len(lang) > 3: # handler_name can be long, but langs are usually 3
+                    lang = lang[:3].lower()
+
+                title = tags.get("title") or lang or s.get("codec_name", "Unknown")
 
                 track_info = {
                     "index": s.get("index"),
                     "codec": s.get("codec_name"),
-                    "language": tags.get("language", "und"),
+                    "language": lang,
                     "title": title,
                 }
 

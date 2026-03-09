@@ -989,6 +989,82 @@ async def send_progress_message(
             pass
 
 async def finalize_progress(bot, task_id, success=True, result_text="", reply_markup=None):
+    """Finalize progress tracking and clean up session."""
+    try:
+        from bot.database import update_task
+        status = "completed" if success else "failed"
+        await update_task(task_id, {"status": status, "result": result_text})
+        
+        # We need user_id to clear session. Usually task has it.
+        from bot.database import get_task
+        task = await get_task(task_id)
+        if task:
+            user_id = task.get("user_id")
+            # We'll rely on the caller or a helper to clear context.user_data
+            # since we don't have 'context' here.
+            # But we can at least log it.
+            logger.info(f"✅ Task {task_id} finalized as {status}")
+            
+    except Exception as e:
+        logger.error(f"Error finalizing progress: {e}")
+
+async def clear_user_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Wipe all temporary user state to prevent session leak/spam."""
+    if not context or not context.user_data:
+        return
+        
+    user_id = update.effective_user.id if update.effective_user else "unknown"
+    
+    keys_to_clear = [
+        "awaiting", "wizard", "bypass_url", "queued_task", 
+        "processing_lock", "current_task_id", "awaiting_channel_type"
+    ]
+    # Also clear any dynamic 'rclone_' or 'wiz_' keys
+    dynamic_keys = [k for k in context.user_data if k.startswith(("rclone_", "wiz_", "edit_"))]
+    keys_to_clear.extend(dynamic_keys)
+    
+    count = 0
+    for key in keys_to_clear:
+        if context.user_data.pop(key, None) is not None:
+            count += 1
+            
+    if count > 0:
+        logger.info(f"🧹 Session cleared for {user_id} ({count} keys removed)")
+
+async def handle_chat_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Automatically approve join requests for force-sub channels."""
+    try:
+        request = update.chat_join_request
+        user_id = request.from_user.id
+        chat = request.chat
+        
+        logger.info(f"📥 Join Request: {user_id} -> {chat.title} ({chat.id})")
+        
+        # Auto-approve
+        await request.approve()
+        logger.info(f"✅ Approved join request for {user_id} in {chat.id}")
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to approve join request: {e}")
+
+async def handle_check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Callback for '✅ I Joined' button. Retriggers force-sub check."""
+    query = update.callback_query
+    await query.answer("Checking subscription...")
+    
+    # Just inform them if they still haven't joined, 
+    # check_force_sub will re-send the message if needed.
+    if await check_force_sub(update, context):
+        await query.edit_message_text(
+            "✅ **Subscription Verified!**\n\n"
+            "You can now continue using the bot.\n"
+            "Try sending a link or file now!",
+            parse_mode="Markdown"
+        )
+    else:
+        await query.answer("⚠️ You haven't joined all channels yet!", show_alert=True)
+
+async def finalize_progress(bot, task_id, success=True, result_text="", reply_markup=None):
     progress_data = getattr(bot, "progress_data", {})
     if task_id not in progress_data:
         return
@@ -1397,11 +1473,8 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
         # Clear all awaiting / wizard / rclone state keys
-        clear = [k for k in context.user_data
-                 if k in ("awaiting", "broadcast_awaiting")
-                 or k.startswith(("awaiting_", "rclone_", "wiz_"))]
-        for k in clear:
-            context.user_data.pop(k, None)
+        # Clear state using helper
+        await clear_user_session(update, context)
 
         await update.message.reply_text(msg, parse_mode="Markdown")
         logger.info(f"✅ /cancel by {user_id} — was awaiting: {awaiting or 'nothing'}")

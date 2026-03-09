@@ -174,6 +174,14 @@ async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE)
         file_obj = update.message.document or update.message.video or update.message.audio
         if not file_obj:
             return
+
+        # 2.5️⃣ ✅ PREEMPTIVE SIZE CHECK
+        file_size = getattr(file_obj, 'file_size', 0)
+        from bot.utils import validate_file_size
+        is_val, err = validate_file_size(file_size, user.get("plan", "free"))
+        if not is_val:
+            await update.message.reply_text(f"❌ {err}\n\n{ERROR_MESSAGES.get('file_too_large', '')}")
+            return
             
         filename = getattr(file_obj, 'file_name', 'file')
         
@@ -934,7 +942,7 @@ class WizardHandler:
                      f"✏️ **Rename File**\n\n"
                      f"Current: `{current}`\n\n"
                      f"Send me the new filename.",
-                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="wiz_edit")]], parse_mode="Markdown")
+                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="wiz_edit")]])
                  )
                  context.user_data['awaiting'] = 'wiz_rename'
 
@@ -1211,6 +1219,10 @@ class WizardHandler:
             reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
             
             if query:
+                # Clear state using helper before finishing UI
+                from bot.handlers.user import clear_user_session
+                await clear_user_session(None, context) # Pass update=None as we have context
+                
                 await query.edit_message_text(final_text, parse_mode="Markdown", reply_markup=reply_markup)
                 # Silently delete the wizard panel after a short grace period
                 import asyncio
@@ -1310,7 +1322,7 @@ class WizardHandler:
 
         # Empty queue or Pro user -> Process inline immediately
         await update_task(task_id, {"status": "processing"})
-        context.user_data.pop('wizard', None)
+        # We don't pop 'wizard' yet, process_session_background needs it.
         await WizardHandler.process_session_background(context.bot, user_id, session, query)
 
 async def execute_processing_flow_by_task(bot, task: dict) -> None:
