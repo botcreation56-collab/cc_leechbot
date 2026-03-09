@@ -206,7 +206,13 @@ async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 "status": {"$in": ["pending", "processing"]}
             })
             if existing_task:
-                await update.message.reply_text("⚠️ **Wait inline!**\n\nThis exact file is already in progress for you.", parse_mode="Markdown")
+                e_tid = existing_task.get("task_id", "unknown")
+                await update.message.reply_text(
+                    f"⚠️ **Wait inline!**\n\n"
+                    f"This exact file is already in progress for you.\n"
+                    f"Active Task ID: `{e_tid}`",
+                    parse_mode="Markdown"
+                )
                 return
 
         # Create task

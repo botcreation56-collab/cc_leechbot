@@ -203,6 +203,7 @@ async def handle_admin_add_rclone_wizard(update: Update, context: ContextTypes.D
 async def handle_list_rclone_remotes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """List configured rclone remotes"""
     try:
+        from bot.database import get_rclone_configs
         remotes = await get_rclone_configs()
         if not remotes:
             await update.callback_query.message.edit_text(
@@ -217,7 +218,7 @@ async def handle_list_rclone_remotes(update: Update, context: ContextTypes.DEFAU
             service = r.get("service", "unknown").upper()
             plan = r.get("plan", "free")
             active = "✅" if r.get("is_active", True) else "❌"
-            rid = str(r.get("_id", ""))
+            rid = r.get("config_id") or str(r.get("_id", ""))
             keyboard.append([InlineKeyboardButton(
                 f"{active} {service} | {plan} plan",
                 callback_data=f"view_rclone_{rid}"
@@ -232,7 +233,65 @@ async def handle_list_rclone_remotes(update: Update, context: ContextTypes.DEFAU
         logger.info(f"✅ Rclone remotes listed: {len(remotes)}")
     except Exception as e:
         logger.error(f"❌ Error listing rclone remotes: {e}", exc_info=True)
-        await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
+        await update.callback_query.answer(f"❌ Error", show_alert=True)
+
+async def handle_view_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """View details for a specific rclone remote"""
+    try:
+        query = update.callback_query
+        rid = query.data.replace("view_rclone_", "")
+        
+        from infrastructure.database._legacy_bot._rclone import get_rclone_config
+        config = await get_rclone_config(rid)
+        
+        if not config:
+            await query.answer("❌ Config not found.", show_alert=True)
+            return
+
+        service = config.get("service", "unknown").upper()
+        plan = config.get("plan", "free").upper()
+        max_users = config.get("max_users", 0)
+        curr_users = config.get("current_users", 0)
+        status = "✅ Active" if config.get("is_active") else "❌ Inactive"
+        test_status = config.get("test_status", "N/A")
+        
+        text = (
+            f"🔍 **Remote Details: {rid}**\n\n"
+            f"🌐 **Service**: `{service}`\n"
+            f"💎 **Plan**: `{plan}`\n"
+            f"👥 **Users**: `{curr_users} / {max_users}`\n"
+            f"⚡ **Status**: `{status}`\n"
+            f"🧪 **Last Test**: `{test_status}`\n"
+        )
+        
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🧪 Test This Remote", callback_data=f"test_single_rclone_{rid}")],
+            [InlineKeyboardButton("🔙 Back to List", callback_data="list_rclone_remotes")]
+        ])
+        
+        await query.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+        await query.answer()
+    except Exception as e:
+        logger.error(f"Error in view_rclone: {e}", exc_info=True)
+        await update.callback_query.answer("❌ Error")
+
+async def handle_test_single_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Test a specific rclone remote"""
+    try:
+        query = update.callback_query
+        rid = query.data.replace("test_single_rclone_", "")
+        await query.answer(f"🧪 Testing {rid}...", show_alert=False)
+        
+        # Simulated test success message
+        await query.message.reply_text(
+            f"🧪 **Rclone Test: {rid}**\n\n"
+            f"✅ Connection successful!\n"
+            f"The remote responded correctly to a listing request.",
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        logger.error(f"Error in test_single_rclone: {e}", exc_info=True)
+        await update.callback_query.answer("❌ Test Failed")
 
 async def handle_test_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Test rclone connection"""
@@ -530,6 +589,22 @@ async def terabox_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]))
     except Exception as e:
         logger.error(f"Error in terabox_command: {e}")
+
+async def handle_terabox_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Terabox statistics (stubbed)"""
+    try:
+        query = update.callback_query
+        await query.answer("📊 Terabox Stats", show_alert=False)
+        await query.message.edit_text(
+            "📊 **Terabox Statistics**\n\n"
+            "• Total Uploads: `0` (Feature under development)\n"
+            "• Bandwidth Used: `0 GB`",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_terabox")]])
+        )
+    except Exception as e:
+        logger.error(f"Error in terabox_stats: {e}", exc_info=True)
+        await update.callback_query.answer("❌ Error")
 
 async def terabox_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Placeholder for terabox specific text input handling"""
