@@ -19,8 +19,6 @@ from bot.database import (
     get_config,
     add_rclone_config,
     get_rclone_configs,
-    remove_rclone_config,
-    update_rclone_config,
     log_admin_action,
     get_user_tasks,
     get_admin_stats,
@@ -30,8 +28,7 @@ from bot.database import (
     add_chatbox_message,
     get_force_sub_channels,
     update_force_sub_metadata,
-    set_channel_config,
-    set_channel_metadata
+    set_channel_config
 )
 from bot.utils import log_info, log_error, log_user_update, validate_url
 from bot.handlers.user import paginate_keyboard
