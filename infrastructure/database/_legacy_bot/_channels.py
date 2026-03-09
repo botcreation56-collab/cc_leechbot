@@ -14,6 +14,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from infrastructure.database._legacy_bot._cache import _get_cache_lock, _bust_config_cache
 from infrastructure.database._legacy_bot._config import get_config
 from infrastructure.database._legacy_bot._connection import get_db
 from infrastructure.database._legacy_bot._security_log import log_admin_action
@@ -218,6 +219,8 @@ async def update_force_sub_metadata(
             {"$set": {"channels.force_sub": existing, "updated_at": datetime.utcnow()}},
         )
         if result.acknowledged:
+            # Bust cache so changes take effect immediately
+            _bust_config_cache()
             logger.info(f"✅ Force sub metadata updated: {channel_id}")
             if admin_id:
                 await log_admin_action(admin_id, "update_force_sub_metadata", {

@@ -1025,22 +1025,21 @@ async def handle_admin_fsub_toggle(update: Update, context: ContextTypes.DEFAULT
     """Toggle force-sub channel enabled/disabled"""
     try:
         query = update.callback_query
-        await query.answer()
-        channel_id = query.data.replace("admin_fsub_toggle_", "")
+        channel_id = int(query.data.replace("admin_fsub_toggle_", ""))
 
-        config = await get_config() or {}
-        channels = config.get("force_sub_channels", [])
-        for ch in channels:
-            if str(ch.get("channel_id")) == str(channel_id):
-                ch["enabled"] = not ch.get("enabled", True)
-                new_status = "✅ Enabled" if ch["enabled"] else "❌ Disabled"
-                await query.answer(f"Channel {new_status}", show_alert=True)
-                break
-        config["force_sub_channels"] = channels
-        await update_config(config, admin_id=update.effective_user.id)
-        await handle_admin_set_force_sub_channel(update, context)
+        from bot.database import get_force_sub_channels, update_force_sub_metadata
+        channels = await get_force_sub_channels()
+        channel = next((ch for ch in channels if ch.get("id") == channel_id), None)
+        
+        if channel:
+            current = channel.get("metadata", {}).get("enabled", True)
+            await update_force_sub_metadata(channel_id, {"enabled": not current}, admin_id=update.effective_user.id)
+            new_status = "✅ Enabled" if not current else "❌ Disabled"
+            await query.answer(f"Channel {new_status}", show_alert=False)
+            await handle_admin_fsub_manage(update, context, channel_id=channel_id)
     except Exception as e:
         logger.error(f"❌ Error toggling fsub: {e}", exc_info=True)
+        await query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
 
 async def handle_admin_fsub_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Get invite link for force-sub channel"""

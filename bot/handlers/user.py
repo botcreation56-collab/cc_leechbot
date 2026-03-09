@@ -1297,11 +1297,12 @@ async def check_force_sub(update: Update, context: ContextTypes.DEFAULT_TYPE, pe
 
                 if not invite_link:
                     try:
-                        # If req_join is True, create a link that requires approval
+                        # If req_join is True, create a one-time link that requires approval
                         link = await context.bot.create_chat_invite_link(
                             channel_id,
                             creates_join_request=req_join,
-                            name=f"FSub_{user_id}"
+                            name=f"FSub_{user_id}",
+                            member_limit=1 if req_join else None # One-time use for requests
                         )
                         invite_link = link.invite_link
                     except TelegramError as e:
@@ -1333,8 +1334,43 @@ async def check_force_sub(update: Update, context: ContextTypes.DEFAULT_TYPE, pe
         return True
 
     except Exception as e:
-        await log_error(f"Error in force sub check: {str(e)}")
+        logger.error(f"Error in force sub check: {str(e)}")
         return True
+
+async def handle_chat_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Auto-approve join requests and revoke the unique link used."""
+    try:
+        request = update.chat_join_request
+        user_id = request.from_user.id
+        chat_id = request.chat.id
+        invite_link_obj = request.invite_link
+        invite_link_str = invite_link_obj.invite_link if invite_link_obj else None
+
+        logger.info(f"👋 Join request from {user_id} for chat {chat_id}")
+
+        # Approve the request
+        await request.approve()
+        logger.info(f"✅ Approved join request for user {user_id}")
+        
+        # Revoke the invite link used if it was a custom one-time link
+        if invite_link_str:
+            try:
+                await context.bot.revoke_chat_invite_link(chat_id, invite_link_str)
+                logger.info(f"🗑️ Revoked invite link {invite_link_str} after approval for user {user_id}")
+            except Exception as e:
+                logger.warning(f"Could not revoke link {invite_link_str}: {e}")
+
+        # Notify the user (Optional, but helps UX)
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text="✅ **Join Request Sent!**\n\nYou can now return to the bot and click the 'I Joined' button.",
+                parse_mode="Markdown"
+            )
+        except: pass # User might have blocked the bot
+
+    except Exception as e:
+        logger.error(f"❌ Error in handle_chat_join_request: {e}", exc_info=True)
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command - user registration and welcome"""
@@ -1824,44 +1860,11 @@ async def handle_meta_author(update: Update, context: ContextTypes.DEFAULT_TYPE)
         query = update.callback_query
         await query.answer()
 
-        await query.message.reply_text("👤 **Set Default Author / Artist**\n\nSend the text you want as the default author/artist:", parse_mode="Markdown")
+        await query.message.reply_text("👤 **Set Global Author / Artist**\n\nSend the text you want as the artist/author tag for all files:", parse_mode="Markdown")
         context.user_data["awaiting"] = "us_meta_author"
-
-        logger.info(f"✅ Author metadata input awaiting for user {user_id}")
 
     except Exception as e:
         logger.error(f"❌ Error in handle_meta_author: {e}", exc_info=True)
-        await update.callback_query.answer(f"❌ Error", show_alert=True)
-
-async def handle_meta_year(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    try:
-        user_id = update.effective_user.id
-        query = update.callback_query
-        await query.answer()
-
-        await query.message.reply_text("📅 **Set Default Year**\n\nSend the year you want as the default year:", parse_mode="Markdown")
-        context.user_data["awaiting"] = "us_meta_year"
-
-        logger.info(f"✅ Year metadata input awaiting for user {user_id}")
-
-    except Exception as e:
-        logger.error(f"❌ Error in handle_meta_year: {e}", exc_info=True)
-        await update.callback_query.answer(f"❌ Error", show_alert=True)
-
-async def handle_meta_subtitle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    try:
-        user_id = update.effective_user.id
-        query = update.callback_query
-        await query.answer()
-
-        await query.message.reply_text("📖 **Set Default Subtitle**\n\nTo disable subtitles, type `none`.\nOtherwise, send the subtitle language you want to extract/inject automatically.", parse_mode="Markdown")
-        context.user_data["awaiting"] = "us_meta_subtitle"
-
-        logger.info(f"✅ Subtitle metadata input awaiting for user {user_id}")
-
-    except Exception as e:
-        logger.error(f"❌ Error in handle_meta_subtitle: {e}", exc_info=True)
-        await update.callback_query.answer(f"❌ Error", show_alert=True)
 
 async def handle_meta_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
@@ -1869,25 +1872,11 @@ async def handle_meta_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         query = update.callback_query
         await query.answer()
 
-        context.user_data["metadata_type"] = "video"
-
-        keyboard = [
-            [InlineKeyboardButton("🔙 Back", callback_data="us_metadata")],
-        ]
-
-        await query.message.edit_text(
-            "🎬 **Video Metadata**\n\n"
-            "Video metadata will be preserved automatically.\n\n"
-            "Settings saved.",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="Markdown"
-        )
-
-        logger.info(f"✅ Video metadata menu opened for user {user_id}")
+        await query.message.reply_text("🎬 **Set Video Title**\n\nSend the title you want for the video track:", parse_mode="Markdown")
+        context.user_data["awaiting"] = "us_meta_video"
 
     except Exception as e:
         logger.error(f"❌ Error in handle_meta_video: {e}", exc_info=True)
-        await update.callback_query.answer(f"❌ Error", show_alert=True)
 
 async def handle_meta_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
@@ -1895,19 +1884,23 @@ async def handle_meta_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         query = update.callback_query
         await query.answer()
 
-        context.user_data["metadata_type"] = "audio"
+        await query.message.reply_text("🎵 **Set Audio Label**\n\nSend the text you want for audio tracks.\nResult will be: `[Text] | [Language]`", parse_mode="Markdown")
+        context.user_data["awaiting"] = "us_meta_audio"
 
-        keyboard = [
-            [InlineKeyboardButton("🔙 Back", callback_data="us_metadata")],
-        ]
+    except Exception as e:
+        logger.error(f"❌ Error in handle_meta_audio: {e}", exc_info=True)
 
-        await query.message.edit_text(
-            "🎵 **Audio Metadata**\n\n"
-            "Audio metadata will be preserved automatically.\n\n"
-            "Settings saved.",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="Markdown"
-        )
+async def handle_meta_subs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    try:
+        user_id = update.effective_user.id
+        query = update.callback_query
+        await query.answer()
+
+        await query.message.reply_text("📝 **Set Subtitle Label**\n\nSend the text you want for subtitle tracks.\nResult will be: `[Text] | [Language]`", parse_mode="Markdown")
+        context.user_data["awaiting"] = "us_meta_subs"
+
+    except Exception as e:
+        logger.error(f"❌ Error in handle_meta_subs: {e}", exc_info=True)
 
         logger.info(f"✅ Audio metadata menu opened for user {user_id}")
 

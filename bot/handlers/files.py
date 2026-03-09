@@ -618,14 +618,36 @@ async def myfiles_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 async def handle_us_thumbnail_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Callback: show thumbnail prompt"""
-    query = update.callback_query
-    await query.answer()
-    context.user_data["awaiting"] = "us_thumbnail"
-    await query.message.reply_text(
-        "🖼️ **Set Custom Thumbnail**\n\nSend me a photo to use as your thumbnail.\n\nOr type `auto` to use auto-generated thumbnails.",
-        parse_mode="Markdown"
-    )
+    """Callback: show thumbnail options or prompt"""
+    try:
+        query = update.callback_query
+        user_id = update.effective_user.id
+        from bot.database import get_user
+        user = await get_user(user_id)
+        settings = user.get("settings", {})
+        thumb = settings.get("thumbnail_file_id")
+        
+        await query.answer()
+        context.user_data["awaiting"] = "us_thumbnail"
+        
+        if thumb:
+            # Sub-menu for existing thumbnail
+            text = "🖼️ **Custom Thumbnail Set**\n\nYou already have a custom thumbnail. What would you like to do?"
+            keyboard = [
+                [InlineKeyboardButton("👁️ View Thumb", callback_data="us_thumbnail_view")],
+                [InlineKeyboardButton("🗑️ Delete Thumb", callback_data="us_thumbnail_delete")],
+                [InlineKeyboardButton("🖼️ Set New (Send Photo)", callback_data="ignore")],
+                [InlineKeyboardButton("🔙 Back to Settings", callback_data="go_back_to_settings")]
+            ]
+            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+        else:
+            # Simple prompt
+            text = "🖼️ **Set Custom Thumbnail**\n\nSend me a photo to use as your thumbnail.\n\nOr type `auto` to use auto-generated thumbnails."
+            keyboard = [[InlineKeyboardButton("🔙 Back", callback_data="go_back_to_settings")]]
+            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    except Exception as e:
+        logger.error(f"Error in handle_us_thumbnail_menu: {e}", exc_info=True)
 
 async def handle_us_thumbnail(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """MessageHandler: receive the actual photo"""
@@ -688,7 +710,11 @@ async def handle_us_thumbnail(update: Update, context: ContextTypes.DEFAULT_TYPE
         await log_user_update(context.bot, user_id, "set custom thumbnail")
         logger.info(f"✅ User {user_id} set custom thumbnail: {final_file_id}")
         
-        # Call ussettings_command to display the new thumbnail with the settings menu
+        # Delete user's photo message to keep chat clean
+        try: await update.message.delete()
+        except: pass
+
+        # Return to settings menu in-place
         from bot.handlers import ussettings_command
         await ussettings_command(update, context, photo_file_id=final_file_id)
 
@@ -716,34 +742,37 @@ async def handle_us_metadata(update: Update, context: ContextTypes.DEFAULT_TYPE)
         settings_data = user.get("settings", {})
         metadata = settings_data.get("metadata", {})
 
-        title = metadata.get("title", "Not set")
-        author = metadata.get("author", "Not set")
-        year = metadata.get("year", "Not set")
-        subtitle = metadata.get("subtitle", "None")
-        audio = metadata.get("audio", "Auto")
-        video = metadata.get("video", "Auto")
+        m_title = metadata.get("video", "Default")
+        m_author = metadata.get("author", "Default")
+        m_audio = metadata.get("audio", "Default")
+        m_subs = metadata.get("subs", "Default")
+
+        text = (
+            "🏷️ **Media Metadata Settings**\n\n"
+            "Customize the global tags applied to your processed files.\n"
+            "Track titles are applied as: `[Value] | [Language]`\n\n"
+            f"🎬 **Video Title:** `{m_title}`\n"
+            f"👤 **Artist/Author:** `{m_author}`\n"
+            f"🎵 **Audio Track:** `{m_audio}`\n"
+            f"📝 **Subtitle Track:** `{m_subs}`"
+        )
 
         keyboard = [
-            [InlineKeyboardButton("🎬 Title", callback_data="meta_title"),
-             InlineKeyboardButton("👤 Author", callback_data="meta_author")],
-            [InlineKeyboardButton("📅 Year", callback_data="meta_year")],
-            [InlineKeyboardButton("📖 Subtitles", callback_data="meta_subtitle"),
-             InlineKeyboardButton("🎵 Audio", callback_data="meta_audio")],
-            [InlineKeyboardButton("🎬 Video", callback_data="meta_video")],
-            [InlineKeyboardButton("🔙 Back", callback_data="us_back")],
+            [
+                InlineKeyboardButton("🎬 Video", callback_data="meta_video"),
+                InlineKeyboardButton("� Author", callback_data="meta_author")
+            ],
+            [
+                InlineKeyboardButton("🎵 Audio", callback_data="meta_audio"),
+                InlineKeyboardButton("📝 Subs", callback_data="meta_subs")
+            ],
+            [InlineKeyboardButton("🔙 Back to Settings", callback_data="go_back_to_settings")]
         ]
 
         await query.message.edit_text(
-            f"📋 **Metadata Settings**\n\n"
-            f"🎬 Title: `{title}`\n"
-            f"👤 Author: `{author}`\n"
-            f"📅 Year: `{year}`\n"
-            f"📖 Subtitle: `{subtitle}`\n"
-            f"🎵 Audio: `{audio}`\n"
-            f"🎬 Video: `{video}`\n\n"
-            f"Select a field to edit:",
+            text,
             reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="Markdown",
+            parse_mode="Markdown"
         )
 
         logger.info(f"✅ Metadata menu shown to user {user_id}")
@@ -1147,7 +1176,9 @@ class WizardHandler:
                 injected_subs=session.get('injected_subs'),
                 new_filename=custom_name,
                 custom_metadata=session.get('custom_metadata'),
-                progress_callback=ffmpeg_progress
+                progress_callback=ffmpeg_progress,
+                all_audio_tracks=session.get('audio_tracks'),
+                all_sub_tracks=session.get('sub_tracks'),
             )
             
             if not success:

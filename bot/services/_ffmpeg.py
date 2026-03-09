@@ -157,6 +157,23 @@ class FFmpegService:
                     logger.error(f"Failed to terminate process: {cleanup_err}")
             return False
 
+    ISO_639_2_MAP = {
+        "tam": "Tamil", "tel": "Telugu", "hin": "Hindi", "kan": "Kannada",
+        "mal": "Malayalam", "eng": "English", "ben": "Bengali", "guj": "Gujarati",
+        "mar": "Marathi", "pan": "Punjabi", "urd": "Urdu", "ori": "Oriya",
+        "asm": "Assamese", "san": "Sanskrit", "jpn": "Japanese", "kor": "Korean",
+        "chi": "Chinese", "zho": "Chinese", "fra": "French", "fre": "French",
+        "ger": "German", "deu": "German", "spa": "Spanish", "rus": "Russian",
+        "und": "Unknown"
+    }
+
+    @classmethod
+    def get_language_name(cls, code: str) -> str:
+        """Map ISO code to full name."""
+        if not code: return "Unknown"
+        code = code.lower()
+        return cls.ISO_639_2_MAP.get(code, code.capitalize())
+
     @classmethod
     async def process_media(
         cls,
@@ -169,10 +186,11 @@ class FFmpegService:
         new_filename: str = None,
         custom_metadata: Dict[str, str] = None,
         progress_callback=None,
+        all_audio_tracks: List[Dict] = None,
+        all_sub_tracks: List[Dict] = None,
     ) -> bool:
         """
-        Process media file: map selected streams and inject new ones.
-        Protected by semaphore to prevent server overload.
+        Process media file: map selected streams and apply dynamic track labeling.
         """
         from bot.utils import check_disk_space
 
@@ -186,17 +204,46 @@ class FFmpegService:
 
                 input_count = 1
                 maps = ["-map", "0:v"]
-                for idx in selected_audio_indexes:
-                    maps.extend(["-map", f"0:{idx}"])
-                for idx in selected_sub_indexes:
-                    maps.extend(["-map", f"0:{idx}"])
+                
+                # Metadata list for streams
+                stream_metadata = []
 
+                # Audio Mapping
+                for i, idx in enumerate(selected_audio_indexes):
+                    maps.extend(["-map", f"0:{idx}"])
+                    user_val = (custom_metadata or {}).get("audio", "Default")
+                    
+                    # Find language for this track
+                    lang_name = "Unknown"
+                    if all_audio_tracks:
+                        track = next((t for t in all_audio_tracks if t.get("index") == idx), None)
+                        if track:
+                            lang_name = cls.get_language_name(track.get("language", "und"))
+                    
+                    # Apply label: "New | Tamil" (completely replacing old title)
+                    stream_metadata.extend(["-metadata:s:a:" + str(i), f"title={user_val} | {lang_name}"])
+
+                # Subtitle Mapping
+                for i, idx in enumerate(selected_sub_indexes):
+                    maps.extend(["-map", f"0:{idx}"])
+                    user_val = (custom_metadata or {}).get("subs", "Default")
+                    
+                    lang_name = "Unknown"
+                    if all_sub_tracks:
+                        track = next((t for t in all_sub_tracks if t.get("index") == idx), None)
+                        if track:
+                            lang_name = cls.get_language_name(track.get("language", "und"))
+                    
+                    stream_metadata.extend(["-metadata:s:s:" + str(i), f"title={user_val} | {lang_name}"])
+
+                # Injected Audio
                 if injected_audio:
                     for a_path in injected_audio:
                         cmd.extend(["-i", os.path.abspath(a_path)])
                         maps.extend(["-map", f"{input_count}:a"])
                         input_count += 1
 
+                # Injected Subs
                 if injected_subs:
                     for s_path in injected_subs:
                         cmd.extend(["-i", os.path.abspath(s_path)])
@@ -205,10 +252,19 @@ class FFmpegService:
 
                 cmd.extend(maps)
                 
-                # Apply custom metadata tags natively to the container
+                # Global Metadata
                 if custom_metadata:
-                    for k, v in custom_metadata.items():
-                        cmd.extend(["-metadata", f"{k}={v}"])
+                    # Video title
+                    if "video" in custom_metadata:
+                        cmd.extend(["-metadata", f"title={custom_metadata['video']}"])
+                    
+                    # Author/Artist
+                    if "author" in custom_metadata:
+                        cmd.extend(["-metadata", f"artist={custom_metadata['author']}"])
+                        cmd.extend(["-metadata", f"author={custom_metadata['author']}"])
+
+                # Apply stream labels
+                cmd.extend(stream_metadata)
 
                 cmd.extend(["-c", "copy"])
                 cmd.extend(["--", os.path.abspath(output_path)])
