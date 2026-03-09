@@ -24,6 +24,20 @@ class UserResponse(BaseModel):
     username: Optional[str]
     plan: str
     banned: bool
+    parallel_slots: Optional[int] = None
+    storage_limit: Optional[int] = None
+    validity_from: Optional[str] = None
+    validity_to: Optional[str] = None
+
+
+class UpdateUserRequest(BaseModel):
+    """Update user request"""
+    plan: Optional[str] = None
+    parallel_slots: Optional[int] = None
+    storage_limit_gb: Optional[float] = None
+    validity_from: Optional[str] = None
+    validity_to: Optional[str] = None
+
 
 
 class UserListResponse(BaseModel):
@@ -66,7 +80,11 @@ async def list_users(
                 first_name=user.get("first_name", ""),
                 username=user.get("username"),
                 plan=user.get("plan", "free"),
-                banned=user.get("banned", False)
+                banned=user.get("banned", False),
+                parallel_slots=user.get("parallel_slots"),
+                storage_limit=user.get("storage_limit"),
+                validity_from=user.get("validity_from"),
+                validity_to=user.get("validity_to")
             ))
         
         logger.info(f"✅ Users list retrieved: {len(users)} total")
@@ -157,6 +175,39 @@ async def upgrade_user(user_id: int, admin_id: int = Depends(get_current_admin))
         raise
     except Exception as e:
         logger.error(f"❌ Upgrade user error: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.post("/users/{user_id}/update")
+async def update_user_endpoint(user_id: int, request: UpdateUserRequest, admin_id: int = Depends(get_current_admin)):
+    """
+    Update a user
+    """
+    try:
+        db = get_db()
+        updates = {}
+        if request.plan is not None:
+            updates['plan'] = request.plan
+        if request.parallel_slots is not None:
+            updates['parallel_slots'] = request.parallel_slots
+        if request.storage_limit_gb is not None:
+            updates['storage_limit'] = int(request.storage_limit_gb * 1024 * 1024 * 1024)
+        if request.validity_from is not None:
+            updates['validity_from'] = request.validity_from
+        if request.validity_to is not None:
+            updates['validity_to'] = request.validity_to
+
+        success = await update_user(user_id, updates, admin_id)
+        
+        if not success:
+            raise HTTPException(status_code=400, detail="Failed to update user")
+            
+        logger.info(f"✅ User updated: {user_id}")
+        return {"status": "success", "message": "User updated"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Update user error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/users/me/files")

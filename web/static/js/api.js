@@ -120,6 +120,10 @@ class API {
         return this.adminRequest(`/users/${userId}/upgrade`, 'POST');
     }
 
+    async updateUser(userId, data) {
+        return this.adminRequest(`/users/${userId}/update`, 'POST', data);
+    }
+
     async getConfig() {
         return this.adminRequest('/config');
     }

@@ -192,7 +192,7 @@ async def update_user(
             "first_name", "username", "plan", "storage_limit", "used_storage",
             "daily_limit", "daily_used", "parallel_slots", "banned", "ban_reason",
             "banned_at", "banned_by", "notifications_enabled", "role",
-            "files_processed", "settings",
+            "files_processed", "settings", "validity_from", "validity_to",
         }
 
         for key in list(updates.keys()):
