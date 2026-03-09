@@ -691,4 +691,3 @@ async def terabox_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     # If no specific awaiting state is matched, pass or log
     logger.warning(f"Unhandled terabox_text_input state: {awaiting}")
-```

@@ -1094,6 +1094,33 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Fallback for unexpected states
         logger.warning(f"⚠️ Unhandled text input state: {awaiting}")
 
+        if awaiting == "support_message":
+            from infrastructure.database._legacy_bot._channels import add_chatbox_message
+            success = await add_chatbox_message(user_id, text, sender_type="user")
+            if success:
+                await update.message.reply_text(
+                    "✅ **Message Sent!**\n\nThe admin has been notified. Please wait for a reply.",
+                    parse_mode="Markdown"
+                )
+                context.user_data.pop("awaiting", None)
+                
+                # Notify admins
+                from config.settings import get_admin_ids
+                for aid in get_admin_ids():
+                    try:
+                        await context.bot.send_message(
+                            aid,
+                            f"💬 **New Support Message**\n\n"
+                            f"User: `{user_id}`\n"
+                            f"Message: {text}\n\n"
+                            f"Reply using /admin -> Chatbox",
+                            parse_mode="Markdown"
+                        )
+                    except: pass
+            else:
+                await update.message.reply_text("❌ Failed to send message. Please try again later.")
+            return
+
     except Exception as e:
         logger.error(f"❌ Error in handle_text_input: {e}", exc_info=True)
         await update.message.reply_text(f"❌ **Error Processing Input**\n\n{str(e)[:100]}")
@@ -1223,6 +1250,13 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if context.args:
             arg = context.args[0]
             if arg == "id":
+                 # Auto-register user when they request their ID
+                 from bot.database import get_user, create_user
+                 user = await get_user(user_id)
+                 if not user:
+                     await create_user(user_id, first_name, username)
+                     logger.info(f"🆕 New user registered via /start id: {user_id} ({first_name})")
+                     
                  await update.message.reply_text(f"`{user_id}`", parse_mode="Markdown")
                  return
             elif arg.startswith("bypass_"):
@@ -1532,19 +1566,18 @@ async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         support_channel = config.get("support_channel", "") if config else ""
         contact_details = config.get("contact_details", "No contact details available") if config else "No contact details available"
 
+        keyboard = []
         if support_channel:
-            keyboard = [[InlineKeyboardButton("💬 Get Support", url=support_channel)]]
-            await update.message.reply_text(
-                f"💁 **Need Help?**\n\n{contact_details}\n\n"
-                f"Click below to get support:",
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode="Markdown"
-            )
-        else:
-            await update.message.reply_text(
-                f"💬 **Support**\n\n{contact_details}",
-                parse_mode="Markdown"
-            )
+            keyboard.append([InlineKeyboardButton("💬 Get Support (Channel)", url=support_channel)])
+        
+        keyboard.append([InlineKeyboardButton("💬 Bot Support (Chat)", callback_data="start_support_chat")])
+
+        await update.message.reply_text(
+            f"💁 **Need Help?**\n\n{contact_details}\n\n"
+            f"Click below to get support or chat with us directly:",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown"
+        )
             
         await log_info(f"✅ /support used by {update.effective_user.id}")
 
@@ -2021,10 +2054,14 @@ async def handle_callback_support(update: Update, context: ContextTypes.DEFAULT_
             ).strip() or "💬 **Support**\n\nPlease contact the admin for help."
             parse_mode = "Markdown"
             
+        keyboard = []
+        keyboard.append([InlineKeyboardButton("💬 Bot Support (Chat)", callback_data="start_support_chat")])
+        keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="start")])
+
         await query.message.edit_text(
             text,
             parse_mode=parse_mode,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="start")]])
+            reply_markup=InlineKeyboardMarkup(keyboard)
         )
     except Exception as e:
         logger.error(f"❌ Error in handle_callback_support: {e}")
@@ -2032,3 +2069,21 @@ async def handle_callback_support(update: Update, context: ContextTypes.DEFAULT_
 
 
 
+async def handle_start_support_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Start chat with support - prompt for first message"""
+    try:
+        query = update.callback_query
+        await query.answer()
+        
+        await query.message.edit_text(
+            "💬 **Support Chat**\n\n"
+            "Please send your message or question below.\n"
+            "An admin will reply to you as soon as possible.",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="support")]])
+        )
+        context.user_data["awaiting"] = "support_message"
+        logger.info(f"✅ User {update.effective_user.id} started support chat")
+    except Exception as e:
+        logger.error(f"❌ Error in handle_start_support_chat: {e}")
+        await update.callback_query.answer("❌ Error initiating chat", show_alert=True)

@@ -323,3 +323,28 @@ async def add_chatbox_message(
     except Exception as e:
         logger.error(f"❌ Add chatbox message failed: {e}", exc_info=True)
         return False
+
+async def get_unique_chat_users(limit: int = 20) -> List[Dict[str, Any]]:
+    """Get unique users who have messaged the chatbox, sorted by last message."""
+    try:
+        db = get_db()
+        pipeline = [
+            {"$sort": {"timestamp": -1}},
+            {
+                "$group": {
+                    "_id": "$user_id",
+                    "last_message": {"$first": "$message"},
+                    "timestamp": {"$first": "$timestamp"},
+                    "unread_count": {
+                        "$sum": {"$cond": [{"$eq": ["$read", False]}, 1, 0]}
+                    }
+                }
+            },
+            {"$sort": {"timestamp": -1}},
+            {"$limit": limit}
+        ]
+        results = await db.chatbox.aggregate(pipeline).to_list(length=limit)
+        return results
+    except Exception as e:
+        logger.error(f"❌ Get unique chat users failed: {e}", exc_info=True)
+        return []

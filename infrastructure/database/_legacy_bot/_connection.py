@@ -156,8 +156,8 @@ async def ensure_channel_schema(db: AsyncIOMotorDatabase) -> None:
             await db.config.insert_one({
                 "type": "global",
                 "channels": default_channels,
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
+                "created_at": dt_class.utcnow(),
+                "updated_at": dt_class.utcnow(),
             })
             logger.info("✅ Global config document created")
         else:

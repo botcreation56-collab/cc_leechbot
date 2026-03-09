@@ -1154,23 +1154,6 @@ async def handle_admin_logs_menu(update: Update, context: ContextTypes.DEFAULT_T
         logger.error(f"❌ Error in logs menu: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
 
-async def handle_admin_chatbox(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show chatbox/support messages"""
-    try:
-        messages = await get_chatbox_messages(limit=10)
-        if not messages:
-            text = "💬 **Chatbox**\n\nNo support messages yet."
-        else:
-            text = f"💬 **Chatbox** ({len(messages)} messages)\n\n"
-            for msg in messages[:5]:
-                uid = msg.get("user_id", "?")
-                content = str(msg.get("message", ""))[:50]
-                text += f"• `{uid}`: {content}\n"
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_back")]])
-        await update.callback_query.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
-    except Exception as e:
-        logger.error(f"❌ Error in chatbox: {e}", exc_info=True)
-        await update.callback_query.answer(f"❌ Error", show_alert=True)
 
 def admin_required(func):
     """Decorator to check if user is admin"""
@@ -1258,6 +1241,25 @@ async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
             except Exception as e:
                 await update.message.reply_text("❌ Usage: `<user_id> [plan_name]`\nExample: `123456789 premium`", parse_mode="Markdown")
             context.user_data.pop("awaiting", None)
+            return
+
+        if state.startswith("support_reply_"):
+            user_id_to_reply = int(state.split("_")[-1])
+            from infrastructure.database._legacy_bot._channels import add_chatbox_message
+            success = await add_chatbox_message(user_id_to_reply, text, sender_type="admin")
+            if success:
+                try:
+                    await context.bot.send_message(
+                        user_id_to_reply,
+                        f"💬 **Message from Support**\n\n{text}",
+                        parse_mode="Markdown"
+                    )
+                    await update.message.reply_text(f"✅ Message sent to `{user_id_to_reply}`.")
+                except Exception as e:
+                    await update.message.reply_text(f"❌ Failed to deliver message to user: {e}")
+            else:
+                await update.message.reply_text("❌ Failed to save message to database.")
+            # Keep the state so admin can send multiple messages
             return
 
         logger.warning(f"Unhandled admin input state: {state}")
@@ -1453,30 +1455,78 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
 
 async def handle_admin_chatbox(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show recent chatbox messages (support inbox)"""
+    """Show recent chatbox conversations (grouped by user)"""
     try:
         query = update.callback_query
         await query.answer()
-        messages = await get_chatbox_messages(limit=20)
-        if not messages:
-            text = "💬 **Chatbox** \n\nNo messages yet."
+        
+        from infrastructure.database._legacy_bot._channels import get_unique_chat_users
+        users = await get_unique_chat_users(limit=10)
+        
+        if not users:
+            text = "💬 **Support Chatbox**\n\nNo active conversations yet."
+            keyboard = [[InlineKeyboardButton("🔙 Back", callback_data="admin_back")]]
         else:
-            lines = ["💬 **Recent Support Messages**\n"]
-            for m in messages[:10]:
-                uid = m.get("user_id", "?")
-                sender = m.get("sender_type", "user")
-                msg = str(m.get("message", ""))[:80]
-                ts = m.get("timestamp", "").strftime("%m/%d %H:%M") if hasattr(m.get("timestamp"), "strftime") else ""
-                lines.append(f"[{ts}] {'\ud83d\udc64' if sender == 'user' else '\ud83e\udd16'} {uid}: {msg}")
-            text = "\n".join(lines)
+            text = "💬 **Active Support Conversations**\n\nClick a user to reply or view history:\n"
+            buttons = []
+            for u in users:
+                uid = u.get("_id")
+                last_msg = str(u.get("last_message", ""))[:40]
+                unread = u.get("unread_count", 0)
+                label = f"{'🔴 ' if unread > 0 else '⚪ '}{uid}: {last_msg}..."
+                buttons.append([InlineKeyboardButton(label, callback_data=f"support_reply_{uid}")])
+            
+            buttons.append([InlineKeyboardButton("🔙 Back", callback_data="admin_back")])
+            keyboard = buttons
+            
         await query.message.edit_text(
             text,
             parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_back")]])
+            reply_markup=InlineKeyboardMarkup(keyboard)
         )
     except Exception as e:
         logger.error(f"❌ Error in handle_admin_chatbox: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
+
+async def handle_support_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """View chat history with a user and enter reply mode"""
+    try:
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = int(query.data.split("_")[-1])
+        messages = await get_chatbox_messages(user_id=user_id, limit=10)
+        
+        history_lines = [f"💬 **Conversation with `{user_id}`**\n"]
+        for m in reversed(messages):
+            sender = "User" if m.get("sender_type") == "user" else "Admin"
+            history_lines.append(f"**{sender}:** {m.get('message')}")
+        
+        text = "\n".join(history_lines) + "\n\nType a message below to reply to this user."
+        
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Mark as Read", callback_data=f"support_read_{user_id}")],
+            [InlineKeyboardButton("🔙 Back to Inbox", callback_data="admin_chatbox")]
+        ])
+        
+        await query.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+        context.user_data["awaiting"] = f"support_reply_{user_id}"
+        
+    except Exception as e:
+        logger.error(f"❌ Error in handle_support_reply: {e}", exc_info=True)
+        await update.callback_query.answer(f"❌ Error", show_alert=True)
+
+async def handle_support_read(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mark all messages from a user as read"""
+    try:
+        query = update.callback_query
+        user_id = int(query.data.split("_")[-1])
+        db = get_db()
+        await db.chatbox.update_many({"user_id": user_id, "read": False}, {"$set": {"read": True}})
+        await query.answer("✅ Marked as read")
+        await handle_admin_chatbox(update, context)
+    except Exception as e:
+        logger.error(f"❌ Error in handle_support_read: {e}")
 
 async def handle_admin_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show recent admin action logs from DB (paginated)"""

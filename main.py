@@ -226,6 +226,7 @@ def setup_handlers(application: Application) -> None:
         handle_meta_video, handle_meta_subtitle, handle_rem_word,
         handle_rem_meta, handle_rem_inject, handle_callback_help,
         handle_callback_support, cancel_task_command, unknown_handler,
+        handle_start_support_chat,
     )
 
     # ── Admin handlers ───────────────────────────────────────
@@ -255,6 +256,8 @@ def setup_handlers(application: Application) -> None:
         handle_admin_download_logs,
         handle_admin_clear_logs,
         handle_view_error_logs,
+        handle_support_reply,
+        handle_support_read,
         handle_admin_rclone,
         handle_admin_remove_dump,
         handle_admin_remove_log,
@@ -554,13 +557,17 @@ def setup_handlers(application: Application) -> None:
             handle_text_input,
         ))
 
-        # 14. ADMIN LOGS
+        # 14. ADMIN LOGS & CHAT
         for pattern, handler in [
             ("^view_admin_logs$",   handle_admin_logs_menu),
             ("^view_logs_",         handle_admin_logs),
             ("^download_logs$",     handle_admin_download_logs),
             ("^clear_old_logs$",    handle_admin_clear_logs),
             ("^view_error_logs$",   handle_view_error_logs),
+            ("^admin_chatbox$",     handle_admin_chatbox),
+            ("^support_reply_",     handle_support_reply),
+            ("^support_read_",      handle_support_read),
+            ("^start_support_chat$", handle_start_support_chat),
         ]:
             application.add_handler(CallbackQueryHandler(handler, pattern=pattern))
 
