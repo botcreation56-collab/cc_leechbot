@@ -692,6 +692,7 @@ async def lifespan(app: FastAPI):
 
         # Start background workers
         try:
+            import asyncio
             from bot.services import QueueWorker
             worker = QueueWorker(bot_application.bot)
             asyncio.create_task(worker.start())
