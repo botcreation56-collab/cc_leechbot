@@ -27,7 +27,6 @@ async def create_user(user_id: int, first_name: str, username: str = "") -> Dict
 
         now = datetime.utcnow()
 
-        logger.info("   Checking if user exists...")
         existing = await db.users.find_one({"telegram_id": user_id})
         if existing:
             # Sync role if user is admin in settings but not in DB
@@ -45,10 +44,8 @@ async def create_user(user_id: int, first_name: str, username: str = "") -> Dict
 
         try:
             from config.settings import get_admin_ids
-            admin_ids = get_admin_ids()
-            is_admin = user_id in admin_ids
-        except Exception as e:
-            logger.error(f"Error checking admin status: {e}")
+            is_admin = user_id in get_admin_ids()
+        except Exception:
             is_admin = False
 
         user_doc = {
@@ -82,19 +79,13 @@ async def create_user(user_id: int, first_name: str, username: str = "") -> Dict
         }
 
         logger.info("   Document prepared. Inserting into MongoDB...")
-        result = await db.users.insert_one(user_doc)
-
-        if result.inserted_id:
-            user_doc["_id"] = result.inserted_id
-            logger.info(f"✅ User created successfully: {user_id} (ID: {result.inserted_id})")
-            return user_doc
-        else:
-            logger.error("❌ insert_one() returned no inserted_id")
-            return {}
+        await db.users.insert_one(user_doc)
+        logger.info(f"✅ User created successfully: {user_id}")
+        return user_doc
 
     except Exception as e:
-        logger.error(f"❌ create_user FAILED for {user_id}", exc_info=True)
-        return {}
+        logger.error(f"❌ create_user FAILED for {user_id}: {e}", exc_info=True)
+        raise
 
 
 async def get_user(user_id: int) -> dict | None:
@@ -119,7 +110,7 @@ async def get_user(user_id: int) -> dict | None:
 
     except Exception as e:
         logger.error(f"❌ get_user({user_id}) failed: {e}", exc_info=True)
-        return None
+        raise
 
 
 async def get_all_users(

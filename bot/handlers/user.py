@@ -12,6 +12,7 @@ from bot.database import (
     get_user,
     get_all_users,
     get_config,
+    create_user,
     ban_user,
     unban_user,
     update_user,
@@ -1251,7 +1252,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             arg = context.args[0]
             if arg == "id":
                  # Auto-register user when they request their ID
-                 from bot.database import get_user, create_user
                  user = await get_user(user_id)
                  if not user:
                      await create_user(user_id, first_name, username)
@@ -1283,9 +1283,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Fetch or create user in the database
         user = await get_user(user_id)
         if not user:
-            from bot.database import create_user
             user = await create_user(user_id, first_name, username)
             logger.info(f"🆕 New user registered: {user_id} ({first_name})")
+            await log_user_update(context.bot, user_id, "registered")
         user_plan = user.get("plan", "free") if user else "free"
         
         keyboard = [
