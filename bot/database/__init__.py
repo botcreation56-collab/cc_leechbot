@@ -48,6 +48,7 @@ from infrastructure.database._legacy_bot._users import (
 # ── Config ──────────────────────────────────────────────────────────────────
 from infrastructure.database._legacy_bot._config import (
     get_config,
+    get_config_sync,
     set_config,
     update_config,
     _get_from_settings,
@@ -144,7 +145,7 @@ __all__ = [
     "store_user_thumbnail", "get_user_destinations",
     "add_user_destination", "remove_user_destination",
     # Config
-    "get_config", "set_config", "update_config",
+    "get_config", "get_config_sync", "set_config", "update_config",
     "_get_from_settings", "_initialize_config_from_settings",
     # Tasks
     "create_task", "get_task", "update_task", "get_user_tasks",

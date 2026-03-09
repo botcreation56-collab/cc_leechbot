@@ -199,3 +199,20 @@ async def update_config(updates: Dict[str, Any], admin_id: int = 0) -> bool:
 
     logger.info(f"🔍 update_config returning: {success}")
     return success
+
+
+def get_config_sync(key: Optional[str] = None) -> Any:
+    """
+    Synchronous version of get_config.
+    ONLY checks TTLCache or settings.py fallback.
+    Does NOT trigger a database read.
+    """
+    if "global" in _config_cache:
+        config_doc = _config_cache["global"]
+        if key:
+            return config_doc.get(key, _get_from_settings(key))
+        return config_doc
+
+    if key:
+        return _get_from_settings(key)
+    return {}
