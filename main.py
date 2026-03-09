@@ -14,6 +14,7 @@ NO business logic lives here — only dependency wiring and lifecycle management
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
