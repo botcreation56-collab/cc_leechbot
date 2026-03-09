@@ -23,6 +23,56 @@ from config.settings import get_admin_ids, get_settings
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
+# Active users lock (120s TTL)
+# Maps user_id -> timestamp of lock start
+_ACTIVE_USERS = {}
+_LOCK_TIMEOUT = 120  # seconds
+
+# ============================================================
+# BUTTON & ACTION RATE LIMITING
+# ============================================================
+
+from functools import wraps
+import time
+
+def rate_limit(func: Callable) -> Callable:
+    """
+    Decorator to prevent users from spam-clicking buttons or sending rapid requests.
+    Locks the user for max 120s while the current request is processing.
+    """
+    @wraps(func)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Any:
+        if not update.effective_user:
+            return await func(update, context)
+            
+        user_id = update.effective_user.id
+        now = time.time()
+        
+        # Check and cleanup lock
+        if user_id in _ACTIVE_USERS:
+            if now - _ACTIVE_USERS[user_id] < _LOCK_TIMEOUT:
+                logger.warning(f"⏳ Rate limit hit for {user_id}. Ignoring request.")
+                if update.callback_query:
+                    try:
+                        await update.callback_query.answer("⏳ Processing previous action... please wait.", show_alert=True)
+                    except:
+                        pass
+                return
+            else:
+                # Lock expired
+                _ACTIVE_USERS.pop(user_id, None)
+
+        # Acquire lock
+        _ACTIVE_USERS[user_id] = now
+        
+        try:
+            return await func(update, context)
+        finally:
+            # Release lock immediately when done
+            _ACTIVE_USERS.pop(user_id, None)
+
+    return wrapper
+
 # ============================================================
 # ADMIN DECORATOR
 # ============================================================

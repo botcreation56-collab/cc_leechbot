@@ -47,15 +47,15 @@ class QueueWorker:
         logger.info("✅ Queue Worker Stopped.")
 
     async def recover_stale_tasks(self):
-        """Reset tasks that were 'processing' when the bot crashed."""
+        """Reset tasks that were 'processing' or 'waiting_user_input' when the bot crashed."""
         try:
             db = get_db()
             result = await db.tasks.update_many(
-                {"status": "processing"},
+                {"status": {"$in": ["processing", "waiting_user_input"]}},
                 {"$set": {"status": "queued", "recovered": True}},
             )
             if result.modified_count > 0:
-                logger.warning(f"🔄 Recovered {result.modified_count} stale tasks.")
+                logger.warning(f"🔄 Recovered {result.modified_count} stale/waiting tasks.")
         except Exception as e:
             logger.error(f"❌ Failed to recover stale tasks: {e}")
 
@@ -64,7 +64,28 @@ class QueueWorker:
             try:
                 db = get_db()
                 
-                # If queue is full (parallel limit reached), ONLY pull Pro tasks (Priority > 0)
+                # 1. Cleanup expired waiting tasks (120s timeout)
+                now = datetime.utcnow()
+                expired_threshold = 120
+                expired_tasks = await db.tasks.find({
+                    "status": "waiting_user_input",
+                    "wait_started_at": {"$lt": datetime.fromtimestamp(time.time() - expired_threshold)}
+                }).to_list(length=None)
+                
+                for et in expired_tasks:
+                    tid = et.get("task_id")
+                    uid = et.get("user_id")
+                    await update_task(tid, {"status": "expired", "error": "User response timeout (120s)"})
+                    try:
+                        await self.bot.send_message(
+                            chat_id=uid,
+                            text="⏰ **Wait Window Expired**\n\nYour turn in the queue has expired because you didn't click 'Start' within 120 seconds. Please resend the file if you wish to try again.",
+                            parse_mode="Markdown"
+                        )
+                    except: pass
+                    logger.info(f"⏰ Task {tid} expired due to timeout.")
+
+                # 2. If queue is full (parallel limit reached), ONLY pull Pro tasks (Priority > 0)
                 if self.semaphore.locked():
                     pro_task = await db.tasks.find_one_and_update(
                         {"status": "queued", "priority": {"$gt": 0}},
@@ -80,19 +101,56 @@ class QueueWorker:
                     await asyncio.sleep(1)
                     continue
 
-                # Normal pull: respects priority (Pro goes first)
-                task = await db.tasks.find_one_and_update(
-                    {"status": "queued"},
-                    {"$set": {"status": "processing", "started_at": datetime.utcnow()}},
-                    sort=[("priority", -1), ("created_at", 1)],
-                )
-
-                if task:
-                    t = asyncio.create_task(self._process_task_safely(task, bypass_semaphore=False))
-                    self.active_tasks.add(t)
-                    t.add_done_callback(self.active_tasks.discard)
-                else:
+                # 3. Normal pull (respects priority)
+                task = await db.tasks.find({"status": "queued"}).sort([("priority", -1), ("created_at", 1)]).to_list(length=1)
+                if not task:
                     await asyncio.sleep(self.sleep_interval)
+                    continue
+                
+                task = task[0]
+                user_id = task.get("user_id")
+                from bot.database import get_user
+                user = await get_user(user_id)
+                is_pro = user.get("plan", "free").lower() != "free"
+                
+                if is_pro:
+                    # Pro: Immediately process
+                    task = await db.tasks.find_one_and_update(
+                        {"task_id": task["task_id"], "status": "queued"},
+                        {"$set": {"status": "processing", "started_at": datetime.utcnow()}}
+                    )
+                    if task:
+                        t = asyncio.create_task(self._process_task_safely(task, bypass_semaphore=False))
+                        self.active_tasks.add(t)
+                        t.add_done_callback(self.active_tasks.discard)
+                else:
+                    # Free User: Enter wait state
+                    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+                    await db.tasks.update_one(
+                        {"task_id": task["task_id"]},
+                        {"$set": {"status": "waiting_user_input", "wait_started_at": datetime.utcnow()}}
+                    )
+                    try:
+                        keyboard = InlineKeyboardMarkup([[
+                            InlineKeyboardButton("🚀 Start My Task", callback_data=f"queue_start_{task['task_id']}")
+                        ]])
+                        await self.bot.send_message(
+                            chat_id=user_id,
+                            text=(
+                                "🎉 **It's Your Turn!**\n\n"
+                                "Your file is ready to be processed.\n"
+                                "Please click the button below within **120 seconds** to start.\n\n"
+                                "If you don't respond, your turn will be skipped."
+                            ),
+                            reply_markup=keyboard,
+                            parse_mode="Markdown"
+                        )
+                        logger.info(f"📢 User {user_id} notified for task {task['task_id']}. Waiting 120s.")
+                    except Exception as e:
+                        logger.error(f"Failed to notify free user {user_id}: {e}")
+                        # If notify fails, just mark it back to queued or fail it?
+                        # Let's mark it as queued so it doesn't get stuck in waiting
+                        await db.tasks.update_one({"task_id": task["task_id"]}, {"$set": {"status": "queued"}})
 
                 if not hasattr(self, "_last_cleanup"):
                     self._last_cleanup = 0

@@ -6,7 +6,7 @@ import uuid
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.error import TelegramError
-from bot.middleware import admin_only
+from bot.middleware import admin_only, rate_limit
 from bot.database import (
     get_db,
     get_user,
@@ -153,13 +153,15 @@ async def ask_channel_forward(update: Update, context: ContextTypes.DEFAULT_TYPE
     try:
         await update.callback_query.message.reply_text(
             f"📡 **Set {label}**\n\n"
-            f"Forward any message from your **{label}** to this chat.\n\n"
+            f"Forward any message from your **{label}** to this chat.\n"
+            f"Or simply **send the Channel ID** (e.g. `-100123...`).\n\n"
             f"The bot must be an admin in that channel.\n\n"
             f"Use /cancel to abort.",
             parse_mode="Markdown"
         )
+        context.user_data["awaiting"] = "channel_forward"
         context.user_data["awaiting_channel_type"] = channel_type
-        logger.info(f"✅ Waiting for {channel_type} forward from admin {update.effective_user.id}")
+        logger.info(f"✅ Waiting for {channel_type} input from admin {update.effective_user.id}")
     except Exception as e:
         logger.error(f"❌ Error in ask_channel_forward: {e}", exc_info=True)
 
@@ -195,6 +197,7 @@ async def handle_add_shortener(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.callback_query.answer(f"❌ Error", show_alert=True)
 
 
+@rate_limit
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Fallback callback query router for any buttons not caught by
@@ -246,6 +249,31 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 or data.startswith("admin_fsub_") or data.startswith("upgrade_user_"):
 
             if user_id not in admin_ids:
+                return
+
+        # Queue start button (Free users responding to turn notification)
+        if data.startswith("queue_start_"):
+            task_id = data.replace("queue_start_", "")
+            db = get_db()
+            task = await db.tasks.find_one({"task_id": task_id})
+            if not task:
+                await query.answer("❌ Task not found.", show_alert=True)
+                return
+            
+            if task.get("status") != "waiting_user_input":
+                await query.answer("⚠️ Task is already in progress or has expired.", show_alert=True)
+                return
+            
+            # Set back to queued so worker picks it up
+            await db.tasks.update_one(
+                {"task_id": task_id},
+                {"$set": {"status": "queued", "wait_responded_at": datetime.utcnow()}}
+            )
+            await query.message.edit_text("✅ **Processing will start now!**\n\nPlease wait a moment...", parse_mode="Markdown")
+            await query.answer("🚀 Starting task...")
+            logger.info(f"✅ User {user_id} clicked Start for task {task_id}")
+            return
+
                 await query.answer("❌ Unauthorized. Admin only.", show_alert=True)
                 return
 
@@ -993,6 +1021,7 @@ async def finalize_progress(bot, task_id, success=True, result_text="", reply_ma
 
     del bot.progress_data[task_id]
 
+@rate_limit
 async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle general text input based on awaiting state"""
     try:
@@ -1011,6 +1040,11 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"📩 Text input from {user_id} in state: {awaiting}")
 
         # Routing logic
+        if awaiting == "channel_forward":
+            from bot.handlers.admin import handle_admin_forwards
+            await handle_admin_forwards(update, context)
+            return
+
         if awaiting.startswith("us_dest_meta_name_") or awaiting.startswith("us_dest_meta_auth_"):
             await handle_us_dest_meta_input(update, context)
             return

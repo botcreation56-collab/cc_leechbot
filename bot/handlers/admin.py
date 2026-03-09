@@ -1290,7 +1290,7 @@ async def handle_admin_forwards(update: Update, context: ContextTypes.DEFAULT_TY
             await msg.reply_text("⚠️ No channel setup in progress. Use /admin → Config first.")
             return
 
-        # Extract channel from forward_origin
+        # Extract channel from forward_origin or raw text
         forward_origin = msg.forward_origin
         channel_id = None
         channel_title = "Unknown"
@@ -1302,11 +1302,23 @@ async def handle_admin_forwards(update: Update, context: ContextTypes.DEFAULT_TY
             # Fallback for older PTB versions
             channel_id = msg.forward_from_chat.id
             channel_title = msg.forward_from_chat.title or str(channel_id)
+        elif msg.text and (msg.text.strip().startswith("-100") or msg.text.strip().lstrip("-").isdigit()):
+            # User typed the ID directly
+            try:
+                channel_id = int(msg.text.strip())
+                channel_title = str(channel_id)
+                try:
+                    chat = await context.bot.get_chat(channel_id)
+                    channel_title = chat.title or str(channel_id)
+                except Exception:
+                    pass
+            except ValueError:
+                channel_id = None
 
         if not channel_id:
             await msg.reply_text(
                 "❌ **Could Not Read Channel**\n\n"
-                "Please forward a message **directly from the channel** (not from a user).\n"
+                "Please forward a message **directly from the channel** or **send the numeric Channel ID** (e.g., `-100123...`).\n"
                 "Make sure the bot is an admin in that channel first.",
                 parse_mode="Markdown"
             )
@@ -1352,6 +1364,7 @@ async def handle_admin_forwards(update: Update, context: ContextTypes.DEFAULT_TY
         })
 
         context.user_data.pop("awaiting_channel_type", None)
+        context.user_data.pop("awaiting", None)
 
         await msg.reply_text(
             f"✅ **{label} Set!**\n\n"

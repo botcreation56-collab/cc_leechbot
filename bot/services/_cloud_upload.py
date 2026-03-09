@@ -244,43 +244,73 @@ class StorageChannelManager:
             return None
 
 
-async def create_or_update_storage_message(bot, file_info: dict, user_id: int = None):
+async def create_or_update_storage_message(bot, file_info: dict, user_id: int = None, message_id: int = None):
     """
     Compatibility function required by many handlers.
-    Posts a clean message with Watch Online button to the storage/dump channel.
+    Posts or updates a clean message in the storage channel.
+    If message_id is provided, it edits the existing message.
     """
     try:
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-        from bot.database import get_config
+        from bot.database import get_config, get_channel_id
 
         config = await get_config()
-        storage_channel = config.get("storage_channel")
+        # Try new nested key first
+        storage_channel = await get_channel_id("storage") or config.get("storage_channel_id")
+        
         if not storage_channel:
-            logger.warning("Storage channel not configured in config")
+            logger.warning("Storage channel not configured")
             return None
 
         filename = file_info.get("filename", "Unknown File")
         file_id = file_info.get("file_id")
-        size_gb = round(file_info.get("size", 0) / (1024 ** 3), 2)
-        cloud_url = f"https://t.me/{bot.username}?start=file_{file_id}"
+        status = file_info.get("status", "Completed")
+        
+        size_bytes = file_info.get("size", 0)
+        size_gb = round(size_bytes / (1024 ** 3), 2)
+        
+        cloud_url = f"https://t.me/{bot.username}?start=file_{file_id}" if file_id else None
 
         caption = (
-            f"New File Uploaded\n\n"
+            f"📦 **Storage Ledger**\n\n"
             f"**File:** `{filename}`\n"
             f"**Size:** `{size_gb} GB`\n"
+            f"**Status:** `{status}`\n"
             f"**User ID:** `{user_id or 'N/A'}`"
         )
-        keyboard = [[InlineKeyboardButton("Watch Online", url=cloud_url)]]
+        
+        keyboard = []
+        if cloud_url:
+            keyboard.append([InlineKeyboardButton("Watch Online", url=cloud_url)])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
+
+        if message_id:
+            try:
+                await bot.edit_message_text(
+                    chat_id=storage_channel,
+                    message_id=message_id,
+                    text=caption,
+                    parse_mode="Markdown",
+                    reply_markup=reply_markup,
+                )
+                return message_id
+            except Exception as edit_err:
+                logger.warning(f"Failed to edit storage message {message_id}: {edit_err}")
+                # Fall through to send new if edit fails
 
         message = await bot.send_message(
             chat_id=storage_channel,
             text=caption,
             parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(keyboard),
+            reply_markup=reply_markup,
             disable_web_page_preview=True,
         )
         logger.info(f"Storage channel message posted: {message.message_id}")
         return message.message_id
+    except Exception as e:
+        logger.error(f"Failed to post to storage channel: {e}", exc_info=True)
+        return None
     except Exception as e:
         logger.error(f"Failed to post to storage channel: {e}", exc_info=True)
         return None

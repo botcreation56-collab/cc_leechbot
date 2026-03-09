@@ -1040,6 +1040,19 @@ class WizardHandler:
         task_id = session.get("task_id")
         
         try:
+            # 0. Post early ledger update
+            from bot.services import create_or_update_storage_message
+            custom_name = session.get("custom_name", "Untitled")
+            ledger_msg_id = await create_or_update_storage_message(
+                bot,
+                {
+                    "filename": custom_name,
+                    "status": "🏗️ Processing (Wizard)...",
+                    "size": session.get("file_size", 0),
+                },
+                user_id=user_id
+            )
+
             if query:
                 await query.edit_message_text("🚀 **Initializing Processing...**")
             else:
@@ -1149,6 +1162,20 @@ class WizardHandler:
             
             if not upload_result:
                 raise RuntimeError("Upload failed.")
+            
+            # 5.5 Update card in storage channel
+            await create_or_update_storage_message(
+                bot,
+                {
+                    "file_id": dump_file_id,
+                    "filename": custom_name,
+                    "static_size": session.get("file_size", 0),
+                    "status": "✅ Completed",
+                },
+                user_id=user_id,
+                message_id=ledger_msg_id
+            )
+                
                 
             # 6. Generate Stream Link with Shortener Token logic if needed
             from bot.database import create_one_time_key
@@ -1338,6 +1365,17 @@ async def execute_processing_flow_by_task(bot, task: dict) -> None:
         else:
             raise RuntimeError("Task has neither url nor file_id — cannot process")
 
+        # Post early card to storage channel (Ledger)
+        ledger_msg_id = await create_or_update_storage_message(
+            bot,
+            {
+                "filename": display_name,
+                "status": "🏗️ Processing...",
+                "size": task.get("file_size", 0),
+            },
+            user_id=user_id
+        )
+
         # Upload + send using shared service
         from bot.services import upload_and_send_file
         user_plan = user.get("plan", "free")
@@ -1371,15 +1409,17 @@ async def execute_processing_flow_by_task(bot, task: dict) -> None:
             await create_one_time_key(user_id, secure_token, expires)
             stream_url = f"https://{settings.DOMAIN}/api/verify_link/{dump_file_id}/{secure_token}"
 
-        # Post card to storage channel
+        # Update card in storage channel
         await create_or_update_storage_message(
             bot,
             {
                 "file_id": dump_file_id,
                 "filename": display_name,
-                "size": result.get("file_size", 0),
+                "static_size": result.get("file_size", 0),
+                "status": "✅ Completed",
             },
             user_id=user_id,
+            message_id=ledger_msg_id
         )
 
         # Notify user
