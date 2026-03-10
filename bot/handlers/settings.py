@@ -703,12 +703,14 @@ async def ussettings_command(update: Update, context: ContextTypes.DEFAULT_TYPE,
         show_photo_id = photo_file_id
         if not show_photo_id and settings.get("thumbnail") == "custom":
             show_photo_id = settings.get("thumbnail_file_id")
+            logger.info(f"🖼️ Using custom thumbnail: {show_photo_id}")
 
         if show_photo_id:
             try:
                 # If already a photo message, edit it
                 if is_callback and message.photo:
                     from telegram import InputMediaPhoto
+                    logger.info(f"🎨 Editing media with thumbnail: {show_photo_id}")
                     await message.edit_media(
                         media=InputMediaPhoto(media=show_photo_id, caption=text, parse_mode="Markdown"),
                         reply_markup=reply_markup

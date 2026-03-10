@@ -26,8 +26,77 @@ MAX_BOT_FILE_SIZE_MB = 50
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Rclone Service
+# Rclone Service & Binary Management
 # ─────────────────────────────────────────────────────────────────────────────
+
+async def ensure_rclone_binary() -> str:
+    """Ensure rclone binary exists in bin/ folder, downloading it if necessary."""
+    import platform
+    import zipfile
+    import tarfile
+    import io
+    import shutil
+    
+    system = platform.system().lower() # 'windows', 'linux', 'darwin'
+    arch = platform.machine().lower() # 'amd64', 'x86_64', 'arm64'
+    
+    bin_dir = Path("bin")
+    bin_dir.mkdir(exist_ok=True)
+    
+    binary_name = "rclone.exe" if system == "windows" else "rclone"
+    local_path = bin_dir / binary_name
+    
+    if local_path.exists():
+        return str(local_path.absolute())
+    
+    logger.info(f"📥 Rclone binary missing. Downloading for {system}_{arch}...")
+    
+    # Map platform/arch to rclone download segments
+    rclone_os = "windows" if system == "windows" else "linux"
+    rclone_arch = "amd64" if arch in ["amd64", "x86_64"] else "arm64" if arch == "arm64" else "386"
+    
+    ext = "zip" if system == "windows" else "gz" # it's actually .zip for windows, .tar.gz for linux
+    filename = f"rclone-current-{rclone_os}-{rclone_arch}.{ext}"
+    if system != "windows":
+        filename = f"rclone-current-{rclone_os}-{rclone_arch}.tar.gz"
+        
+    url = f"https://downloads.rclone.org/{filename}"
+    
+    try:
+        import httpx
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, follow_redirects=True, timeout=60)
+            response.raise_for_status()
+            
+            content = io.BytesIO(response.content)
+            
+            if system == "windows":
+                with zipfile.ZipFile(content) as z:
+                    # Find rclone.exe in the zip (it's usually in a subfolder like rclone-v1.66.0-windows-amd64/)
+                    for info in z.infolist():
+                        if info.filename.endswith("rclone.exe"):
+                            with z.open(info) as src, open(local_path, "wb") as dst:
+                                shutil.copyfileobj(src, dst)
+                            break
+            else:
+                with tarfile.open(fileobj=content, mode="r:gz") as tar:
+                    for member in tar.getmembers():
+                        if member.name.endswith("/rclone") and member.isfile():
+                            f = tar.extractfile(member)
+                            if f:
+                                with open(local_path, "wb") as dst:
+                                    shutil.copyfileobj(f, dst)
+                                os.chmod(local_path, 0o755)
+                            break
+                            
+            if local_path.exists():
+                logger.info(f"✅ Rclone binary downloaded to {local_path}")
+                return str(local_path.absolute())
+            else:
+                raise RcloneError("Failed to extract rclone binary from download.")
+    except Exception as e:
+        logger.error(f"❌ Failed to download rclone: {e}")
+        raise RcloneError(f"Rclone binary not found and auto-download failed: {e}")
 
 class RcloneError(Exception):
     """Rclone related errors."""
@@ -64,11 +133,13 @@ async def upload_to_rclone(
         with os.fdopen(fd, 'w') as f:
             f.write(credentials)
 
+        rclone_bin = await ensure_rclone_binary()
+        
         remote_name = f"{service}_{rclone_config_id[:8]}"
         destination = f"{remote_name}:{remote_path}"
 
         cmd = [
-            "rclone", "copy", str(path), destination,
+            rclone_bin, "copy", str(path), destination,
             f"--config={config_file}", "--progress",
             "--transfers=4", "--checkers=8", "--retries=3",
         ]
