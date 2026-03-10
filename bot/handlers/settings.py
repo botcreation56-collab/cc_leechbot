@@ -701,7 +701,7 @@ async def ussettings_command(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
         # If a photo ID is provided or if the user has a custom thumbnail, show it.
         show_photo_id = photo_file_id
-        if not show_photo_id and not is_callback and settings.get("thumbnail") == "custom":
+        if not show_photo_id and settings.get("thumbnail") == "custom":
             show_photo_id = settings.get("thumbnail_file_id")
 
         if show_photo_id:

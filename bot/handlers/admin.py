@@ -988,7 +988,7 @@ async def handle_admin_fsub_manage(update: Update, context: ContextTypes.DEFAULT
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton(f"Channel: {title}", callback_data="ignore")],
             [InlineKeyboardButton(f"Sub Check: {enabled_status}", callback_data=f"admin_fsub_toggle_{channel_id}")],
-            [InlineKeyboardButton(f"req to join : {req_status}", callback_data=f"admin_fsub_req_toggle_{channel_id}")],
+            [InlineKeyboardButton(f"[req to join : {req_status}]", callback_data=f"admin_fsub_req_toggle_{channel_id}")],
             [InlineKeyboardButton("🗑️ Remove This Channel", callback_data=f"admin_fsub_remove_confirm_{channel_id}")],
             [InlineKeyboardButton("🔙 Back to Channels", callback_data="admin_set_force_sub_channel")]
         ])

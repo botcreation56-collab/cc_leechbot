@@ -1250,7 +1250,7 @@ async def check_force_sub(update: Update, context: ContextTypes.DEFAULT_TYPE, pe
         user_id = update.effective_user.id
         from bot.database import get_user
         user = await get_user(user_id)
-        requested = user.get("settings", {}).get("requested_fsub", []) if user else []
+        requested = user.get("requested_fsub", []) if user else []
 
         not_joined = []
         for channel in force_channels:
@@ -1294,14 +1294,14 @@ async def check_force_sub(update: Update, context: ContextTypes.DEFAULT_TYPE, pe
                     req_join = False
                     invite_link = ""
 
-                if not invite_link:
+                # FORCE a new link if req_join is enabled to ensure creates_join_request is active
+                if not invite_link or req_join:
                     try:
                         # If req_join is True, create a one-time link that requires approval
                         link = await context.bot.create_chat_invite_link(
                             channel_id,
                             creates_join_request=req_join,
-                            name=f"FSub_{user_id}",
-                            member_limit=1 if req_join else None # One-time use for requests
+                            name=f"FSub_{user_id}_{int(time.time())}",
                         )
                         invite_link = link.invite_link
                     except TelegramError as e:
@@ -1347,15 +1347,14 @@ async def handle_chat_join_request(update: Update, context: ContextTypes.DEFAULT
 
         logger.info(f"👋 Join request from {user_id} for chat {chat_id}")
 
-        # Store the request in DB so we can allow the user to proceed
-        from bot.database import update_user, get_user
+        # Track that this user has a pending join request
+        from bot.database import get_user, update_user
         user = await get_user(user_id)
-        if user:
-            requested = user.get("settings", {}).get("requested_fsub", [])
-            if chat_id not in requested:
-                requested.append(chat_id)
-                await update_user(user_id, {"settings.requested_fsub": requested})
-                logger.info(f"📝 Tracked join request for user {user_id} in channel {chat_id}")
+        requested = user.get("requested_fsub", [])
+        if int(chat_id) not in [int(c) for c in requested]:
+            requested.append(int(chat_id))
+            await update_user(user_id, {"requested_fsub": requested})
+            logger.info(f"📝 User {user_id} requested to join channel {chat_id}")
 
         # Revoke the invite link used if it was a custom one-time link
         if invite_link_str:
