@@ -14,20 +14,25 @@ logger = logging.getLogger("filebot.services.ffmpeg")
 class FFmpegService:
     """Handles media probing and processing using FFmpeg/FFprobe."""
 
-    @staticmethod
-    async def probe_file(file_path: str) -> Dict[str, Any]:
+    @classmethod
+    async def probe_file(cls, file_path: str) -> Dict[str, Any]:
         """
         Probe file to get dynamic track information.
         Returns dict with 'audio' and 'subtitle' lists.
         """
         try:
+            # Handle URLs vs local paths
+            target_path = file_path
+            if not file_path.startswith(("http://", "https://")):
+                target_path = os.path.abspath(file_path)
+
             cmd = [
                 "ffprobe",
                 "-v", "error",
                 "-show_entries", "stream=index,codec_name,codec_type,tags",
                 "-of", "json",
                 "--",  # SECURITY: Stop option parsing before path
-                os.path.abspath(file_path),
+                target_path,
             ]
 
             process = await asyncio.create_subprocess_exec(

@@ -334,18 +334,39 @@ async def handle_test_single_rclone(update: Update, context: ContextTypes.DEFAUL
         await update.callback_query.answer("❌ Test Failed")
 
 async def handle_test_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Test rclone connection"""
+    """List configured rclone remotes for testing"""
     try:
-        await update.callback_query.answer("🧪 Testing rclone connection...", show_alert=False)
-        # In a real app, you'd run 'rclone listremotes' or similar here.
-        await update.callback_query.message.edit_text(
-            "🧪 **Rclone Connection Test**\n\n✅ Connection successful!\n\n"
-            "_(The system has verified the rclone binary is responsive)_",
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_rclone")]])
+        query = update.callback_query
+        await query.answer("🧪 Select a remote to test...", show_alert=False)
+        
+        from bot.database import get_rclone_configs
+        remotes = await get_rclone_configs()
+        
+        if not remotes:
+            await query.message.edit_text(
+                "❌ **No Rclone Remotes Configured**\n\nPlease add a remote first to test.",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_rclone")]])
+            )
+            return
+
+        keyboard = []
+        for r in remotes:
+            service = r.get("service", "unknown").upper()
+            rid = r.get("config_id") or str(r.get("_id", ""))
+            keyboard.append([InlineKeyboardButton(
+                f"🧪 Test {service} ({rid[:8]})",
+                callback_data=f"test_single_rclone_{rid}"
+            )])
+        keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="admin_rclone")])
+
+        await query.message.edit_text(
+            f"🧪 **Select Remote to Test**\n\nChoose a configured remote to verify connection and write permissions:",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown"
         )
     except Exception as e:
-        logger.error(f"❌ Error in rclone test: {e}", exc_info=True)
+        logger.error(f"❌ Error in rclone test list: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
 
 async def handle_disable_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE):
