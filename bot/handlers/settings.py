@@ -364,7 +364,7 @@ async def handle_edit_plan(update: Update, context: ContextTypes.DEFAULT_TYPE):
             internal_key = key_map.get(label_key)
             current = plan_data.get(internal_key, "Not Set")
 
-            await query.message.edit_text(
+            msg = await query.message.edit_text(
                 f"{label}\n\n"
                 f"Plan: **{plan_name.upper()}**\n"
                 f"Current Value: `{current}`\n\n"
@@ -372,6 +372,7 @@ async def handle_edit_plan(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Use /cancel to abort.",
                 parse_mode="Markdown"
             )
+            context.user_data["prompt_msg_id"] = msg.message_id
             context.user_data["awaiting"] = f"edit_plan_field_{plan_name}_{internal_key}"
             return
 
@@ -660,8 +661,9 @@ async def ussettings_command(update: Update, context: ContextTypes.DEFAULT_TYPE,
             ],
             [
                 InlineKeyboardButton("📢 Updates Channel", url="https://t.me/cc_leechbot"),
-                InlineKeyboardButton("🔙 Back", callback_data="us_close")
+                InlineKeyboardButton("🛠️ Create Rclone Service", callback_data="us_rclone_service"),
             ],
+            [InlineKeyboardButton("🔙 Back", callback_data="us_close")],
         ]
 
         # Get updates channel from config for the URL
@@ -855,6 +857,56 @@ async def handle_user_settings_text(update: Update, context: ContextTypes.DEFAUL
 # HANDLE THUMBNAIL
 # ============================================================
 
+        elif state == "us_rclone_service":
+            parts = [p.strip() for p in text.split("|")]
+            if len(parts) != 3:
+                await update.message.reply_text(
+                    "❌ **Invalid Format**\n\nPlease send in format: `Client_ID | Client_Secret | Refresh_Token`",
+                    parse_mode="Markdown"
+                )
+                return
+            
+            client_id, client_secret, refresh_token = parts
+            
+            # Generate Rclone Config Snippet
+            remote_name = f"user_{user_id}_gdrive"
+            config_snippet = (
+                f"[{remote_name}]\n"
+                f"type = drive\n"
+                f"client_id = {client_id}\n"
+                f"client_secret = {client_secret}\n"
+                f"scope = drive\n"
+                f"token = {{\"access_token\":\"\",\"token_type\":\"Bearer\",\"refresh_token\":\"{refresh_token}\",\"expiry\":\"\"}}\n"
+            )
+            
+            # We don't necessarily "add it to rclone" system-wide, 
+            # but we show it to the user and maybe store it for their uploads?
+            # For now, let's just fulfill the request: give credentials and vanish.
+            
+            msg = await update.message.reply_text(
+                f"✅ **Rclone Service Created!**\n\n"
+                f"**Credentials:**\n"
+                f"```\n"
+                f"id = \"{client_id}\"\n"
+                f"secret = \"{client_secret}\"\n"
+                f"```\n\n"
+                f"**Full Config Snippet:**\n"
+                f"```ini\n{config_snippet}```\n\n"
+                f"⚠️ **This message will be deleted in 5 minutes!**",
+                parse_mode="Markdown"
+            )
+            
+            # Schedule deletion
+            async def delete_after_delay(m, delay=300):
+                await asyncio.sleep(delay)
+                try:
+                    await m.delete()
+                except:
+                    pass
+            
+            asyncio.create_task(delete_after_delay(msg))
+            logger.info(f"✅ Rclone service config generated for {user_id}")
+
         elif state == "us_thumbnail":
             if text.lower() in ["auto", "automatic", "default"]:
                 await update_user(user_id, {"settings.thumbnail": "auto"})
@@ -1007,13 +1059,14 @@ async def handle_us_prefix(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         query = update.callback_query
         await query.answer()
-        await query.message.reply_text(
+        msg = await query.message.reply_text(
             "📝 **Set Filename Prefix**\n\n"
             "Send the text you want to add at the **beginning** of every filename.\n"
             "Example: `[HQ]` → `[HQ] video.mp4`\n\n"
             "Send d to disable prefix.",
             parse_mode="Markdown"
         )
+        context.user_data["prompt_msg_id"] = msg.message_id
         context.user_data["awaiting"] = "us_prefix"
         logger.info(f"✅ Prefix prompt sent to {update.effective_user.id}")
     except Exception as e:
@@ -1025,13 +1078,14 @@ async def handle_us_suffix(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         query = update.callback_query
         await query.answer()
-        await query.message.reply_text(
+        msg = await query.message.reply_text(
             "📝 **Set Filename Suffix**\n\n"
             "Send the text you want to add at the **end** of every filename (before extension).\n"
             "Example: `_1080p` → `video_1080p.mp4`\n\n"
             "Send d to disable suffix.",
             parse_mode="Markdown"
         )
+        context.user_data["prompt_msg_id"] = msg.message_id
         context.user_data["awaiting"] = "us_suffix"
         logger.info(f"✅ Suffix prompt sent to {update.effective_user.id}")
     except Exception as e:

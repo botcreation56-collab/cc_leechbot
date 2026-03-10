@@ -249,7 +249,9 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             handle_terabox_setup_key, handle_terabox_test, handle_terabox_stats,
             handle_terabox_disable, handle_set_max_filesize, handle_cleanup_old_files,
             handle_storage_stats, handle_admin_fsub_req_toggle, handle_us_dest_add,
-            handle_us_dest_manage, handle_us_dest_remove_confirm, handle_us_dest_remove_do
+            handle_us_dest_manage, handle_us_dest_remove_confirm, handle_us_dest_remove_do,
+            handle_admin_delete_rclone_prompt, handle_admin_delete_rclone_confirm,
+            handle_admin_rename_rclone_prompt
         )
 
         # Admin-only callbacks
@@ -435,6 +437,12 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await handle_disable_rclone(update, context)
             elif data == "configure_rclone":
                 await handle_admin_rclone(update, context)
+            elif data.startswith("rclone_delete_prompt_"):
+                await handle_admin_delete_rclone_prompt(update, context)
+            elif data.startswith("rclone_delete_confirm_"):
+                await handle_admin_delete_rclone_confirm(update, context)
+            elif data.startswith("rclone_rename_prompt_"):
+                await handle_admin_rename_rclone_prompt(update, context)
 
             # ── Terabox ──
             elif data == "terabox_setup_key":
@@ -1066,50 +1074,68 @@ async def handle_check_subscription(update: Update, context: ContextTypes.DEFAUL
                 "Try sending a link or file now!",
                 parse_mode="Markdown"
             )
-    else:
-        await query.answer("⚠️ You haven't joined all channels yet!", show_alert=True)
 
 async def finalize_progress(bot, task_id, success=True, result_text="", reply_markup=None):
-    progress_data = getattr(bot, "progress_data", {})
-    if task_id not in progress_data:
-        return
-    progress_info = progress_data[task_id]
-
-    # User PM
+    """Finalize progress tracking and clean up session, notifying both User and Dump."""
     try:
-        final_text = (
-            f"✅ **Processing Complete!**\n\n{result_text}"
-            if success
-            else f"❌ **Processing Failed**\n\n{result_text}"
-        )
-        await bot.edit_message_text(
-            chat_id=progress_info["user_id"],
-            message_id=progress_info["progress_msg_id"],
-            text=final_text,
-            reply_markup=reply_markup,
-            parse_mode="Markdown",
-        )
-    except Exception:
-        pass
+        from bot.database import update_task
+        status = "completed" if success else "failed"
+        await update_task(task_id, {"status": status, "result": result_text})
+        
+        progress_data = getattr(bot, "progress_data", {})
+        if task_id not in progress_data:
+            return
 
-    # Dump channel
-    try:
-        if "dump_progress_msg_id" in progress_info:
-            final_dump_text = (
-                "✅ **Processing Complete**\n\nFile processed successfully!"
-                if success
-                else "❌ **Processing Failed**\n\nCheck user PM for details."
-            )
-            await bot.edit_message_text(
-                chat_id=progress_info["dump_channel"],
-                message_id=progress_info["dump_progress_msg_id"],
-                text=final_dump_text,
-                parse_mode="Markdown",
-            )
-    except Exception:
-        pass
+        progress_info = progress_data[task_id]
+        
+        # 1. Update User PM
+        user_id = progress_info.get("user_id")
+        user_msg_id = progress_info.get("progress_msg_id") or progress_info.get("user_progress_msg_id")
 
-    del bot.progress_data[task_id]
+        if user_id and user_msg_id:
+            try:
+                final_text = (
+                    f"✅ **Processing Complete!**\n\n{result_text}"
+                    if success
+                    else f"❌ **Processing Failed**\n\n{result_text}"
+                )
+                await bot.edit_message_text(
+                    chat_id=user_id,
+                    message_id=user_msg_id,
+                    text=final_text,
+                    reply_markup=reply_markup, # Erases buttons by default if reply_markup is None
+                    parse_mode="Markdown",
+                )
+            except Exception as e:
+                logger.warning(f"Failed to edit user progress message: {e}")
+
+        # 2. Update Dump Channel
+        dump_ch = progress_info.get("dump_channel")
+        dump_msg_id = progress_info.get("dump_progress_msg_id")
+
+        if dump_ch and dump_msg_id:
+            try:
+                final_dump_text = (
+                    "✅ **Processing Complete**\n\nFile processed successfully!"
+                    if success
+                    else "❌ **Processing Failed**\n\nCheck user PM for details."
+                )
+                await bot.edit_message_text(
+                    chat_id=dump_ch,
+                    message_id=dump_msg_id,
+                    text=final_dump_text,
+                    parse_mode="Markdown",
+                )
+            except Exception as e:
+                logger.warning(f"Failed to edit dump progress message: {e}")
+
+        # Cleanup Memory
+        if task_id in bot.progress_data:
+            del bot.progress_data[task_id]
+        logger.info(f"✅ Task {task_id} finalized as {status}")
+
+    except Exception as e:
+        logger.error(f"Error finalizing progress: {e}")
 
 @rate_limit
 async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1119,6 +1145,14 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = (update.message.text or "").strip()
         awaiting = context.user_data.get("awaiting")
         
+        # UI CLEANUP: Delete previous prompt if it exists
+        prompt_msg_id = context.user_data.pop("prompt_msg_id", None)
+        if prompt_msg_id:
+            try:
+                await context.bot.delete_message(chat_id=user_id, message_id=prompt_msg_id)
+            except:
+                pass
+
         if not awaiting:
             # If no awaiting state, check if it's a URL
             from bot.utils import validate_url
@@ -1890,7 +1924,8 @@ async def handle_meta_author(update: Update, context: ContextTypes.DEFAULT_TYPE)
         query = update.callback_query
         await query.answer()
 
-        await query.message.reply_text("👤 **Set Global Author / Artist**\n\nSend the text you want as the artist/author tag for all files:", parse_mode="Markdown")
+        msg = await query.message.reply_text("👤 **Set Global Author / Artist**\n\nSend the text you want as the artist/author tag for all files:", parse_mode="Markdown")
+        context.user_data["prompt_msg_id"] = msg.message_id
         context.user_data["awaiting"] = "us_meta_author"
 
     except Exception as e:
@@ -1902,7 +1937,8 @@ async def handle_meta_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         query = update.callback_query
         await query.answer()
 
-        await query.message.reply_text("🎬 **Set Video Title**\n\nSend the title you want for the video track:", parse_mode="Markdown")
+        msg = await query.message.reply_text("🎬 **Set Video Title**\n\nSend the title you want for the video track:", parse_mode="Markdown")
+        context.user_data["prompt_msg_id"] = msg.message_id
         context.user_data["awaiting"] = "us_meta_video"
 
     except Exception as e:
@@ -1914,7 +1950,8 @@ async def handle_meta_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         query = update.callback_query
         await query.answer()
 
-        await query.message.reply_text("🎵 **Set Audio Label**\n\nSend the text you want for audio tracks.\nResult will be: `[Text] | [Language]`", parse_mode="Markdown")
+        msg = await query.message.reply_text("🎵 **Set Audio Label**\n\nSend the text you want for audio tracks.\nResult will be: `[Text] | [Language]`", parse_mode="Markdown")
+        context.user_data["prompt_msg_id"] = msg.message_id
         context.user_data["awaiting"] = "us_meta_audio"
 
     except Exception as e:
@@ -1926,7 +1963,8 @@ async def handle_meta_subs(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         query = update.callback_query
         await query.answer()
 
-        await query.message.reply_text("📝 **Set Subtitle Label**\n\nSend the text you want for subtitle tracks.\nResult will be: `[Text] | [Language]`", parse_mode="Markdown")
+        msg = await query.message.reply_text("📝 **Set Subtitle Label**\n\nSend the text you want for subtitle tracks.\nResult will be: `[Text] | [Language]`", parse_mode="Markdown")
+        context.user_data["prompt_msg_id"] = msg.message_id
         context.user_data["awaiting"] = "us_meta_subs"
 
     except Exception as e:
@@ -2095,6 +2133,35 @@ async def handle_us_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"❌ Error in handle_us_remove: {e}")
         await update.callback_query.answer("❌ Error", show_alert=True)
+
+async def handle_us_rclone_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Callback: prompt user for GDrive API credentials to create a service"""
+    try:
+        query = update.callback_query
+        await query.answer()
+        
+        text = (
+            "🛠️ **Create Rclone Service (GDrive)**\n\n"
+            "To use your own Google Drive service, please provide your API credentials in this format:\n\n"
+            "`Client_ID | Client_Secret | Refresh_Token` \n\n"
+            "**How to get these?**\n"
+            "1. Go to [Google Cloud Console](https://console.cloud.google.com/)\n"
+            "2. Create a project and 'OAuth client ID'\n"
+            "3. Get the Refresh Token using `rclone authorize drive` on your PC.\n\n"
+            "**Warning:** Credentials will be shown once and deleted after 5 minutes."
+        )
+        
+        await query.message.edit_text(
+            text,
+            parse_mode="Markdown",
+            disable_web_page_preview=True,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="us_settings")]])
+        )
+        context.user_data["awaiting"] = "us_rclone_service"
+        logger.info(f"✅ Rclone service prompt sent to {update.effective_user.id}")
+    except Exception as e:
+        logger.error(f"❌ Error in handle_us_rclone_service: {e}")
+        await query.answer("❌ Error", show_alert=True)
 
 async def handle_us_destination_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Callback: prompt user to forward a message from their destination channel"""

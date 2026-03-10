@@ -333,6 +333,14 @@ async def create_or_update_storage_message(bot, file_info: dict, user_id: int = 
             logger.warning("Storage channel not configured")
             return None
 
+        # --- SYNC MODE ---
+        # If no message_id is provided, try to fetch the persistent one for this user
+        if not message_id and user_id:
+            from bot.database import get_user
+            user = await get_user(user_id)
+            if user:
+                message_id = user.get("storage_msg_id")
+
         filename = file_info.get("filename", "Unknown File")
         file_id = file_info.get("file_id")
         status = file_info.get("status", "Completed")

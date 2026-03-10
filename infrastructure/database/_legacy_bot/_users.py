@@ -184,6 +184,7 @@ async def update_user(
             "daily_limit", "daily_used", "parallel_slots", "banned", "ban_reason",
             "banned_at", "banned_by", "notifications_enabled", "role",
             "files_processed", "settings", "validity_from", "validity_to",
+            "requested_fsub", "storage_msg_id",
         }
 
         for key in list(updates.keys()):

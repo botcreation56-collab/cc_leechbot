@@ -212,6 +212,16 @@ async def update_rclone_config(config_id: str, updates: Dict[str, Any]) -> bool:
         logger.error(f"❌ update_rclone_config failed: {e}", exc_info=True)
         return False
 
+async def delete_rclone_config(config_id: str) -> bool:
+    """Delete a specific rclone config by ID."""
+    try:
+        db = get_db()
+        result = await db.rclone_configs.delete_one({"config_id": config_id})
+        return result.deleted_count > 0
+    except Exception as e:
+        logger.error(f"❌ delete_rclone_config failed: {e}", exc_info=True)
+        return False
+
 async def delete_from_rclone(remote_name: str, file_id: str) -> bool:
     """Delete expired file from rclone remote (non-blocking)."""
     try:

@@ -55,6 +55,8 @@ from .cloud import (
     handle_list_rclone_remotes, handle_test_rclone,
     handle_view_rclone, handle_test_single_rclone,
     handle_toggle_rclone, handle_disable_rclone,
+    handle_admin_delete_rclone_prompt, handle_admin_delete_rclone_confirm,
+    handle_admin_rename_rclone_prompt,
     handle_terabox_setup_key, handle_terabox_test, handle_terabox_disable,
     rclone_service_callback, rclone_plan_callback, rclone_users_callback,
     rclone_command, rclone_text_input,

@@ -50,17 +50,15 @@ def rate_limit(func: Callable) -> Callable:
         
         # Check and cleanup lock
         if user_id in _ACTIVE_USERS:
-            if now - _ACTIVE_USERS[user_id] < _LOCK_TIMEOUT:
+            last_request_time = _ACTIVE_USERS[user_id]
+            if now - last_request_time < 3: # Constant 3s cooldown between hits
                 logger.warning(f"⏳ Rate limit hit for {user_id}. Ignoring request.")
                 if update.callback_query:
                     try:
-                        await update.callback_query.answer("⏳ Processing previous action... please wait.", show_alert=True)
+                        await update.callback_query.answer("⏳ Please wait a moment...", show_alert=False)
                     except:
                         pass
                 return
-            else:
-                # Lock expired
-                _ACTIVE_USERS.pop(user_id, None)
 
         # Acquire lock
         _ACTIVE_USERS[user_id] = now
@@ -68,8 +66,11 @@ def rate_limit(func: Callable) -> Callable:
         try:
             return await func(update, context)
         finally:
-            # Release lock immediately when done
-            _ACTIVE_USERS.pop(user_id, None)
+            # We DON'T pop immediately. We keep the timestamp to enforce 
+            # a cooldown start from the moment the action was triggered.
+            # We'll rely on the "now - last_request_time < 3" check in the next call.
+            # We only pop if lock is very old (cleanup)
+            pass
 
     return wrapper
 

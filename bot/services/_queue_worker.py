@@ -209,11 +209,24 @@ class QueueWorker:
                 logger.info(f"▶️ Starting Task {task_id} (Attempt {retry_count + 1}) [Pro Bypass: {bypass_semaphore}]")
 
                 try:
-                    await self.bot.send_message(
-                        chat_id=user_id,
-                        text=f"🏗️ **Processing Started!**\n\nTask ID: `{task_id}`\nYour file is now being processed.",
-                        parse_mode="Markdown",
-                    )
+                    # If this was a wizard session, check if we already have a message ID to edit
+                    msg_id = None
+                    if hasattr(self.bot, "progress_data"):
+                        msg_id = self.bot.progress_data.get(task_id, {}).get("user_progress_msg_id")
+
+                    if msg_id:
+                        await self.bot.edit_message_text(
+                            chat_id=user_id,
+                            message_id=msg_id,
+                            text=f"🏗️ **Processing Started!**\n\nTask ID: `{task_id}`\nYour file is now being processed.",
+                            parse_mode="Markdown"
+                        )
+                    else:
+                        await self.bot.send_message(
+                            chat_id=user_id,
+                            text=f"🏗️ **Processing Started!**\n\nTask ID: `{task_id}`\nYour file is now being processed.",
+                            parse_mode="Markdown",
+                        )
                 except Exception as msg_err:
                     logger.warning(f"Could not notify user {user_id}: {msg_err}")
 
@@ -226,7 +239,8 @@ class QueueWorker:
                         from bot.handlers import execute_processing_flow_by_task
                         await execute_processing_flow_by_task(self.bot, task)
 
-                await update_task(task_id, {"status": "completed", "completed_at": datetime.utcnow()})
+                from bot.handlers.user import finalize_progress
+                await finalize_progress(self.bot, task_id, success=True, result_text="File processed via queue.")
 
             except Exception as e:
                 logger.error(f"Task {task_id} Failed: {e}", exc_info=True)

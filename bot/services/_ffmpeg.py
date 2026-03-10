@@ -73,6 +73,15 @@ class FFmpegService:
                                     lang = code
                                     break
                 
+                # If lang is still missing/und, try to extract from title
+                if not lang or lang.lower() == "und":
+                    title_low = tags.get("title", "").lower()
+                    if title_low:
+                        for code, name in cls.ISO_639_2_MAP.items():
+                            if name.lower() in title_low:
+                                lang = code
+                                break
+                
                 lang = lang or "und"
                 if len(lang) > 3:
                     lang = lang[:3].lower()
@@ -81,7 +90,7 @@ class FFmpegService:
                 title = tags.get("title")
                 lang_name = cls.get_language_name(lang)
                 
-                if not title or title.lower() == "und":
+                if not title or title.lower() in ["und", "undetermined", lang.lower()]:
                     title = lang_name if lang_name != "Unknown" else s.get("codec_name", "Unknown")
 
                 track_info = {
@@ -189,6 +198,7 @@ class FFmpegService:
             return False
 
     ISO_639_2_MAP = {
+        # 3-letter codes
         "tam": "Tamil", "tel": "Telugu", "hin": "Hindi", "kan": "Kannada",
         "mal": "Malayalam", "eng": "English", "ben": "Bengali", "guj": "Gujarati",
         "mar": "Marathi", "pan": "Punjabi", "urd": "Urdu", "ori": "Oriya",
@@ -197,7 +207,16 @@ class FFmpegService:
         "ger": "German", "deu": "German", "spa": "Spanish", "rus": "Russian",
         "por": "Portuguese", "ita": "Italian", "ara": "Arabic", "tur": "Turkish",
         "vie": "Vietnamese", "tha": "Thai", "ind": "Indonesian", "pol": "Polish",
-        "und": "Unknown"
+        "und": "Unknown",
+        # 2-letter codes
+        "ta": "Tamil", "te": "Telugu", "hi": "Hindi", "kn": "Kannada",
+        "ml": "Malayalam", "en": "English", "bn": "Bengali", "gu": "Gujarati",
+        "mr": "Marathi", "pa": "Punjabi", "ur": "Urdu", "or": "Oriya",
+        "as": "Assamese", "sa": "Sanskrit", "ja": "Japanese", "ko": "Korean",
+        "zh": "Chinese", "fr": "French", "de": "German", "es": "Spanish",
+        "ru": "Russian", "pt": "Portuguese", "it": "Italian", "ar": "Arabic",
+        "tr": "Turkish", "vi": "Vietnamese", "th": "Thai", "id": "Indonesian",
+        "pl": "Polish"
     }
 
     @classmethod

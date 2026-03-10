@@ -271,10 +271,12 @@ async def handle_view_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE)
         toggle_label = "🚫 Disable Remote" if is_active else "✅ Enable Remote"
 
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🧪 Test This Remote", callback_data=f"test_single_rclone_{rid}")],
-            [InlineKeyboardButton("👥 View Users", callback_data=f"rclone_users_{rid}")],
-            [InlineKeyboardButton(toggle_label, callback_data=f"toggle_rclone_{rid}")],
-            [InlineKeyboardButton("🔙 Back to List", callback_data="list_rclone_remotes")]
+            [InlineKeyboardButton("🧪 Test", callback_data=f"test_single_rclone_{rid}"),
+             InlineKeyboardButton("✏️ Rename", callback_data=f"rclone_rename_prompt_{rid}")],
+            [InlineKeyboardButton("🗑️ Delete", callback_data=f"rclone_delete_prompt_{rid}"),
+             InlineKeyboardButton(toggle_label, callback_data=f"toggle_rclone_{rid}")],
+            [InlineKeyboardButton("👥 View Users", callback_data=f"rclone_users_{rid}"),
+             InlineKeyboardButton("🔙 Back", callback_data="list_rclone_remotes")]
         ])
         
         await query.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
@@ -282,6 +284,64 @@ async def handle_view_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE)
     except Exception as e:
         logger.error(f"Error in view_rclone: {e}", exc_info=True)
         await update.callback_query.answer("❌ Error")
+
+async def handle_admin_delete_rclone_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Confirm deletion of an rclone remote"""
+    try:
+        query = update.callback_query
+        rid = query.data.replace("rclone_delete_prompt_", "")
+        
+        text = (
+            f"🗑️ **Delete Remote: {rid}**\n\n"
+            "Are you sure you want to delete this configuration? "
+            "This action cannot be undone."
+        )
+        
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Yes, Delete", callback_data=f"rclone_delete_confirm_{rid}")],
+            [InlineKeyboardButton("❌ No, Cancel", callback_data=f"view_rclone_{rid}")]
+        ])
+        
+        await query.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+        await query.answer()
+    except Exception as e:
+        logger.error(f"Error in delete_rclone_prompt: {e}")
+        await query.answer("❌ Error")
+
+async def handle_admin_delete_rclone_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Execute deletion of an rclone remote"""
+    try:
+        query = update.callback_query
+        rid = query.data.replace("rclone_delete_confirm_", "")
+        
+        from infrastructure.database._legacy_bot._rclone import delete_rclone_config
+        success = await delete_rclone_config(rid)
+        
+        if success:
+            await query.answer("✅ Remote Deleted!", show_alert=True)
+            await handle_list_rclone_remotes(update, context)
+        else:
+            await query.answer("❌ Failed to delete remote.", show_alert=True)
+    except Exception as e:
+        logger.error(f"Error in delete_rclone_confirm: {e}")
+        await query.answer("❌ Error")
+
+async def handle_admin_rename_rclone_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Prompt for new name/ID for an rclone remote"""
+    try:
+        query = update.callback_query
+        rid = query.data.replace("rclone_rename_prompt_", "")
+        
+        await query.message.edit_text(
+            f"✏️ **Rename Remote: {rid}**\n\n"
+            "Please send the new ID (alphanumeric, no spaces) for this remote.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Cancel", callback_data=f"view_rclone_{rid}")]])
+        )
+        context.user_data["awaiting"] = f"rclone_rename_{rid}"
+        await query.answer()
+    except Exception as e:
+        logger.error(f"Error in rename_rclone_prompt: {e}")
+        await query.answer("❌ Error")
 
 async def handle_test_single_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Test a specific rclone remote"""
@@ -588,6 +648,28 @@ async def rclone_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     wizard = context.user_data.setdefault("rclone_wizard", {})
 
     try:
+        if awaiting and awaiting.startswith("rclone_rename_"):
+            old_rid = awaiting.replace("rclone_rename_", "")
+            new_rid = text.strip().replace(" ", "_")
+            
+            if not new_rid:
+                await update.message.reply_text("❌ Invalid ID. Please send a single word.")
+                return
+
+            from infrastructure.database._legacy_bot._rclone import update_rclone_config
+            success = await update_rclone_config(old_rid, {"config_id": new_rid})
+            
+            if success:
+                await update.message.reply_text(
+                    f"✅ **Remote Renamed!**\n\nOld ID: `{old_rid}`\nNew ID: `{new_rid}`",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to Rclone", callback_data="admin_rclone")]])
+                )
+            else:
+                await update.message.reply_text("❌ Rename failed. It might be due to a duplicate ID or database error.")
+            
+            context.user_data.pop("awaiting", None)
+            return
+
         # ── Step 2: Remote name ──────────────────────────────────────
         if awaiting == "rclone_name":
             if not text or len(text) > 50:

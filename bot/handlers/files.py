@@ -1148,28 +1148,30 @@ class WizardHandler:
             )
 
             # --- PROGRESS BAR FIX ---
-            # Register wizard message ID so send_progress_message edits it
+            # Register message ID and send initial progress (0%) immediately
+            if not hasattr(bot, "progress_data"):
+                bot.progress_data = {}
+            task_info = bot.progress_data.setdefault(task_id, {})
+            task_info["user_id"] = user_id
+
             if query:
                 try:
-                    await query.answer() # Hide the "Proceeding..." popup
+                    await query.answer()
                 except: pass
-                
-                if not hasattr(bot, "progress_data"):
-                    bot.progress_data = {}
-                task_info = bot.progress_data.setdefault(task_id, {})
                 task_info["user_progress_msg_id"] = query.message.message_id
-                task_info["user_id"] = user_id
-                
-                # Use edit instead of send to keep same message
-                await query.edit_message_text("🚀 **Initializing Processing...**", parse_mode="Markdown")
             else:
                 # If no query (automatic background process), send a new status message
                 initial_msg = await bot.send_message(user_id, "🚀 **Initializing Processing...**", parse_mode="Markdown")
-                if not hasattr(bot, "progress_data"):
-                    bot.progress_data = {}
-                task_info = bot.progress_data.setdefault(task_id, {})
                 task_info["user_progress_msg_id"] = initial_msg.message_id
-                task_info["user_id"] = user_id
+            
+            # Show early progress bar (0% / Initializing)
+            from bot.handlers.user import send_progress_message
+            await send_progress_message(
+                bot, user_id, task_id, 
+                filesize=session.get("file_size", 0),
+                stage="🚀 Initializing...",
+                progress=0
+            )
             
             # 2. Get Selections
             audio_indices = [idx for idx, selected in session.get('selected_audio', {}).items() if selected]
