@@ -1258,21 +1258,29 @@ async def check_force_sub(update: Update, context: ContextTypes.DEFAULT_TYPE, pe
             return True
 
         user_id = update.effective_user.id
-        not_joined = []
+        from bot.database import get_user
+        user = await get_user(user_id)
+        requested = user.get("settings", {}).get("requested_fsub", []) if user else []
 
         for channel in force_channels:
             channel_id = channel.get("id")
             if not channel_id:
                 continue
 
+            # 1. Check if user is already a member
+            is_member = False
             try:
                 member = await context.bot.get_chat_member(channel_id, user_id)
-                if member.status not in ["member", "administrator", "creator"]:
-                    not_joined.append(channel)
-            except TelegramError as e:
-                # If bot is not in channel, we can't check
-                logger.error(f"Error checking membership for {channel_id}: {str(e)}")
-                continue
+                if member.status in ["member", "administrator", "creator"]:
+                    is_member = True
+            except TelegramError:
+                pass # Proceed to check requested list
+
+            # 2. Check if user has a pending join request tracked in DB
+            is_requested = channel_id in requested
+
+            if not is_member and not is_requested:
+                not_joined.append(channel)
 
         if not_joined:
             # SAVE FOR RESUME
@@ -1338,7 +1346,7 @@ async def check_force_sub(update: Update, context: ContextTypes.DEFAULT_TYPE, pe
         return True
 
 async def handle_chat_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Auto-approve join requests and revoke the unique link used."""
+    """Track join requests in DB and revoke the unique link used. Manual approval only."""
     try:
         request = update.chat_join_request
         user_id = request.from_user.id
@@ -1348,26 +1356,32 @@ async def handle_chat_join_request(update: Update, context: ContextTypes.DEFAULT
 
         logger.info(f"👋 Join request from {user_id} for chat {chat_id}")
 
-        # Approve the request
-        await request.approve()
-        logger.info(f"✅ Approved join request for user {user_id}")
-        
+        # Store the request in DB so we can allow the user to proceed
+        from bot.database import update_user, get_user
+        user = await get_user(user_id)
+        if user:
+            requested = user.get("settings", {}).get("requested_fsub", [])
+            if chat_id not in requested:
+                requested.append(chat_id)
+                await update_user(user_id, {"settings.requested_fsub": requested})
+                logger.info(f"📝 Tracked join request for user {user_id} in channel {chat_id}")
+
         # Revoke the invite link used if it was a custom one-time link
         if invite_link_str:
             try:
                 await context.bot.revoke_chat_invite_link(chat_id, invite_link_str)
-                logger.info(f"🗑️ Revoked invite link {invite_link_str} after approval for user {user_id}")
+                logger.info(f"🗑️ Revoked invite link {invite_link_str} after request from user {user_id}")
             except Exception as e:
                 logger.warning(f"Could not revoke link {invite_link_str}: {e}")
 
-        # Notify the user (Optional, but helps UX)
+        # Notify the user
         try:
             await context.bot.send_message(
                 chat_id=user_id,
-                text="✅ **Join Request Sent!**\n\nYou can now return to the bot and click the 'I Joined' button.",
+                text="✅ **Join Request Received!**\n\nYou have requested to join the channel. Our admins will approve you soon.\n\n**You can now return to the bot and click 'I Joined' to continue!**",
                 parse_mode="Markdown"
             )
-        except: pass # User might have blocked the bot
+        except: pass
 
     except Exception as e:
         logger.error(f"❌ Error in handle_chat_join_request: {e}", exc_info=True)
