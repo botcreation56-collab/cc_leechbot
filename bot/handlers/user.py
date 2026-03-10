@@ -1853,20 +1853,6 @@ async def handle_us_reset_confirm_yes(update: Update, context: ContextTypes.DEFA
         logger.error(f"❌ Error in handle_us_reset_confirm_yes: {e}", exc_info=True)
         await query.answer("❌ Error", show_alert=True)
 
-async def handle_meta_title(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    try:
-        user_id = update.effective_user.id
-        query = update.callback_query
-        await query.answer()
-
-        await query.message.reply_text("🎬 **Set Default Title**\n\nSend the text you want as the default title for all files.", parse_mode="Markdown")
-        context.user_data["awaiting"] = "us_meta_title"
-
-        logger.info(f"✅ Title metadata input awaiting for user {user_id}")
-
-    except Exception as e:
-        logger.error(f"❌ Error in handle_meta_title: {e}", exc_info=True)
-        await update.callback_query.answer(f"❌ Error", show_alert=True)
 
 async def handle_meta_author(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
