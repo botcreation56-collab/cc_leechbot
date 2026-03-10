@@ -29,7 +29,7 @@ class FFmpegService:
             cmd = [
                 "ffprobe",
                 "-v", "error",
-                "-show_entries", "stream=index,codec_name,codec_type,tags",
+                "-show_entries", "stream=index,codec_name,codec_type,tags:format=duration",
                 "-of", "json",
                 "--",  # SECURITY: Stop option parsing before path
                 target_path,
@@ -56,14 +56,22 @@ class FFmpegService:
                 codec_type = s.get("codec_type")
                 tags = s.get("tags", {})
                 
-                # Language detection priority: tags.language -> tags.LANGUAGE -> tags.handler_name (3-char)
+                # Language detection priority: tags.language -> tags.LANGUAGE -> tags.handler_name
                 lang = tags.get("language") or tags.get("LANGUAGE") or ""
                 
-                # If lang is missing or 'und', try to extract from handler_name if it looks like a code
-                if (not lang or lang.lower() == "und") and "handler_name" in tags:
-                    hn = tags["handler_name"].lower()
-                    if len(hn) == 3:
-                        lang = hn
+                # If lang is missing or 'und', try to extract from handler_name
+                if not lang or lang.lower() == "und":
+                    hn = tags.get("handler_name", "").lower()
+                    if hn:
+                        # 1. Check if handler_name IS a 3-letter code
+                        if len(hn) == 3:
+                            lang = hn
+                        # 2. Check if handler_name CONTAINS a known language name (e.g. "Tamil Audio")
+                        else:
+                            for code, name in cls.ISO_639_2_MAP.items():
+                                if name.lower() in hn:
+                                    lang = code
+                                    break
                 
                 lang = lang or "und"
                 if len(lang) > 3:
@@ -88,7 +96,12 @@ class FFmpegService:
                 elif codec_type == "subtitle":
                     sub_tracks.append(track_info)
 
-            return {"audio": audio_tracks, "subtitle": sub_tracks}
+            return {
+                "audio": audio_tracks, 
+                "subtitle": sub_tracks,
+                "duration": float(data.get("format", {}).get("duration", 0)),
+                "format": data.get("format", {})
+            }
 
         except Exception as e:
             logger.error(f"Probe error: {e}", exc_info=True)
@@ -182,6 +195,8 @@ class FFmpegService:
         "asm": "Assamese", "san": "Sanskrit", "jpn": "Japanese", "kor": "Korean",
         "chi": "Chinese", "zho": "Chinese", "fra": "French", "fre": "French",
         "ger": "German", "deu": "German", "spa": "Spanish", "rus": "Russian",
+        "por": "Portuguese", "ita": "Italian", "ara": "Arabic", "tur": "Turkish",
+        "vie": "Vietnamese", "tha": "Thai", "ind": "Indonesian", "pol": "Polish",
         "und": "Unknown"
     }
 

@@ -1160,9 +1160,11 @@ class WizardHandler:
                 task_info["user_progress_msg_id"] = query.message.message_id
                 task_info["user_id"] = user_id
                 
-                await query.edit_message_text("🚀 **Initializing Processing...**")
+                # Use edit instead of send to keep same message
+                await query.edit_message_text("🚀 **Initializing Processing...**", parse_mode="Markdown")
             else:
-                initial_msg = await bot.send_message(user_id, "🚀 **Initializing Processing...**")
+                # If no query (automatic background process), send a new status message
+                initial_msg = await bot.send_message(user_id, "🚀 **Initializing Processing...**", parse_mode="Markdown")
                 if not hasattr(bot, "progress_data"):
                     bot.progress_data = {}
                 task_info = bot.progress_data.setdefault(task_id, {})
@@ -1189,16 +1191,21 @@ class WizardHandler:
             # 4. Process Media (FFmpeg)
             from bot.services import FFmpegService
             msg_text = "🎬 **Processing Media...**\n\nThis may take a few minutes depending on size."
-            if query:
-                await query.edit_message_text(msg_text)
+            
+            # ALWAYS edit the message we registered, never send a new one if we have a msg_id
+            target_msg_id = task_info.get("user_progress_msg_id")
+            if target_msg_id:
+                try:
+                    await bot.edit_message_text(chat_id=user_id, message_id=target_msg_id, text=msg_text, parse_mode="Markdown")
+                except:
+                    await bot.send_message(user_id, msg_text, parse_mode="Markdown")
             else:
-                await bot.send_message(user_id, msg_text)
+                 await bot.send_message(user_id, msg_text, parse_mode="Markdown")
             
             # Progress Tracking Setup
             try:
                 probe_data = await FFmpegService.probe_file(input_path)
-                duration_str = probe_data.get('format', {}).get('duration', 0)
-                duration = float(duration_str) if duration_str else 0.0
+                duration = probe_data.get('duration', 0.0)
             except:
                 duration = 0.0
                 

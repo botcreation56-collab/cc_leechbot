@@ -1268,7 +1268,7 @@ async def check_force_sub(update: Update, context: ContextTypes.DEFAULT_TYPE, pe
                 pass # Proceed to check requested list
 
             # 2. Check if user has a pending join request tracked in DB
-            is_requested = channel_id in requested
+            is_requested = int(channel_id) in [int(c) for c in requested]
 
             if not is_member and not is_requested:
                 not_joined.append(channel)
@@ -1575,7 +1575,7 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "• /start — Home\n"
                 "• /ussettings — Your settings\n"
                 "• /myfiles — Your files\n"
-                "• /cancelTask\\_ID — Cancel a running task"
+                "• `/cancelTask_ID` — Cancel a running task"
             )
 
         # Clear all awaiting / wizard / rclone state keys

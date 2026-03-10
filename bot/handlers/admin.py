@@ -982,13 +982,13 @@ async def handle_admin_fsub_manage(update: Update, context: ContextTypes.DEFAULT
         enabled = metadata.get("enabled", True)
         
         # Icons for better visualization
-        req_status = "ON ✅ (Must Req)" if req_join else "OFF ❌ (Join Direct)"
+        req_status = "✅" if req_join else "❌"
         enabled_status = "ACTIVE ✅" if enabled else "INACTIVE ❌"
 
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton(f"Channel: {title}", callback_data="ignore")],
             [InlineKeyboardButton(f"Sub Check: {enabled_status}", callback_data=f"admin_fsub_toggle_{channel_id}")],
-            [InlineKeyboardButton(f"Req to Join: {req_status}", callback_data=f"admin_fsub_req_toggle_{channel_id}")],
+            [InlineKeyboardButton(f"req to join : {req_status}", callback_data=f"admin_fsub_req_toggle_{channel_id}")],
             [InlineKeyboardButton("🗑️ Remove This Channel", callback_data=f"admin_fsub_remove_confirm_{channel_id}")],
             [InlineKeyboardButton("🔙 Back to Channels", callback_data="admin_set_force_sub_channel")]
         ])
