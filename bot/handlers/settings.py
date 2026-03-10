@@ -859,53 +859,36 @@ async def handle_user_settings_text(update: Update, context: ContextTypes.DEFAUL
 
         elif state == "us_rclone_service":
             parts = [p.strip() for p in text.split("|")]
-            if len(parts) != 3:
+            if len(parts) != 2:
                 await update.message.reply_text(
-                    "❌ **Invalid Format**\n\nPlease send in format: `Client_ID | Client_Secret | Refresh_Token`",
+                    "❌ **Invalid Format**\n\nPlease send in format: `Client_ID | Client_Secret`",
                     parse_mode="Markdown"
                 )
                 return
             
-            client_id, client_secret, refresh_token = parts
+            client_id, client_secret = parts
+            user_id = update.effective_user.id
             
-            # Generate Rclone Config Snippet
-            remote_name = f"user_{user_id}_gdrive"
-            config_snippet = (
-                f"[{remote_name}]\n"
-                f"type = drive\n"
-                f"client_id = {client_id}\n"
-                f"client_secret = {client_secret}\n"
-                f"scope = drive\n"
-                f"token = {{\"access_token\":\"\",\"token_type\":\"Bearer\",\"refresh_token\":\"{refresh_token}\",\"expiry\":\"\"}}\n"
-            )
+            # Deduced base URL from settings (filled in main.py)
+            base_url = (settings.WEBHOOK_URL or "").replace("/webhook/telegram", "")
+            if not base_url:
+                await update.message.reply_text("❌ **Error**: Webhook URL not configured. Contact admin.")
+                return
+
+            auth_url = f"{base_url}/api/rclone/auth?user_id={user_id}&client_id={client_id}&client_secret={client_secret}"
             
-            # We don't necessarily "add it to rclone" system-wide, 
-            # but we show it to the user and maybe store it for their uploads?
-            # For now, let's just fulfill the request: give credentials and vanish.
-            
-            msg = await update.message.reply_text(
-                f"✅ **Rclone Service Created!**\n\n"
-                f"**Credentials:**\n"
-                f"```\n"
-                f"id = \"{client_id}\"\n"
-                f"secret = \"{client_secret}\"\n"
-                f"```\n\n"
-                f"**Full Config Snippet:**\n"
-                f"```ini\n{config_snippet}```\n\n"
-                f"⚠️ **This message will be deleted in 5 minutes!**",
+            keyboard = [[InlineKeyboardButton("🔗 Authorize with Google", url=auth_url)]]
+            await update.message.reply_text(
+                "✅ **Credentials Accepted!**\n\n"
+                "Now, click the button below to authorize the bot to access your Google Drive.\n\n"
+                "Once authorized, the bot will automatically setup your remote.",
+                reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode="Markdown"
             )
             
-            # Schedule deletion
-            async def delete_after_delay(m, delay=300):
-                await asyncio.sleep(delay)
-                try:
-                    await m.delete()
-                except:
-                    pass
-            
-            asyncio.create_task(delete_after_delay(msg))
-            logger.info(f"✅ Rclone service config generated for {user_id}")
+            # Clear state as we're moving to the web flow
+            context.user_data.pop("awaiting", None)
+            logger.info(f"✅ Rclone OAuth link generated for {user_id}")
 
         elif state == "us_thumbnail":
             if text.lower() in ["auto", "automatic", "default"]:
@@ -1053,6 +1036,26 @@ async def handle_us_close(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         logger.info(f"✅ Settings menu closed for {update.effective_user.id}")
     except Exception as e:
         logger.error(f"❌ Error closing settings: {e}")
+
+async def handle_us_rclone_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Callback: show prompt to create Rclone service (OAuth flow)"""
+    try:
+        query = update.callback_query
+        await query.answer()
+        msg = await query.message.reply_text(
+            "📁 **Create GDrive Rclone Service**\n\n"
+            "Please send your Google Cloud credentials in this format:\n"
+            "`Client_ID | Client_Secret`\n\n"
+            "**Don't have these?** Check /help for a guide.\n\n"
+            "Use /cancel to abort.",
+            parse_mode="Markdown"
+        )
+        context.user_data["prompt_msg_id"] = msg.message_id
+        context.user_data["awaiting"] = "us_rclone_service"
+        logger.info(f"✅ Rclone service prompt sent to {update.effective_user.id}")
+    except Exception as e:
+        logger.error(f"❌ Error in handle_us_rclone_service: {e}")
+        await update.callback_query.answer("❌ Error", show_alert=True)
 
 async def handle_us_prefix(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Callback: show prompt to set filename prefix"""

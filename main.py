@@ -230,7 +230,7 @@ def setup_handlers(application: Application) -> None:
         handle_start_support_chat,
         handle_chat_join_request, handle_check_subscription,
         handle_us_thumbnail_view, handle_us_thumbnail_delete, handle_us_thumbnail_delete_confirm,
-        handle_meta_author,
+        handle_meta_author, handle_us_rclone_service,
     )
 
     # ── Admin handlers ───────────────────────────────────────
@@ -407,6 +407,7 @@ def setup_handlers(application: Application) -> None:
             ("^us_suffix$",         handle_us_suffix),
             ("^us_visibility$",     handle_us_visibility),
             ("^us_destination$",    handle_us_destination_button),
+            ("^us_rclone_service$", handle_us_rclone_service),
             ("^us_back$",           go_back_to_settings),
             ("^us_close$",          handle_us_close),
             ("^us_help$",           handle_callback_help),

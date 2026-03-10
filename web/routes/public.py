@@ -405,3 +405,123 @@ async def queue_bypassed_endpoint(request: Request, token: str, bot: str):
         "bot_username": bot,
         "startid": token
     })
+
+@router.get("/api/rclone/auth")
+async def rclone_auth_redirect(user_id: int, client_id: str, client_secret: str):
+    """
+    Step 1: Redirect user to Google OAuth page.
+    We pass user_id, client_id, and client_secret in the 'state' to recover them in the callback.
+    """
+    import json
+    import base64
+    from urllib.parse import quote
+    
+    state_data = {
+        "u": user_id,
+        "i": client_id,
+        "s": client_secret
+    }
+    state = base64.urlsafe_b64encode(json.dumps(state_data).encode()).decode()
+    
+    # Redirect URI must match what's configured in Google Cloud Console
+    base_url = (settings.WEBHOOK_URL or "").replace("/webhook/telegram", "")
+    redirect_uri = f"{base_url}/api/rclone/callback"
+    
+    auth_url = (
+        "https://accounts.google.com/o/oauth2/v2/auth"
+        f"?client_id={client_id}"
+        f"&redirect_uri={quote(redirect_uri)}"
+        "&response_type=code"
+        "&scope=https://www.googleapis.com/auth/drive"
+        "&access_type=offline"
+        "&prompt=consent"
+        f"&state={state}"
+    )
+    
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=auth_url)
+
+@router.get("/api/rclone/callback")
+async def rclone_callback(request: Request, code: str = None, state: str = None, error: str = None):
+    """
+    Step 2: Receive code from Google, exchange for Refresh Token, and save.
+    """
+    if error:
+        return {"error": f"OAuth Error: {error}"}
+    if not code or not state:
+        raise HTTPException(status_code=400, detail="Missing code or state")
+
+    import json
+    import base64
+    import httpx
+    try:
+        # Decode state
+        state_data = json.loads(base64.urlsafe_b64decode(state).decode())
+        user_id = state_data["u"]
+        client_id = state_data["i"]
+        client_secret = state_data["s"]
+        
+        # Exchange code for token
+        base_url = (settings.WEBHOOK_URL or "").replace("/webhook/telegram", "")
+        redirect_uri = f"{base_url}/api/rclone/callback"
+        
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "code": code,
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "redirect_uri": redirect_uri,
+                    "grant_type": "authorization_code"
+                }
+            )
+            token_data = resp.json()
+            
+        if "refresh_token" not in token_data:
+            logger.error(f"❌ No refresh token in Google response: {token_data}")
+            return {"error": "Failed to get refresh token. Did you enable 'Offline Access' and remove any existing access for this app?"}
+
+        refresh_token = token_data["refresh_token"]
+        
+        # Generate Rclone config
+        remote_name = f"user_{user_id}_gdrive"
+        config_snippet = (
+            f"[{remote_name}]\n"
+            f"type = drive\n"
+            f"client_id = {client_id}\n"
+            f"client_secret = {client_secret}\n"
+            f"scope = drive\n"
+            f"token = {{\"access_token\":\"{token_data.get('access_token','')}\",\"token_type\":\"Bearer\",\"refresh_token\":\"{refresh_token}\",\"expiry\":\"\"}}\n"
+        )
+        
+        # Save to DB
+        from bot.database import add_rclone_config
+        config_id = await add_rclone_config(
+            service="gdrive",
+            plan="user",
+            max_users=1,
+            credentials=config_snippet,
+            admin_id=user_id
+        )
+        
+        if config_id:
+            # Notify user via bot
+            bot = request.app.state.bot
+            await bot.send_message(
+                chat_id=user_id,
+                text=(
+                    f"✅ **Rclone Service Connected!**\n\n"
+                    f"Your Google Drive account has been successfully linked.\n"
+                    f"Remote Name: `{remote_name}`\n\n"
+                    "You can now use this remote for your uploads!"
+                ),
+                parse_mode="Markdown"
+            )
+            return {"status": "success", "message": "Rclone service created! You can close this window and return to the bot."}
+        else:
+            return {"error": "Failed to save rclone config to database."}
+
+    except Exception as e:
+        logger.error(f"❌ Rclone OAuth Callback Error: {e}", exc_info=True)
+        return {"error": f"Internal Server Error: {str(e)}"}

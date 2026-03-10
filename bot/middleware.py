@@ -51,7 +51,7 @@ def rate_limit(func: Callable) -> Callable:
         # Check and cleanup lock
         if user_id in _ACTIVE_USERS:
             last_request_time = _ACTIVE_USERS[user_id]
-            if now - last_request_time < 3: # Constant 3s cooldown between hits
+            if now - last_request_time < 1.5: # Balanced 1.5s cooldown
                 logger.warning(f"⏳ Rate limit hit for {user_id}. Ignoring request.")
                 if update.callback_query:
                     try:
