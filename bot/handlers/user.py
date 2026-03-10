@@ -1095,9 +1095,9 @@ async def finalize_progress(bot, task_id, success=True, result_text="", reply_ma
         if user_id and user_msg_id:
             try:
                 final_text = (
-                    f"✅ **Processing Complete!**\n\n{result_text}"
+                    f"✅ **Processing Complete!**\n\n`{result_text}`"
                     if success
-                    else f"❌ **Processing Failed**\n\n{result_text}"
+                    else f"❌ **Processing Failed**\n\n`{result_text}`"
                 )
                 await bot.edit_message_text(
                     chat_id=user_id,
