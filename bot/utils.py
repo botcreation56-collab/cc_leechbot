@@ -179,34 +179,18 @@ async def _sync_user_profile_to_storage(bot: Bot, user_id: int) -> None:
             
             msg_id = settings.get("storage_msg_id")
             
-            # If we have a thumbnail, we prefer sending/editing as a photo
+            # 🗑️ DELETE PREVIOUS MESSAGE IF IT EXISTS
+            # This ensures only one "active" card exists in storage channel
+            if msg_id:
+                try:
+                    await bot.delete_message(chat_id=channel_id, message_id=msg_id)
+                    logger.info(f"🗑️ Deleted old storage message {msg_id} for user {user_id}")
+                except Exception as de:
+                    logger.debug(f"Could not delete old storage msg {msg_id}: {de}")
+                msg_id = None # Reset to force resend below
+            
+            # If we have a thumbnail, we prefer sending as a photo
             try:
-                if msg_id:
-                    if thumb_id:
-                        # Edit existing message caption (assumes it was a photo)
-                        try:
-                            await bot.edit_message_caption(
-                                chat_id=channel_id,
-                                message_id=msg_id,
-                                caption=profile_text,
-                                parse_mode="Markdown"
-                            )
-                        except Exception as e:
-                            if "Message is not modified" not in str(e):
-                                msg_id = None # Force resend
-                    else:
-                        # Edit existing text message
-                        try:
-                            await bot.edit_message_text(
-                                chat_id=channel_id,
-                                message_id=msg_id,
-                                text=profile_text,
-                                parse_mode="Markdown"
-                            )
-                        except Exception as e:
-                            if "Message is not modified" not in str(e):
-                                msg_id = None # Force resend
-                
                 if not msg_id:
                     if thumb_id:
                         new_msg = await bot.send_photo(
@@ -538,12 +522,34 @@ def validate_user_id(user_id: int) -> Tuple[bool, str]:
     return True, ""
 
 
-def validate_file_size(size: int, max_size: int) -> Tuple[bool, str]:
-    """Validate file size against plan limit."""
-    if size > max_size:
-        max_gb = max_size / (1024 ** 3)
-        return False, f"File exceeds {max_gb:.1f}GB limit"
-    return True, ""
+def validate_file_size(size: int, limit: Any) -> Tuple[bool, str]:
+    """
+    Validate file size against a numeric limit (int) or a plan name (str).
+    Supported plans: free, premium, pro.
+    """
+    try:
+        from config.constants import MAX_FILE_SIZE_FREE, MAX_FILE_SIZE_PRO
+        
+        # If limit is a string (plan name), resolve it to bytes
+        if isinstance(limit, str):
+            plan = limit.lower()
+            if plan == "pro":
+                max_bytes = MAX_FILE_SIZE_PRO
+            elif plan == "premium":
+                # Assuming premium is same as pro for size limits, or define specifically
+                max_bytes = MAX_FILE_SIZE_PRO
+            else:
+                max_bytes = MAX_FILE_SIZE_FREE
+        else:
+            max_bytes = int(limit)
+
+        if size > max_bytes:
+            max_gb = max_bytes / (1024 ** 3)
+            return False, f"File exceeds {max_gb:.1f}GB limit"
+        return True, ""
+    except Exception as e:
+        logger.error(f"File size validation error: {e}")
+        return False, "Validation error"
 
 
 def validate_filename(filename: str) -> Tuple[bool, str]:

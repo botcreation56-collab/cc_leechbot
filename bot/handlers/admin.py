@@ -1018,14 +1018,13 @@ async def handle_admin_fsub_req_toggle(update: Update, context: ContextTypes.DEF
         channel = next((ch for ch in channels if ch.get("id") == channel_id), None)
         
         if channel:
-            current = channel.get("metadata", {}).get("req_join", False)
+            metadata = channel.get("metadata", {})
+            current = metadata.get("req_join", False)
             await update_force_sub_metadata(channel_id, {"req_join": not current}, admin_id=update.effective_user.id)
-            await query.answer("✅ Req to Join toggled", show_alert=False)
+            await query.answer(f"✅ Req to Join: {'OFF ❌' if current else 'ON ✅'}", show_alert=False)
             
             # Small delay to ensure DB propagation before menu refresh
-            import asyncio
             await asyncio.sleep(0.3)
-            
             await handle_admin_fsub_manage(update, context, channel_id=channel_id)
     except Exception as e:
         logger.error(f"❌ Error toggling req_join: {e}")
@@ -1042,15 +1041,14 @@ async def handle_admin_fsub_toggle(update: Update, context: ContextTypes.DEFAULT
         channel = next((ch for ch in channels if ch.get("id") == channel_id), None)
         
         if channel:
-            current = channel.get("metadata", {}).get("enabled", True)
+            metadata = channel.get("metadata", {})
+            current = metadata.get("enabled", True)
             await update_force_sub_metadata(channel_id, {"enabled": not current}, admin_id=update.effective_user.id)
-            new_status = "✅ Enabled" if not current else "❌ Disabled"
+            new_status = "❌ Disabled" if current else "✅ Enabled"
             await query.answer(f"Channel {new_status}", show_alert=False)
             
             # Small delay to ensure DB propagation before menu refresh
-            import asyncio
             await asyncio.sleep(0.3)
-            
             await handle_admin_fsub_manage(update, context, channel_id=channel_id)
     except Exception as e:
         logger.error(f"❌ Error toggling fsub: {e}", exc_info=True)
@@ -1093,17 +1091,16 @@ async def handle_admin_fsub_remove(update: Update, context: ContextTypes.DEFAULT
     try:
         query = update.callback_query
         await query.answer()
-        channel_id = query.data.replace("admin_fsub_remove_", "")
+        channel_id = int(query.data.replace("admin_fsub_remove_", ""))
+        
+        from bot.database import remove_force_sub_channel
+        success = await remove_force_sub_channel(channel_id, admin_id=update.effective_user.id)
 
-        config = await get_config() or {}
-        channels = config.get("force_sub_channels", [])
-        channels = [ch for ch in channels if str(ch.get("channel_id")) != str(channel_id)]
-        config["force_sub_channels"] = channels
-        await update_config(config, admin_id=update.effective_user.id)
-
-        await query.answer("✅ Channel removed", show_alert=True)
-        await handle_admin_set_force_sub_channel(update, context)
-        await log_admin_action(update.effective_user.id, "removed_fsub_channel", {"channel_id": channel_id})
+        if success:
+            await query.answer("✅ Channel removed", show_alert=True)
+            await handle_admin_set_force_sub_channel(update, context)
+        else:
+            await query.answer("❌ Failed to remove channel", show_alert=True)
     except Exception as e:
         logger.error(f"❌ Error removing fsub: {e}", exc_info=True)
 

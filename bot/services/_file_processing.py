@@ -16,6 +16,7 @@ from config.constants import (
     MAX_UPLOAD_SIZE_2GB, MAX_UPLOAD_SIZE_4GB,
     STREAM_CHUNK_SIZE, TEMP_DIR,
 )
+from bot.utils import validate_file_size
 
 logger = logging.getLogger("filebot.services.file_processing")
 
@@ -25,22 +26,6 @@ class ProcessingError(Exception):
     pass
 
 
-def validate_file_size(file_size: int, user_plan: str) -> tuple[bool, str]:
-    """
-    Validate file size against plan limits.
-
-    Returns:
-        Tuple (is_valid, error_message).
-    """
-    try:
-        max_size = MAX_FILE_SIZE_PRO if user_plan == "pro" else MAX_FILE_SIZE_FREE
-        if file_size > max_size:
-            max_gb = max_size / (1024 ** 3)
-            return False, f"❌ File exceeds {max_gb:.1f}GB limit for {user_plan} plan"
-        return True, ""
-    except Exception as e:
-        logger.error(f"❌ File validation error: {e}")
-        return False, "Validation error"
 
 
 def get_upload_engine_limit(engine_size: str = "4gb") -> int:
