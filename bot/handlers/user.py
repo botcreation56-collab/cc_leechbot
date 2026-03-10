@@ -38,9 +38,11 @@ from bot.database import (
 )
 from bot.utils import log_info, log_error, log_user_update, validate_url
 from bot.services import create_or_update_storage_message, FFmpegService
-from bot.handlers.files import handle_url_input
-from bot.handlers.cloud import terabox_text_input
-from bot.handlers.settings import handle_config_edit_input, ussettings_command
+# Circular imports moved inside functions:
+# from bot.handlers.files import handle_url_input
+# from bot.handlers.cloud import terabox_text_input
+# from bot.handlers.settings import handle_config_edit_input
+from bot.handlers.settings import ussettings_command
 from config.constants import ERROR_MESSAGES, BROADCAST_RATE_LIMIT
 from config.settings import get_settings, get_admin_ids
 settings = get_settings()
@@ -1031,21 +1033,6 @@ async def clear_user_session(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if count > 0:
         logger.info(f"🧹 Session cleared for {user_id} ({count} keys removed)")
 
-async def handle_chat_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Automatically approve join requests for force-sub channels."""
-    try:
-        request = update.chat_join_request
-        user_id = request.from_user.id
-        chat = request.chat
-        
-        logger.info(f"📥 Join Request: {user_id} -> {chat.title} ({chat.id})")
-        
-        # Auto-approve
-        await request.approve()
-        logger.info(f"✅ Approved join request for {user_id} in {chat.id}")
-        
-    except Exception as e:
-        logger.error(f"❌ Failed to approve join request: {e}")
 
 async def handle_check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Callback for '✅ I Joined' button. Retriggers force-sub check & resumes task."""
@@ -1071,7 +1058,7 @@ async def handle_check_subscription(update: Update, context: ContextTypes.DEFAUL
                 await handle_url_input(update, context, resumed_url=pending["url"])
             elif pending["type"] == "file":
                 from bot.handlers.files import handle_file_upload
-                await handle_file_upload(update, context, resumed_file=True)
+                await handle_file_upload(update, context, resumed_file=True, file_id=pending.get("file_id"))
         else:
             await query.edit_message_text(
                 "✅ **Subscription Verified!**\n\n"
@@ -1134,9 +1121,11 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if not awaiting:
             # If no awaiting state, check if it's a URL
+            from bot.utils import validate_url
             if validate_url(text)[0]:
                 if not await check_force_sub(update, context, pending_data={"type": "url", "url": text}):
                     return
+                from bot.handlers.files import handle_url_input
                 await handle_url_input(update, context)
             return
 
@@ -1178,6 +1167,7 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # BUG-10 FIX: edit_* config states were being discarded (fell through to warning)
         if awaiting.startswith("edit_") or awaiting.startswith("add_shortener"):
+            from bot.handlers.settings import handle_config_edit_input
             await handle_config_edit_input(update, context, awaiting)
             return
 

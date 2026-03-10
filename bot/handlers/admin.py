@@ -934,7 +934,9 @@ async def handle_admin_set_force_sub_channel(update: Update, context: ContextTyp
                 cid = ch.get("id", "unknown")
                 metadata = ch.get("metadata", {})
                 title = metadata.get("title") or ch.get("name") or str(cid)
-                keyboard.append([InlineKeyboardButton(f"📁 {title}", callback_data=f"admin_fsub_manage_{cid}")])
+                enabled = metadata.get("enabled", True)
+                status_icon = "🟢" if enabled else "🔴"
+                keyboard.append([InlineKeyboardButton(f"{status_icon} {title}", callback_data=f"admin_fsub_manage_{cid}")])
         else:
             keyboard.append([InlineKeyboardButton("ℹ️ No channels configured", callback_data="ignore")])
 
@@ -976,17 +978,20 @@ async def handle_admin_fsub_manage(update: Update, context: ContextTypes.DEFAULT
         metadata = channel.get("metadata", {})
         title = metadata.get("title") or channel.get("name") or str(channel_id)
         req_join = metadata.get("req_join", False)
+        enabled = metadata.get("enabled", True)
         
-        # Current state icon: ✅ if req_join is on, ❌ if off (direct join)
+        # Icons
         req_icon = "✅" if req_join else "❌"
+        enabled_status = "✅ Enabled" if enabled else "❌ Disabled"
 
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton(f"Channel: {title}", callback_data="ignore")],
-            [InlineKeyboardButton(f"Req to Join : {req_icon}", callback_data=f"admin_fsub_req_toggle_{channel_id}")],
+            [InlineKeyboardButton(f"Status: {enabled_status}", callback_data=f"admin_fsub_toggle_{channel_id}")],
+            [InlineKeyboardButton(f"Req to Join: {req_icon}", callback_data=f"admin_fsub_req_toggle_{channel_id}")],
             [InlineKeyboardButton("🗑️ Remove Channel", callback_data=f"admin_fsub_remove_confirm_{channel_id}")],
             [
                 InlineKeyboardButton("🔙 Back", callback_data="admin_set_force_sub_channel"),
-                InlineKeyboardButton("✅ Apply", callback_data="admin_set_force_sub_channel")
+                InlineKeyboardButton("✅ Done", callback_data="admin_set_force_sub_channel")
             ]
         ])
         
@@ -1016,6 +1021,11 @@ async def handle_admin_fsub_req_toggle(update: Update, context: ContextTypes.DEF
             current = channel.get("metadata", {}).get("req_join", False)
             await update_force_sub_metadata(channel_id, {"req_join": not current}, admin_id=update.effective_user.id)
             await query.answer("✅ Req to Join toggled", show_alert=False)
+            
+            # Small delay to ensure DB propagation before menu refresh
+            import asyncio
+            await asyncio.sleep(0.3)
+            
             await handle_admin_fsub_manage(update, context, channel_id=channel_id)
     except Exception as e:
         logger.error(f"❌ Error toggling req_join: {e}")
@@ -1036,6 +1046,11 @@ async def handle_admin_fsub_toggle(update: Update, context: ContextTypes.DEFAULT
             await update_force_sub_metadata(channel_id, {"enabled": not current}, admin_id=update.effective_user.id)
             new_status = "✅ Enabled" if not current else "❌ Disabled"
             await query.answer(f"Channel {new_status}", show_alert=False)
+            
+            # Small delay to ensure DB propagation before menu refresh
+            import asyncio
+            await asyncio.sleep(0.3)
+            
             await handle_admin_fsub_manage(update, context, channel_id=channel_id)
     except Exception as e:
         logger.error(f"❌ Error toggling fsub: {e}", exc_info=True)

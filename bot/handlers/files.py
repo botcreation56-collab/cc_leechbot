@@ -109,7 +109,7 @@ async def handle_set_max_filesize(update: Update, context: ContextTypes.DEFAULT_
     # Delegates to the text-prompt handler
     await handle_edit_max_filesize(update, context)
 
-async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE, resumed_file=False):
+async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE, resumed_file=False, file_id=None):
     """Handle direct file uploads"""
     try:
         user_id = update.effective_user.id
@@ -146,18 +146,29 @@ async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE,
         # 1️⃣ Get user
         user = await get_user(user_id)
         if not user:
-            await update.message.reply_text("❌ User not found.")
+            if update.message:
+                await update.message.reply_text("❌ User not found.")
             return
         
         if user.get("banned"):
-            await update.message.reply_text(ERROR_MESSAGES.get("banned", "You are banned."))
+            if update.message:
+                await update.message.reply_text(ERROR_MESSAGES.get("banned", "You are banned."))
             return
             
         # 1.5️⃣ Check Force Sub
-        from bot.handlers.user import check_force_sub
         if not resumed_file:
-            if not await check_force_sub(update, context, pending_data={"type": "file"}):
-                return
+            # Prepare metadata for potential resume
+            file_obj = update.message.document or update.message.video or update.message.audio
+            if file_obj:
+                p_data = {
+                    "type": "file",
+                    "file_id": file_obj.file_id,
+                    "file_name": getattr(file_obj, 'file_name', 'file'),
+                    "file_size": getattr(file_obj, 'file_size', 0)
+                }
+                from bot.handlers.user import check_force_sub
+                if not await check_force_sub(update, context, pending_data=p_data):
+                    return
         
         # 2️⃣ ✅ CHECK RCLONE IS CONFIGURED
         config = await get_config()
@@ -172,7 +183,33 @@ async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE,
             return
         
         # Get file object
-        file_obj = update.message.document or update.message.video or update.message.audio
+        file_obj = None
+        if update.message:
+            file_obj = update.message.document or update.message.video or update.message.audio
+        
+        # If resuming, we might have file_id but no message attachment in this update
+        if not file_obj and file_id:
+            # We can't get the full metadata from just file_id without a call
+            # So we rely on user_data which was saved in handle_file_upload initially
+            pending = context.user_data.get("pending_fsub_data")
+            if pending and pending.get("file_id") == file_id:
+                # Mock a file object for the rest of the logic
+                from dataclasses import dataclass
+                @dataclass
+                class MockFile:
+                    file_id: str
+                    file_name: str
+                    file_size: int
+                    
+                    async def get_file(self):
+                        return await context.bot.get_file(self.file_id)
+
+                file_obj = MockFile(
+                    file_id=file_id,
+                    file_name=pending.get("file_name", "file"),
+                    file_size=pending.get("file_size", 0)
+                )
+
         if not file_obj:
             return
 
@@ -247,7 +284,9 @@ async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE,
         
         ext = Path(filename).suffix or ".tmp"
         internal_filename = f"{uuid.uuid4()}{ext}"
-        internal_path = DOWNLOADS_DIR / str(user_id) / internal_filename
+        user_dl_dir = DOWNLOADS_DIR / str(user_id)
+        user_dl_dir.mkdir(parents=True, exist_ok=True)
+        internal_path = user_dl_dir / internal_filename
         internal_path.parent.mkdir(parents=True, exist_ok=True)
         
         file_path = await (await file_obj.get_file()).download_to_drive(custom_path=internal_path)
