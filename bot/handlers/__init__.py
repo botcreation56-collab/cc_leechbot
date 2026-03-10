@@ -109,7 +109,7 @@ from .user import (
     handle_start_support_chat,
     handle_subtitle_menu, handle_inject_sub,
     handle_us_remove_confirm, handle_us_reset_confirm_yes,
-    handle_meta_title, handle_meta_author, handle_meta_year,
+    handle_meta_author,
     handle_meta_subs, handle_meta_video, handle_meta_audio,
     handle_us_visibility, handle_us_plan,
     handle_rem_word, handle_rem_meta, handle_rem_inject,

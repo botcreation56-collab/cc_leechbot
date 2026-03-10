@@ -224,11 +224,13 @@ def setup_handlers(application: Application) -> None:
         handle_us_destination_button, handle_us_remove_confirm,
         handle_us_reset_confirm_yes, handle_us_myfiles, handle_us_plan,
         handle_subtitle_menu, handle_inject_sub, handle_meta_audio,
-        handle_meta_video, handle_meta_subtitle, handle_rem_word,
+        handle_meta_video, handle_meta_subs, handle_rem_word,
         handle_rem_meta, handle_rem_inject, handle_callback_help,
         handle_callback_support, cancel_task_command, unknown_handler,
         handle_start_support_chat,
         handle_chat_join_request, handle_check_subscription,
+        handle_us_thumbnail_view, handle_us_thumbnail_delete, handle_us_thumbnail_delete_confirm,
+        handle_meta_author,
     )
 
     # ── Admin handlers ───────────────────────────────────────
