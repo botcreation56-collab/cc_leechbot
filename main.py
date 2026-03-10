@@ -417,6 +417,7 @@ def setup_handlers(application: Application) -> None:
             ("^inject_sub$",        handle_inject_sub),
             ("^meta_audio$",        handle_meta_audio),
             ("^meta_video$",        handle_meta_video),
+            ("^meta_author$",       handle_meta_author),
             ("^meta_subs$",         handle_meta_subs), # Updated from meta_subtitle
             ("^rem_word$",          handle_rem_word),
             ("^rem_meta$",          handle_rem_meta),
@@ -552,15 +553,6 @@ def setup_handlers(application: Application) -> None:
         from telegram.ext import ChatJoinRequestHandler
         application.add_handler(ChatJoinRequestHandler(handle_chat_join_request))
 
-        # 13. USER METADATA
-        for pattern, handler in [
-            ("^meta_title$",    handle_meta_title),
-            ("^meta_author$",   handle_meta_author),
-            ("^meta_subtitle$", handle_meta_subtitle),
-            ("^meta_video$",    handle_meta_video),
-            ("^meta_audio$",    handle_meta_audio),
-        ]:
-            application.add_handler(CallbackQueryHandler(handler, pattern=pattern))
 
         # 13. TEXT INPUT (awaiting states)
         application.add_handler(MessageHandler(
