@@ -821,7 +821,7 @@ async def handle_user_settings_text(update: Update, context: ContextTypes.DEFAUL
 # HANDLE METADATA
 # ============================================================
 
-        elif state in ("us_meta_title", "us_meta_author", "us_meta_year"):
+        elif state in ("us_meta_video", "us_meta_author", "us_meta_audio", "us_meta_subs"):
             if len(text) > 100:
                 await update.message.reply_text(
                     "❌ **Too Long**\n\n"
@@ -831,42 +831,23 @@ async def handle_user_settings_text(update: Update, context: ContextTypes.DEFAUL
                 return
 
             tag_name = state.replace("us_meta_", "")
+            # Mapping for track titles format: [Value] | [Language]
             await update_user(user_id, {f"settings.metadata.{tag_name}": text})
             
+            label = {
+                "video": "Video Title",
+                "author": "Artist/Author",
+                "audio": "Audio Track Label",
+                "subs": "Subtitle Track Label"
+            }.get(tag_name, tag_name.title())
+
             await update.message.reply_text(
-                f"✅ **Default {tag_name.title()} Set**\n\n"
-                f"{tag_name.title()}: `{text}`",
+                f"✅ **{label} Set**\n\n"
+                f"Value: `{text}`",
                 parse_mode="Markdown"
             )
             
             logger.info(f"✅ User {user_id} set metadata {tag_name}: {text}")
-        
-# ============================================================
-# HANDLE METADATA SUBTITLE
-# ============================================================
-
-        elif state == "us_meta_subtitle":
-            text_lower = text.lower()
-            
-            if text_lower in ["none", "no", "disable", "off"]:
-                await update_user(user_id, {"settings.metadata.subtitle": "none"})
-                
-                await update.message.reply_text(
-                    "✅ **Subtitles Disabled**\n\n"
-                    "Subtitles will not be processed.",
-                    parse_mode="Markdown"
-                )
-            else:
-                await update_user(user_id, {"settings.metadata.subtitle": text})
-                
-                await update.message.reply_text(
-                    f"✅ **Subtitle Language Set**\n\n"
-                    f"Subtitle: `{text}`\n\n"
-                    f"Subtitles in this language will be processed.",
-                    parse_mode="Markdown"
-                )
-            
-            logger.info(f"✅ User {user_id} set subtitle: {text}")
         
 # ============================================================
 # HANDLE THUMBNAIL
@@ -1054,3 +1035,64 @@ async def handle_us_suffix(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"❌ Error in handle_us_suffix: {e}")
         await update.callback_query.answer("❌ Error", show_alert=True)
+
+async def handle_us_thumbnail_view(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Callback: show the current custom thumbnail as a full photo"""
+    try:
+        query = update.callback_query
+        user_id = update.effective_user.id
+        from bot.database import get_user
+        user = await get_user(user_id)
+        thumb = user.get("settings", {}).get("thumbnail_file_id")
+        
+        if not thumb:
+            await query.answer("❌ No custom thumbnail found", show_alert=True)
+            return
+
+        await query.answer()
+        # We send it as a new message so they can save/forward it
+        await context.bot.send_photo(
+            chat_id=user_id,
+            photo=thumb,
+            caption="🖼️ **Current Custom Thumbnail**",
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        logger.error(f"Error in handle_us_thumbnail_view: {e}")
+        await query.answer("❌ Error viewing thumbnail", show_alert=True)
+
+async def handle_us_thumbnail_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Callback: confirmation for thumbnail deletion"""
+    try:
+        query = update.callback_query
+        await query.answer()
+        
+        text = "⚠️ **Delete Thumbnail?**\n\nAre you sure you want to remove your custom thumbnail?"
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ Yes, Delete", callback_data="us_thumbnail_delete_confirm"),
+                InlineKeyboardButton("🔙 No, Keep", callback_data="us_thumbnail") # Corrected callback data
+            ]
+        ]
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+    except Exception as e:
+        logger.error(f"Error in handle_us_thumbnail_delete: {e}")
+
+async def handle_us_thumbnail_delete_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Callback: actual deletion of thumbnail"""
+    try:
+        query = update.callback_query
+        user_id = update.effective_user.id
+        
+        await update_user(user_id, {
+            "settings.thumbnail": "auto",
+            "settings.thumbnail_file_id": None
+        })
+        
+        await query.answer("✅ Thumbnail deleted", show_alert=True)
+        await log_user_update(context.bot, user_id, "deleted custom thumbnail")
+        
+        # Go back to settings (via command to refresh UI)
+        await ussettings_command(update, context)
+    except Exception as e:
+        logger.error(f"Error in handle_us_thumbnail_delete_confirm: {e}")

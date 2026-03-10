@@ -391,6 +391,9 @@ def setup_handlers(application: Application) -> None:
         for pattern, handler in [
             ("^us_metadata$",       handle_us_metadata),
             ("^us_thumbnail$",      handle_us_thumbnail_menu),
+            ("^us_thumbnail_view$", handle_us_thumbnail_view),
+            ("^us_thumbnail_delete$", handle_us_thumbnail_delete),
+            ("^us_thumbnail_delete_confirm$", handle_us_thumbnail_delete_confirm),
             ("^us_mode$",           handle_us_mode),
             ("^us_mode_video$",     handle_us_mode_video),
             ("^us_mode_document$",  handle_us_mode_document),
@@ -412,7 +415,7 @@ def setup_handlers(application: Application) -> None:
             ("^inject_sub$",        handle_inject_sub),
             ("^meta_audio$",        handle_meta_audio),
             ("^meta_video$",        handle_meta_video),
-            ("^meta_subtitle$",     handle_meta_subtitle),
+            ("^meta_subs$",         handle_meta_subs), # Updated from meta_subtitle
             ("^rem_word$",          handle_rem_word),
             ("^rem_meta$",          handle_rem_meta),
             ("^rem_inject$",        handle_rem_inject),

@@ -1488,7 +1488,7 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "us_suffix":            ("✏️ Suffix edit",              "/ussettings"),
             "us_remove_word":       ("🗑️ Word removal",             "/ussettings"),
             "us_meta_author":       ("🏷️ Metadata author edit",     "/ussettings"),
-            "us_meta_subtitle":     ("🎞️ Subtitle injection",       "/ussettings"),
+            "us_meta_subs":         ("🎞️ Subtitle injection",       "/ussettings"),
             "us_destination":       ("🎯 Destination channel setup", "/ussettings"),
             "wiz_inject_audio":     ("🎵 Audio injection wizard",   "/ussettings"),
             "wiz_inject_subs":      ("🎞️ Subtitle injection wizard","/ussettings"),
