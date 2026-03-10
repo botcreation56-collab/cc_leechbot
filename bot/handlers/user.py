@@ -1486,6 +1486,46 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /cancel — context-aware cancel of current awaiting state"""
     try:
         user_id = update.effective_user.id
+        text = update.message.text.strip()
+
+        # Handle /cancelTask_ID or /cancel Task_ID
+        task_id = None
+        if text.lower().startswith("/cancel") and len(text) > 7:
+            # Extract Task_ID (could be /cancelTask_ID or /cancel Task_ID)
+            raw_id = text[7:].strip()
+            if raw_id:
+                task_id = raw_id
+
+        if task_id:
+            from bot.database import get_task, fail_task
+            task = await get_task(task_id)
+            
+            if not task:
+                await update.message.reply_text(f"❌ **Task Not Found**\n\nTask ID: `{task_id}`", parse_mode="Markdown")
+                return
+
+            # Check ownership (unless admin)
+            from config.settings import get_admin_ids
+            if task.get("user_id") != user_id and user_id not in get_admin_ids():
+                await update.message.reply_text("❌ **Access Denied**\n\nYou can only cancel your own tasks.", parse_mode="Markdown")
+                return
+
+            if task.get("status") in ["completed", "failed"]:
+                await update.message.reply_text(f"ℹ️ **Task Already Finished**\n\nStatus: `{task.get('status')}`", parse_mode="Markdown")
+                return
+
+            # Mark as failed/cancelled
+            await fail_task(task_id, "Cancelled by user")
+            
+            # TODO: Signal the worker if it's currently processing
+            # For now, worker will check status periodically or fail on next step
+            
+            await update.message.reply_text(
+                f"✅ **Task Cancelled**\n\nTask `{task_id}` has been marked as cancelled.",
+                parse_mode="Markdown"
+            )
+            logger.info(f"🛑 Task {task_id} cancelled by user {user_id}")
+            return
 
         # Map every awaiting-state key → (what was being done, where to go back)
         STATE_MESSAGES = {

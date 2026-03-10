@@ -465,7 +465,18 @@ def validate_url(url: str) -> Tuple[bool, str]:
         return False, f"Blocked scheme: {scheme}"
 
     if not url.lower().startswith("https://"):
-        return False, "Only HTTPS URLs are securely accepted"
+        return False, "Only HTTPS URLs are accepted for security reasons"
+
+    # Block YouTube/YouTu.be to avoid strikes
+    blocked_domains = ["youtube.com", "youtu.be", "www.youtube.com"]
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower()
+        if any(domain in host for domain in blocked_domains):
+            return False, "YouTube links are not supported Right now"
+    except:
+        return False, "Invalid URL format"
 
     if not _URL_RE.match(url):
         return False, "Invalid URL format"
