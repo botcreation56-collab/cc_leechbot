@@ -76,7 +76,7 @@ from .settings import (
     settings_command, ussettings_command,
     handle_user_settings_text,
     handle_us_mode, handle_us_mode_video, handle_us_mode_document,
-    handle_us_close,
+    handle_us_close, handle_us_rclone_service,
     handle_us_thumbnail_view, handle_us_thumbnail_delete, handle_us_thumbnail_delete_confirm,
     go_back_to_settings,
 )
