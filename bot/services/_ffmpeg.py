@@ -52,11 +52,24 @@ class FFmpegService:
                 tags = s.get("tags", {})
                 
                 # Language detection priority: tags.language -> tags.LANGUAGE -> tags.handler_name (3-char)
-                lang = tags.get("language") or tags.get("LANGUAGE") or tags.get("handler_name", "und")
-                if len(lang) > 3: # handler_name can be long, but langs are usually 3
+                lang = tags.get("language") or tags.get("LANGUAGE") or ""
+                
+                # If lang is missing or 'und', try to extract from handler_name if it looks like a code
+                if (not lang or lang.lower() == "und") and "handler_name" in tags:
+                    hn = tags["handler_name"].lower()
+                    if len(hn) == 3:
+                        lang = hn
+                
+                lang = lang or "und"
+                if len(lang) > 3:
                     lang = lang[:3].lower()
 
-                title = tags.get("title") or lang or s.get("codec_name", "Unknown")
+                # Title logic: Prefer user-friendly title, then lang name, then codec
+                title = tags.get("title")
+                lang_name = cls.get_language_name(lang)
+                
+                if not title or title.lower() == "und":
+                    title = lang_name if lang_name != "Unknown" else s.get("codec_name", "Unknown")
 
                 track_info = {
                     "index": s.get("index"),

@@ -290,13 +290,45 @@ async def handle_test_single_rclone(update: Update, context: ContextTypes.DEFAUL
         rid = query.data.replace("test_single_rclone_", "")
         await query.answer(f"🧪 Testing {rid}...", show_alert=False)
         
-        # Simulated test success message
-        await query.message.reply_text(
-            f"🧪 **Rclone Test: {rid}**\n\n"
-            f"✅ Connection successful!\n"
-            f"The remote responded correctly to a listing request.",
-            parse_mode="Markdown"
-        )
+        import tempfile
+        import os
+        from bot.services import upload_to_rclone, RcloneError
+        
+        # Create a sample file
+        fd, temp_file = tempfile.mkstemp(suffix=".txt", prefix="rclone_test_")
+        try:
+            with os.fdopen(fd, 'w') as f:
+                f.write(f"Rclone connection test for remote: {rid}\n"
+                        f"Timestamp: {datetime.now().isoformat()}\n"
+                        f"Created by CC LeechBot Admin.")
+            
+            # Attempt upload to root
+            result = await upload_to_rclone(
+                file_path=temp_file,
+                rclone_config_id=rid,
+                remote_path="/",
+                user_id=update.effective_user.id
+            )
+            
+            if result:
+                await query.message.reply_text(
+                    f"✅ **Rclone Test Success: {rid}**\n\n"
+                    f"Successfully uploaded a test file to the remote.\n"
+                    f"Write permissions and connection are verified.",
+                    parse_mode="Markdown"
+                )
+            else:
+                await query.message.reply_text(
+                    f"❌ **Rclone Test Failed: {rid}**\n\n"
+                    f"Upload attempt failed. Please check your credentials and remote status.",
+                    parse_mode="Markdown"
+                )
+        except Exception as te:
+            logger.error(f"Rclone test error: {te}")
+            await query.message.reply_text(f"❌ **Test Error**: `{te}`")
+        finally:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
     except Exception as e:
         logger.error(f"Error in test_single_rclone: {e}", exc_info=True)
         await update.callback_query.answer("❌ Test Failed")

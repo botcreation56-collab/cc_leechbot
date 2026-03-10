@@ -1252,6 +1252,7 @@ async def check_force_sub(update: Update, context: ContextTypes.DEFAULT_TYPE, pe
         user = await get_user(user_id)
         requested = user.get("settings", {}).get("requested_fsub", []) if user else []
 
+        not_joined = []
         for channel in force_channels:
             channel_id = channel.get("id")
             if not channel_id:

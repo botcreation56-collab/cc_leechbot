@@ -1099,12 +1099,21 @@ class WizardHandler:
             for t in tracks:
                 idx = t['index']
                 lang = t.get('language', 'und')
-                name = t.get('title', 'Track')
+                name = t.get('title', 'Unknown')
                 is_sel = selected.get(idx, False)
                 
                 icon = "✅" if is_sel else "❌"
-                text = f"{icon} {lang} | {name}"
                 
+                # cleaner display: "✅ Tamil | Surround 5.1" instead of "✅ tam | tam"
+                from bot.services import FFmpegService
+                lang_display = FFmpegService.get_language_name(lang)
+                
+                if name == lang_display or name.lower() == "unknown":
+                    display_text = lang_display
+                else:
+                    display_text = f"{lang_display} | {name}"
+                
+                text = f"{icon} {display_text}"
                 keyboard.append([InlineKeyboardButton(text, callback_data=f"{toggle_prefix}{idx}")])
 
         keyboard.append([inject_btn])
@@ -1138,10 +1147,27 @@ class WizardHandler:
                 user_id=user_id
             )
 
+            # --- PROGRESS BAR FIX ---
+            # Register wizard message ID so send_progress_message edits it
             if query:
+                try:
+                    await query.answer() # Hide the "Proceeding..." popup
+                except: pass
+                
+                if not hasattr(bot, "progress_data"):
+                    bot.progress_data = {}
+                task_info = bot.progress_data.setdefault(task_id, {})
+                task_info["user_progress_msg_id"] = query.message.message_id
+                task_info["user_id"] = user_id
+                
                 await query.edit_message_text("🚀 **Initializing Processing...**")
             else:
-                await bot.send_message(user_id, "🚀 **Initializing Processing...**")
+                initial_msg = await bot.send_message(user_id, "🚀 **Initializing Processing...**")
+                if not hasattr(bot, "progress_data"):
+                    bot.progress_data = {}
+                task_info = bot.progress_data.setdefault(task_id, {})
+                task_info["user_progress_msg_id"] = initial_msg.message_id
+                task_info["user_id"] = user_id
             
             # 2. Get Selections
             audio_indices = [idx for idx, selected in session.get('selected_audio', {}).items() if selected]

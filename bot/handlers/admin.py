@@ -485,8 +485,9 @@ async def handle_view_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show bot statistics"""
     try:
-        if not await _require_channels_setup(update, context):
-            return
+        query = update.callback_query
+        await query.answer("📊 Refreshing Stats...", show_alert=False)
+        
         from bot.database import get_admin_stats
         
         db_stats = await get_admin_stats()
@@ -980,19 +981,16 @@ async def handle_admin_fsub_manage(update: Update, context: ContextTypes.DEFAULT
         req_join = metadata.get("req_join", False)
         enabled = metadata.get("enabled", True)
         
-        # Icons
-        req_icon = "✅" if req_join else "❌"
-        enabled_status = "✅ Enabled" if enabled else "❌ Disabled"
+        # Icons for better visualization
+        req_status = "ON ✅ (Must Req)" if req_join else "OFF ❌ (Join Direct)"
+        enabled_status = "ACTIVE ✅" if enabled else "INACTIVE ❌"
 
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton(f"Channel: {title}", callback_data="ignore")],
-            [InlineKeyboardButton(f"Status: {enabled_status}", callback_data=f"admin_fsub_toggle_{channel_id}")],
-            [InlineKeyboardButton(f"Req to Join: {req_icon}", callback_data=f"admin_fsub_req_toggle_{channel_id}")],
-            [InlineKeyboardButton("🗑️ Remove Channel", callback_data=f"admin_fsub_remove_confirm_{channel_id}")],
-            [
-                InlineKeyboardButton("🔙 Back", callback_data="admin_set_force_sub_channel"),
-                InlineKeyboardButton("✅ Done", callback_data="admin_set_force_sub_channel")
-            ]
+            [InlineKeyboardButton(f"Sub Check: {enabled_status}", callback_data=f"admin_fsub_toggle_{channel_id}")],
+            [InlineKeyboardButton(f"Req to Join: {req_status}", callback_data=f"admin_fsub_req_toggle_{channel_id}")],
+            [InlineKeyboardButton("🗑️ Remove This Channel", callback_data=f"admin_fsub_remove_confirm_{channel_id}")],
+            [InlineKeyboardButton("🔙 Back to Channels", callback_data="admin_set_force_sub_channel")]
         ])
         
         await query.message.edit_text(
@@ -1107,11 +1105,8 @@ async def handle_admin_fsub_remove(update: Update, context: ContextTypes.DEFAULT
 async def handle_admin_remove_log(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Remove log channel from config"""
     try:
-        from bot.database import remove_channel_config, get_config, update_config
+        from bot.database import remove_channel_config
         await remove_channel_config("log", admin_id=update.effective_user.id)
-        config = await get_config() or {}
-        config.pop("log_channel_id", None)
-        await update_config(config, admin_id=update.effective_user.id)
         await update.callback_query.answer("✅ Log channel removed", show_alert=True)
         await handle_admin_set_log_channel(update, context)
     except Exception as e:
@@ -1121,11 +1116,8 @@ async def handle_admin_remove_log(update: Update, context: ContextTypes.DEFAULT_
 async def handle_admin_remove_dump(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Remove dump channel from config"""
     try:
-        from bot.database import remove_channel_config, get_config, update_config
+        from bot.database import remove_channel_config
         await remove_channel_config("dump", admin_id=update.effective_user.id)
-        config = await get_config() or {}
-        config.pop("dump_channel_id", None)
-        await update_config(config, admin_id=update.effective_user.id)
         await update.callback_query.answer("✅ Dump channel removed", show_alert=True)
         await handle_admin_set_dump_channel(update, context)
     except Exception as e:
@@ -1135,11 +1127,8 @@ async def handle_admin_remove_dump(update: Update, context: ContextTypes.DEFAULT
 async def handle_admin_remove_storage(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Remove storage channel from config"""
     try:
-        from bot.database import remove_channel_config, get_config, update_config
+        from bot.database import remove_channel_config
         await remove_channel_config("storage", admin_id=update.effective_user.id)
-        config = await get_config() or {}
-        config.pop("storage_channel_id", None)
-        await update_config(config, admin_id=update.effective_user.id)
         await update.callback_query.answer("✅ Storage channel removed", show_alert=True)
         await handle_admin_set_storage_channel(update, context)
     except Exception as e:

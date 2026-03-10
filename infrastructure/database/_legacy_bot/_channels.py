@@ -128,6 +128,7 @@ async def set_channel_config(
             upsert=True,
         )
         if result.acknowledged:
+            _bust_config_cache()
             logger.info(f"✅ Channel {channel_type} saved to nested structure")
             if admin_id:
                 await log_admin_action(admin_id, f"set_{channel_type}_channel", {
@@ -160,6 +161,7 @@ async def add_force_sub_channel(
             upsert=True,
         )
         if result.acknowledged:
+            _bust_config_cache()
             logger.info(f"✅ Force sub channel added: {channel_id}")
             if admin_id:
                 await log_admin_action(admin_id, "add_force_sub_channel", {
@@ -187,6 +189,7 @@ async def remove_force_sub_channel(channel_id: int, admin_id: int = 0) -> bool:
             {"$set": {"channels.force_sub": filtered, "updated_at": datetime.utcnow()}},
         )
         if result.acknowledged:
+            _bust_config_cache()
             logger.info(f"✅ Force sub channel removed: {channel_id}")
             if admin_id:
                 await log_admin_action(admin_id, "remove_force_sub_channel", {"channel_id": channel_id})
@@ -238,11 +241,19 @@ async def remove_channel_config(channel_type: str, admin_id: int = 0) -> bool:
     try:
         logger.info(f"🗑️ Removing {channel_type} channel")
         db = get_db()
+        unset_fields = {f"channels.{channel_type}": ""}
+        
+        # Also unset legacy flat keys
+        flat_key = f"{channel_type}_channel"
+        unset_fields[flat_key] = ""
+        unset_fields[f"{flat_key}_metadata"] = ""
+        
         result = await db.config.update_one(
             {"type": "global"},
-            {"$unset": {f"channels.{channel_type}": ""}, "$set": {"updated_at": datetime.utcnow()}},
+            {"$unset": unset_fields, "$set": {"updated_at": datetime.utcnow()}},
         )
         if result.acknowledged:
+            _bust_config_cache()
             logger.info(f"✅ {channel_type} channel removed")
             if admin_id:
                 await log_admin_action(admin_id, f"remove_{channel_type}_channel", {})
