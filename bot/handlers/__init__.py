@@ -79,6 +79,12 @@ from .settings import (
     handle_us_close, handle_us_rclone_service,
     handle_us_thumbnail_view, handle_us_thumbnail_delete, handle_us_thumbnail_delete_confirm,
     go_back_to_settings,
+    # Rclone admin feature gating
+    handle_toggle_plan_rclone,
+    handle_edit_rclone_creds,
+    handle_rclone_creds_input,
+    # Rclone post-auth user action
+    handle_us_rclone_dest_activate,
 )
 
 # --- File upload / wizard / URL ----------------------------------------------

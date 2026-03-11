@@ -29,7 +29,10 @@ class FFmpegService:
             cmd = [
                 "ffprobe",
                 "-v", "error",
-                "-show_entries", "stream=index,codec_name,codec_type,tags:format=duration",
+                # stream_tags must be listed explicitly — using just 'tags' is not
+                # always honoured and silently drops the language field on some encoders.
+                "-show_entries",
+                "stream=index,codec_name,codec_type:stream_tags=language,handler_name,title:format_tags=:format=duration",
                 "-of", "json",
                 "--",  # SECURITY: Stop option parsing before path
                 target_path,
@@ -61,15 +64,19 @@ class FFmpegService:
                 
                 # If lang is missing or 'und', try to extract from handler_name
                 if not lang or lang.lower() == "und":
-                    hn = tags.get("handler_name", "").lower()
+                    hn = tags.get("handler_name", "").strip()
                     if hn:
-                        # 1. Check if handler_name IS a 3-letter code
-                        if len(hn) == 3:
-                            lang = hn
-                        # 2. Check if handler_name CONTAINS a known language name (e.g. "Tamil Audio")
+                        hn_low = hn.lower()
+                        # 1. handler_name is exactly a 3-letter ISO code we KNOW about
+                        if len(hn_low) == 3 and hn_low in cls.ISO_639_2_MAP:
+                            lang = hn_low
+                        # 2. handler_name is exactly a 2-letter ISO code we KNOW about
+                        elif len(hn_low) == 2 and hn_low in cls.ISO_639_2_MAP:
+                            lang = hn_low
+                        # 3. handler_name CONTAINS a known language name (e.g. "Tamil Audio")
                         else:
                             for code, name in cls.ISO_639_2_MAP.items():
-                                if name.lower() in hn:
+                                if name.lower() in hn_low:
                                     lang = code
                                     break
                 
@@ -91,7 +98,11 @@ class FFmpegService:
                 lang_name = cls.get_language_name(lang)
                 
                 if not title or title.lower() in ["und", "undetermined", lang.lower()]:
-                    title = lang_name if lang_name != "Unknown" else s.get("codec_name", "Unknown")
+                    if lang_name != "Unknown":
+                        title = lang_name
+                    else:
+                        # Fallback: show codec name capitalised (e.g. 'AAC', 'DTS', 'EAC3')
+                        title = (s.get("codec_name") or "Unknown").upper()
 
                 track_info = {
                     "index": s.get("index"),

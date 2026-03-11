@@ -534,19 +534,33 @@ async def rclone_callback(request: Request, code: str = None, state: str = None,
         )
         
         if config_id:
-            # Notify user via bot
+            # Notify user via bot — show them the config and a confirm button
+            from telegram import InlineKeyboardButton, InlineKeyboardMarkup
             bot = request.app.state.bot
+            
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton(
+                    "☁️ Use as Default Upload Destination",
+                    callback_data=f"us_set_rclone_dest_{remote_name}"
+                )],
+                [InlineKeyboardButton("⚙️ My Settings", callback_data="us_settings")]
+            ])
+            
             await bot.send_message(
                 chat_id=user_id,
                 text=(
-                    f"✅ **Rclone Service Connected!**\n\n"
-                    f"Your Google Drive account has been successfully linked.\n"
-                    f"Remote Name: `{remote_name}`\n\n"
-                    "You can now use this remote for your uploads!"
+                    f"✅ **Google Drive Connected!**\n\n"
+                    f"Your Rclone remote has been created and saved.\n\n"
+                    f"📋 **Remote Name:** `{remote_name}`\n\n"
+                    f"```\n{config_snippet.strip()}\n```\n\n"
+                    "You can copy the config above to use with `rclone` locally.\n"
+                    "Or tap the button below to use this Drive as your default upload destination."
                 ),
+                reply_markup=keyboard,
                 parse_mode="Markdown"
             )
             return {"status": "success", "message": "Rclone service created! You can close this window and return to the bot."}
+
         else:
             return {"error": "Failed to save rclone config to database."}
 

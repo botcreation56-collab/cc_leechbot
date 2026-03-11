@@ -1059,35 +1059,44 @@ async def clear_user_session(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def handle_check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Callback for '✅ I Joined' button. Retriggers force-sub check & resumes task."""
     query = update.callback_query
-    await query.answer("Checking subscription...")
+    await query.answer("Checking subscription...")  # brief popup while we verify
     
     if await check_force_sub(update, context):
-        await query.edit_message_text(
-            "✅ **Subscription Verified!**\n\n"
-            "Resuming your request...",
-            parse_mode="Markdown"
-        )
+        # Verified — edit the force-sub message to a success notice
+        try:
+            await query.edit_message_text(
+                "✅ **Subscription Verified!**\n\n"
+                "Resuming your request...",
+                parse_mode="Markdown"
+            )
+        except Exception:
+            pass
         
         # RESUME LOGIC
         pending = context.user_data.pop("pending_fsub_data", None)
+        context.user_data.pop("fsub_msg_id", None)
         if pending:
             logger.info(f"🔄 Resuming pending task for {update.effective_user.id}: {pending.get('type')}")
-            
             if pending["type"] == "url":
-                # We need to simulate the message for handle_url_input
-                # or just call it if we can
                 from bot.handlers.files import handle_url_input
                 await handle_url_input(update, context, resumed_url=pending["url"])
             elif pending["type"] == "file":
                 from bot.handlers.files import handle_file_upload
                 await handle_file_upload(update, context, resumed_file=True, file_id=pending.get("file_id"))
         else:
-            await query.edit_message_text(
-                "✅ **Subscription Verified!**\n\n"
-                "You can now continue using the bot.\n"
-                "Try sending a link or file now!",
-                parse_mode="Markdown"
-            )
+            try:
+                await query.edit_message_text(
+                    "✅ **Subscription Verified!**\n\n"
+                    "You can now continue using the bot.\n"
+                    "Try sending a link or file now!",
+                    parse_mode="Markdown"
+                )
+            except Exception:
+                pass
+    else:
+        # Still not joined — check_force_sub already edited the message in‑place
+        # (it uses fsub_msg_id stored in user_data). Nothing more to do here.
+        pass
 
 async def finalize_progress(bot, task_id, success=True, result_text="", reply_markup=None):
     """Finalize progress tracking and clean up session, notifying both User and Dump."""
@@ -1230,6 +1239,11 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # BUG-10 FIX: edit_* config states were being discarded (fell through to warning)
         if awaiting.startswith("edit_") or awaiting.startswith("add_shortener"):
+            # Special case: rclone creds have their own dedicated handler
+            if awaiting == "edit_rclone_creds":
+                from bot.handlers.settings import handle_rclone_creds_input
+                await handle_rclone_creds_input(update, context)
+                return
             from bot.handlers.settings import handle_config_edit_input
             await handle_config_edit_input(update, context, awaiting)
             return
@@ -1360,7 +1374,6 @@ async def check_force_sub(update: Update, context: ContextTypes.DEFAULT_TYPE, pe
                 # FORCE a new link if req_join is enabled to ensure creates_join_request is active
                 if not invite_link or req_join:
                     try:
-                        # If req_join is True, create a one-time link that requires approval
                         link = await context.bot.create_chat_invite_link(
                             channel_id,
                             creates_join_request=req_join,
@@ -1377,19 +1390,44 @@ async def check_force_sub(update: Update, context: ContextTypes.DEFAULT_TYPE, pe
             keyboard.append([InlineKeyboardButton("✅ I Joined, Continue", callback_data="check_subscription")])
 
             if keyboard:
-                msg = None
-                if update.message:
-                    msg = update.message
-                elif update.callback_query:
-                    msg = update.callback_query.message
-                if msg:
-                    await msg.reply_text(
-                        "⚠️ **Subscription Required**\n\n"
-                        "To use this bot, you must join our channels first.\n\n"
-                        "👇 Click the button(s) below to join:",
-                        reply_markup=InlineKeyboardMarkup(keyboard),
-                        parse_mode="Markdown"
-                    )
+                fsub_text = (
+                    "⚠️ **Subscription Required**\n\n"
+                    "To use this bot, you must join our channels first.\n\n"
+                    "👇 Click the button(s) below to join:"
+                )
+                reply_markup = InlineKeyboardMarkup(keyboard)
+
+                # Try to EDIT the existing fsub message to avoid duplicate messages.
+                # `fsub_msg_id` is stored when we first send the force-sub prompt.
+                existing_msg_id = context.user_data.get("fsub_msg_id")
+                edited = False
+
+                if update.callback_query and existing_msg_id:
+                    try:
+                        await update.callback_query.message.edit_text(
+                            fsub_text,
+                            reply_markup=reply_markup,
+                            parse_mode="Markdown"
+                        )
+                        edited = True
+                    except Exception:
+                        pass  # Message may have changed type – fall through to send
+
+                if not edited:
+                    # First time showing the force-sub prompt — send a new message
+                    msg = None
+                    if update.message:
+                        msg = update.message
+                    elif update.callback_query:
+                        msg = update.callback_query.message
+                    if msg:
+                        sent = await msg.reply_text(
+                            fsub_text,
+                            reply_markup=reply_markup,
+                            parse_mode="Markdown"
+                        )
+                        # Remember this message so future retries can edit it
+                        context.user_data["fsub_msg_id"] = sent.message_id
 
             return False
 

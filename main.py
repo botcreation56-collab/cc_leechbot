@@ -231,6 +231,10 @@ def setup_handlers(application: Application) -> None:
         handle_chat_join_request, handle_check_subscription,
         handle_us_thumbnail_view, handle_us_thumbnail_delete, handle_us_thumbnail_delete_confirm,
         handle_meta_author, handle_us_rclone_service,
+        # Rclone feature gating
+        handle_toggle_plan_rclone, handle_edit_rclone_creds,
+        # Rclone post-auth user action
+        handle_us_rclone_dest_activate,
     )
 
     # ── Admin handlers ───────────────────────────────────────
@@ -408,6 +412,7 @@ def setup_handlers(application: Application) -> None:
             ("^us_visibility$",     handle_us_visibility),
             ("^us_destination$",    handle_us_destination_button),
             ("^us_rclone_service$", handle_us_rclone_service),
+            ("^us_set_rclone_dest_", handle_us_rclone_dest_activate),  # After-auth 'Use as dest' button
             ("^us_back$",           go_back_to_settings),
             ("^us_close$",          handle_us_close),
             ("^us_help$",           handle_callback_help),
@@ -463,8 +468,10 @@ def setup_handlers(application: Application) -> None:
             ("^edit_parallel$",         handle_edit_parallel_limit),
             ("^edit_max_filesize$",     handle_edit_max_filesize),
             ("^edit_file_expiry$",      handle_edit_file_expiry),
+            ("^edit_rclone_creds$",     handle_edit_rclone_creds),   # Admin sets global OAuth creds
             ("^edit_plan_free$",        handle_edit_plan),
             ("^edit_plan_premium$",     handle_edit_plan),
+            ("^toggle_plan_rclone_",    handle_toggle_plan_rclone),  # Admin toggles rclone per plan
         ]:
             application.add_handler(CallbackQueryHandler(handler, pattern=pattern))
 

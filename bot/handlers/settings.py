@@ -140,6 +140,7 @@ async def show_config_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
              InlineKeyboardButton("⚡ Parallel Limit", callback_data="edit_parallel")],
             [InlineKeyboardButton("📦 Max File Size", callback_data="edit_max_filesize"),
              InlineKeyboardButton("📅 File Expiry", callback_data="edit_file_expiry")],
+            [InlineKeyboardButton("☁️ Rclone Credentials", callback_data="edit_rclone_creds")],
             [InlineKeyboardButton("📢 Force Sub Channels", callback_data="admin_set_force_sub_channel")],
             [InlineKeyboardButton("📌 Set Log Channel", callback_data="admin_set_log_channel"),
              InlineKeyboardButton("💾 Set Dump Channel", callback_data="admin_set_dump_channel")],
@@ -397,11 +398,16 @@ async def handle_edit_plan(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Expiry: {plan_data.get('dump_expiry_days', 0)} days"
         )
 
+        rclone_allowed = plan_data.get("rclone_allowed", False)
+        rclone_icon = "✅" if rclone_allowed else "❌"
+
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("💰 Edit Price", callback_data=f"edit_price_{plan_name}")],
             [InlineKeyboardButton("⚡ Edit Parallel", callback_data=f"edit_plan_parallel_{plan_name}")],
             [InlineKeyboardButton("📦 Edit Daily Limit", callback_data=f"edit_daily_{plan_name}")],
             [InlineKeyboardButton("📅 Edit Expiry", callback_data=f"edit_expiry_{plan_name}")],
+            [InlineKeyboardButton(f"{rclone_icon} Rclone {'Allowed' if rclone_allowed else 'Denied'} — Toggle",
+                                  callback_data=f"toggle_rclone_{plan_name}")],
             [InlineKeyboardButton("🔙 Back", callback_data="admin_plans")]
         ])
 
@@ -673,7 +679,6 @@ async def ussettings_command(update: Update, context: ContextTypes.DEFAULT_TYPE,
             ],
             [
                 InlineKeyboardButton("📢 Updates Channel", url="https://t.me/cc_leechbot"),
-                InlineKeyboardButton("🛠️ Create Rclone Service", callback_data="us_rclone_service"),
             ],
             [InlineKeyboardButton("🔙 Back", callback_data="us_close")],
         ]
@@ -688,7 +693,14 @@ async def ussettings_command(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 updates_url = f"https://t.me/{updates_ch[1:]}"
             else:
                 updates_url = updates_ch
-            keyboard[-1][0].url = updates_url
+            keyboard[-2][0].url = updates_url  # index -2 = Updates Channel row, -1 = Back
+
+        # Rclone button: only show for admin or if the user's plan has rclone_allowed=True
+        plans = config.get("plans", {})
+        user_plan_data = plans.get(user.get("plan", "free"), {})
+        if user_id in ADMIN_IDS or user_plan_data.get("rclone_allowed", False):
+            # Insert before the Back button row
+            keyboard.insert(-1, [InlineKeyboardButton("🛠️ Create Rclone Service", callback_data="us_rclone_service")])
 
         # Get user settings
         settings = user.get("settings", {})
@@ -1074,25 +1086,60 @@ async def handle_us_close(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         logger.error(f"❌ Error closing settings: {e}")
 
 async def handle_us_rclone_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Callback: show prompt to create Rclone service (OAuth flow)"""
+    """Callback: skip credential prompt — read global credentials from admin config and
+    send the Google OAuth URL directly. Users just click once to authorize."""
     try:
         query = update.callback_query
         await query.answer()
-        msg = await query.message.reply_text(
-            "📁 **Create GDrive Rclone Service**\n\n"
-            "Please send your Google Cloud credentials. You can formulate them like this:\n"
-            "```\n"
-            "ID = \"your_client_id_here\"\n"
-            "Secret = \"your_client_secret_here\"\n"
-            "```\n"
-            "*(Or just send them separated by a pipe `|`)*\n\n"
-            "**Don't have these?** Check /help for a guide.\n\n"
-            "Use /cancel to abort.",
+        user_id = update.effective_user.id
+
+        # Load global rclone credentials set by admin
+        config = await get_config() or {}
+        client_id = config.get("rclone_client_id", "").strip()
+        client_secret = config.get("rclone_client_secret", "").strip()
+
+        if not client_id or not client_secret:
+            await query.message.reply_text(
+                "❌ **Rclone Not Configured**\n\n"
+                "The admin has not configured Google OAuth credentials yet.\n"
+                "Please contact the admin to set them up.",
+                parse_mode="Markdown"
+            )
+            return
+
+        import json
+        import base64
+        from urllib.parse import quote
+
+        state_data = {"u": user_id, "i": client_id, "s": client_secret}
+        state = base64.urlsafe_b64encode(json.dumps(state_data).encode()).decode()
+
+        base_url = (config.get("webhook_url") or "").rstrip("/").replace("/webhook/telegram", "")
+        if not base_url:
+            base_url = (settings.WEBHOOK_URL or "").rstrip("/").replace("/webhook/telegram", "")
+
+        redirect_uri = f"{base_url}/api/rclone/callback"
+
+        auth_url = (
+            "https://accounts.google.com/o/oauth2/v2/auth"
+            f"?client_id={quote(client_id)}"
+            f"&redirect_uri={quote(redirect_uri)}"
+            "&response_type=code"
+            "&scope=https://www.googleapis.com/auth/drive"
+            "&access_type=offline"
+            "&prompt=consent"
+            f"&state={state}"
+        )
+
+        keyboard = [[InlineKeyboardButton("🔗 Authorize with Google Drive", url=auth_url)]]
+        await query.message.reply_text(
+            "📂 **Connect Google Drive**\n\n"
+            "Click the button below to authorize the bot to access your Google Drive.\n\n"
+            "Once authorized, your Rclone remote will be set up automatically.",
+            reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode="Markdown"
         )
-        context.user_data["prompt_msg_id"] = msg.message_id
-        context.user_data["awaiting"] = "us_rclone_service"
-        logger.info(f"✅ Rclone service prompt sent to {update.effective_user.id}")
+        logger.info(f"✅ Rclone OAuth link generated for {user_id}")
     except Exception as e:
         logger.error(f"❌ Error in handle_us_rclone_service: {e}")
         await update.callback_query.answer("❌ Error", show_alert=True)
@@ -1197,3 +1244,154 @@ async def handle_us_thumbnail_delete_confirm(update: Update, context: ContextTyp
         await ussettings_command(update, context)
     except Exception as e:
         logger.error(f"Error in handle_us_thumbnail_delete_confirm: {e}")
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# USER: Activate newly-created Rclone remote as default upload destination
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def handle_us_rclone_dest_activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Callback: us_set_rclone_dest_<remote_name>
+    Sets the user's upload destination to the newly created Google Drive remote.
+    """
+    try:
+        query = update.callback_query
+        await query.answer()
+
+        remote_name = query.data.replace("us_set_rclone_dest_", "", 1)
+        user_id = update.effective_user.id
+
+        await update_user(user_id, {
+            "settings.destination_type": "rclone",
+            "settings.destination_remote": remote_name,
+        })
+
+        await query.edit_message_reply_markup(reply_markup=None)
+        await query.message.reply_text(
+            f"\u2705 **Destination Set!**\n\n"
+            f"All your future uploads will be sent to:\n"
+            f"\u2601\ufe0f Google Drive \u2192 `{remote_name}`\n\n"
+            f"You can change this any time from /ussettings \u2192 \ud83d\udcc1 Destination.",
+            parse_mode="Markdown"
+        )
+        logger.info(f"\u2705 User {user_id} set rclone destination to {remote_name}")
+    except Exception as e:
+        logger.error(f"\u274c Error in handle_us_rclone_dest_activate: {e}", exc_info=True)
+        try:
+            await update.callback_query.answer("\u274c Error", show_alert=True)
+        except Exception:
+            pass
+
+
+# \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+# ADMIN: Rclone Plan Toggle & Global Credentials
+# \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+async def handle_toggle_plan_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Toggle rclone_allowed on/off for a plan. Callback: toggle_rclone_<PLAN>"""
+    try:
+        query = update.callback_query
+        await query.answer()
+
+        plan_name = query.data.replace("toggle_rclone_", "")
+        config = await get_config() or {}
+        plans = config.get("plans", {})
+        plan_data = plans.get(plan_name, {})
+
+        # Flip the flag
+        current = plan_data.get("rclone_allowed", False)
+        plan_data["rclone_allowed"] = not current
+        plans[plan_name] = plan_data
+
+        from bot.database import set_config
+        await set_config({"plans": plans})
+
+        icon = "✅" if plan_data["rclone_allowed"] else "❌"
+        await query.answer(
+            f"{icon} Rclone {'enabled' if plan_data['rclone_allowed'] else 'disabled'} for {plan_name.upper()}",
+            show_alert=True
+        )
+
+        # Refresh the plan edit page so toggle reflects new state
+        await handle_edit_plan(update, context)
+        logger.info(f"✅ Admin toggled rclone for plan {plan_name}: {plan_data['rclone_allowed']}")
+
+    except Exception as e:
+        logger.error(f"❌ Error in handle_toggle_plan_rclone: {e}", exc_info=True)
+        await update.callback_query.answer("❌ Error", show_alert=True)
+
+
+async def handle_edit_rclone_creds(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin callback: prompt to set global Google OAuth credentials for Rclone."""
+    try:
+        query = update.callback_query
+        await query.answer()
+
+        config = await get_config() or {}
+        has_id = bool(config.get("rclone_client_id", "").strip())
+        has_secret = bool(config.get("rclone_client_secret", "").strip())
+        status = "✅ Set" if (has_id and has_secret) else "❌ Not configured"
+
+        msg = await query.message.reply_text(
+            f"☁️ **Rclone Google OAuth Credentials**\n\n"
+            f"Current status: {status}\n\n"
+            f"Send your Google Cloud credentials in this format:\n"
+            f"`CLIENT_ID | CLIENT_SECRET`\n\n"
+            f"These are set **once by the admin** and shared by all authorised users.\n"
+            f"Users never see or enter these — they just click Authorize.\n\n"
+            f"Use /cancel to abort.",
+            parse_mode="Markdown"
+        )
+        context.user_data["prompt_msg_id"] = msg.message_id
+        context.user_data["awaiting"] = "edit_rclone_creds"
+        context.user_data["awaiting_set_at"] = _time.time()
+        logger.info(f"✅ Rclone creds prompt sent to admin {update.effective_user.id}")
+    except Exception as e:
+        logger.error(f"❌ Error in handle_edit_rclone_creds: {e}")
+        await update.callback_query.answer("❌ Error", show_alert=True)
+
+
+async def handle_rclone_creds_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle admin text input for edit_rclone_creds awaiting state."""
+    try:
+        text = (update.message.text or "").strip()
+        if "|" not in text:
+            await update.message.reply_text(
+                "❌ **Invalid Format**\n\nSend as: `CLIENT_ID | CLIENT_SECRET`",
+                parse_mode="Markdown"
+            )
+            return
+
+        parts = [p.strip() for p in text.split("|", 1)]
+        if len(parts) != 2 or not parts[0] or not parts[1]:
+            await update.message.reply_text(
+                "❌ Both Client ID and Client Secret are required.",
+                parse_mode="Markdown"
+            )
+            return
+
+        client_id, client_secret = parts
+        from bot.database import set_config
+        ok = await set_config({
+            "rclone_client_id": client_id,
+            "rclone_client_secret": client_secret
+        })
+
+        if ok:
+            await update.message.reply_text(
+                "✅ **Rclone Credentials Saved!**\n\n"
+                "Users with Rclone-enabled plans can now authorize Google Drive\n"
+                "by clicking the button in their settings — no input needed from them.",
+                parse_mode="Markdown"
+            )
+            await log_admin_action(update.effective_user.id, "set_rclone_credentials", {})
+        else:
+            await update.message.reply_text("❌ Failed to save credentials. Please try again.")
+
+        context.user_data.pop("awaiting", None)
+
+    except Exception as e:
+        logger.error(f"❌ Error saving rclone credentials: {e}", exc_info=True)
+        await update.message.reply_text(f"❌ Error: {str(e)[:100]}")
+        context.user_data.pop("awaiting", None)
