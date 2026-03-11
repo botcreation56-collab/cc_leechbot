@@ -30,6 +30,10 @@ class QueueWorker:
         config = get_config_sync() or {}
         self.limit = int(config.get("parallel_global_limit") or os.getenv("PARALLEL_LIMIT", 5))
         self.semaphore = asyncio.Semaphore(self.limit)
+        # Pro bypass cap: limits simultaneous semaphore-bypassing Pro tasks.
+        # Without this a Pro user can queue unlimited FFmpeg/Aria2c jobs (OOM DoS).
+        pro_bypass_limit = int(config.get("pro_bypass_limit") or os.getenv("PRO_BYPASS_LIMIT", 3))
+        self.pro_semaphore = asyncio.Semaphore(pro_bypass_limit)
         self.sleep_interval = 2
         self.active_tasks: Set[asyncio.Task] = set()
         self._initialized = True
@@ -201,8 +205,13 @@ class QueueWorker:
         retry_count = task.get("retry_count", 0)
         MAX_RETRIES = 3
 
+        # Acquire the appropriate semaphore.
+        # Pro users bypass the global limit but are still capped by pro_semaphore
+        # to prevent OOM via unlimited FFmpeg/Aria2c spawning.
         if not bypass_semaphore:
             await self.semaphore.acquire()
+        else:
+            await self.pro_semaphore.acquire()
             
         try:
             try:
@@ -264,6 +273,8 @@ class QueueWorker:
         finally:
             if not bypass_semaphore:
                 self.semaphore.release()
+            else:
+                self.pro_semaphore.release()
 
 
 # ─────────────────────────────────────────────────────────────────────────────

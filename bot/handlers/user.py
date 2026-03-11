@@ -6,7 +6,7 @@ import uuid
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.error import TelegramError
-from bot.middleware import admin_only, rate_limit
+from bot.middleware import admin_only, rate_limit, is_admin
 from bot.database import (
     get_db,
     get_user,
@@ -226,6 +226,9 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         admin_ids = get_admin_ids()
 
+        # Unified admin check — covers both env-list IDs and DB role=admin
+        _user_is_admin: bool = await is_admin(user_id)
+
         # Import needed handlers locally to avoid circularity
         from bot.handlers import (
             handle_admin_list_users, handle_admin_back, handle_admin_users, handle_admin_stats, show_config_menu,
@@ -286,7 +289,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 or data.startswith("storage_") or data.startswith("shortener_") \
                 or data.startswith("admin_fsub_") or data.startswith("upgrade_user_"):
 
-            if user_id not in admin_ids:
+            if not _user_is_admin:
                 await query.answer("❌ Unauthorized. Admin only.", show_alert=True)
                 return
 
@@ -760,35 +763,46 @@ async def handle_us_dest_meta_input(update: Update, context: ContextTypes.DEFAUL
     """Process custom destination metadata input"""
     try:
         user_id = update.effective_user.id
-        text = update.message.text
+        text = (update.message.text or "").strip()
         awaiting = context.user_data.get("awaiting", "")
-        
+
+        # Fix 4: Enforce length limit on custom destination metadata values
+        MAX_META_LEN = 100
+        if len(text) > MAX_META_LEN:
+            await update.message.reply_text(
+                f"❌ **Too Long** — max {MAX_META_LEN} characters.\n\n"
+                "Please send a shorter value or /cancel to abort.",
+                parse_mode="Markdown"
+            )
+            return  # Keep awaiting state so user can retry
+
         user = await get_user(user_id)
         if not user:
             return
-            
+
         settings = user.get("settings", {})
         dest_metadata = settings.get("destination_metadata", {})
-        
+
         if awaiting.startswith("us_dest_meta_name_"):
             channel_id = awaiting.replace("us_dest_meta_name_", "")
             if channel_id not in dest_metadata:
                 dest_metadata[channel_id] = {}
             dest_metadata[channel_id]["title"] = text
             await update.message.reply_text(f"✅ Custom name updated to: `{text}`", parse_mode="Markdown")
-            
+
         elif awaiting.startswith("us_dest_meta_auth_"):
             channel_id = awaiting.replace("us_dest_meta_auth_", "")
             if channel_id not in dest_metadata:
                 dest_metadata[channel_id] = {}
             dest_metadata[channel_id]["author"] = text
             await update.message.reply_text(f"✅ Custom author updated to: `{text}`", parse_mode="Markdown")
-            
+
         settings["destination_metadata"] = dest_metadata
         await update_user(user_id, {"settings": settings})
-        
+
         context.user_data.pop("awaiting", None)
-        
+        context.user_data.pop("awaiting_set_at", None)
+
     except Exception as e:
         logger.error(f"❌ Error in handle_us_dest_meta_input: {e}")
 
@@ -1140,18 +1154,19 @@ async def finalize_progress(bot, task_id, success=True, result_text="", reply_ma
 @rate_limit
 async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle general text input based on awaiting state"""
+    import time as _time
     try:
         user_id = update.effective_user.id
         text = (update.message.text or "").strip()
         awaiting = context.user_data.get("awaiting")
-        
+
         # UI CLEANUP: Delete previous prompt if it exists
         prompt_msg_id = context.user_data.pop("prompt_msg_id", None)
         if prompt_msg_id:
             try:
                 await context.bot.delete_message(chat_id=user_id, message_id=prompt_msg_id)
-            except:
-                pass
+            except Exception as e:
+                logger.debug(f"Prompt delete skipped: {e}")
 
         if not awaiting:
             # If no awaiting state, check if it's a URL
@@ -1161,6 +1176,20 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     return
                 from bot.handlers.files import handle_url_input
                 await handle_url_input(update, context)
+            return
+
+        # Fix 7: Check awaiting state TTL (30 minutes)
+        AWAITING_TTL = 1800  # 30 minutes in seconds
+        awaiting_set_at = context.user_data.get("awaiting_set_at", 0)
+        if awaiting_set_at and (_time.time() - awaiting_set_at) > AWAITING_TTL:
+            logger.info(f"⏰ Awaiting state '{awaiting}' expired for user {user_id}")
+            context.user_data.pop("awaiting", None)
+            context.user_data.pop("awaiting_set_at", None)
+            await update.message.reply_text(
+                "⏰ **Session Expired**\n\nYour previous action timed out after 30 minutes.\n"
+                "Please start again from the menu.",
+                parse_mode="Markdown"
+            )
             return
 
         logger.info(f"📩 Text input from {user_id} in state: {awaiting}")

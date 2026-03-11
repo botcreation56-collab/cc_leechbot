@@ -210,29 +210,3 @@ async def update_user_endpoint(user_id: int, request: UpdateUserRequest, admin_i
         logger.error(f"❌ Update user error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@router.get("/users/me/files")
-async def get_my_files(user_id: int = Depends(get_current_user)):
-    """
-    Get current user's files for the web dashboard.
-    Note: mounted as /api/admin/users/me/files but uses get_current_user.
-    """
-    try:
-        db = get_db()
-        files_cursor = db.cloud_files.find({"user_id": user_id}).sort("created_at", -1).limit(50)
-        files = await files_cursor.to_list(length=50)
-        
-        # Structure the response to match what the frontend expects
-        response_files = []
-        for f in files:
-            response_files.append({
-                "file_id": f.get("file_id"),
-                "filename": f.get("filename", f.get("file_id", "Unknown")),
-                "file_size": f.get("file_size", 0),
-                "created_at": f.get("created_at").isoformat() if f.get("created_at") else None,
-                "status": "active" if f.get("status") != "expired" else "expired"
-            })
-            
-        return response_files
-    except Exception as e:
-        logger.error(f"❌ Get my files error: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")

@@ -1,5 +1,6 @@
 import logging
 import os
+import time as _time
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Tuple
 import uuid
@@ -167,6 +168,7 @@ async def handle_edit_start_message(update: Update, context: ContextTypes.DEFAUL
             parse_mode="Markdown"
         )
         context.user_data["awaiting"] = "edit_start_msg"
+        context.user_data["awaiting_set_at"] = _time.time()
     except Exception as e:
         logger.error(f"❌ Error: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
@@ -179,6 +181,7 @@ async def handle_edit_watermark(update: Update, context: ContextTypes.DEFAULT_TY
             parse_mode="Markdown"
         )
         context.user_data["awaiting"] = "edit_watermark"
+        context.user_data["awaiting_set_at"] = _time.time()
     except Exception as e:
         logger.error(f"❌ Error: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
@@ -191,6 +194,7 @@ async def handle_edit_support_contact(update: Update, context: ContextTypes.DEFA
             parse_mode="Markdown"
         )
         context.user_data["awaiting"] = "edit_contact"
+        context.user_data["awaiting_set_at"] = _time.time()
     except Exception as e:
         logger.error(f"❌ Error: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
@@ -203,6 +207,7 @@ async def handle_edit_help_text(update: Update, context: ContextTypes.DEFAULT_TY
             parse_mode="Markdown"
         )
         context.user_data["awaiting"] = "edit_help_text"
+        context.user_data["awaiting_set_at"] = _time.time()
     except Exception as e:
         logger.error(f"❌ Error: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
@@ -215,6 +220,7 @@ async def handle_edit_site_name(update: Update, context: ContextTypes.DEFAULT_TY
             parse_mode="Markdown"
         )
         context.user_data["awaiting"] = "edit_site_name"
+        context.user_data["awaiting_set_at"] = _time.time()
     except Exception as e:
         logger.error(f"❌ Error: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
@@ -227,6 +233,7 @@ async def handle_edit_site_description(update: Update, context: ContextTypes.DEF
             parse_mode="Markdown"
         )
         context.user_data["awaiting"] = "edit_site_desc"
+        context.user_data["awaiting_set_at"] = _time.time()
     except Exception as e:
         logger.error(f"❌ Error: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
@@ -239,6 +246,7 @@ async def handle_edit_support_channel(update: Update, context: ContextTypes.DEFA
             parse_mode="Markdown"
         )
         context.user_data["awaiting"] = "edit_support_channel"
+        context.user_data["awaiting_set_at"] = _time.time()
     except Exception as e:
         logger.error(f"❌ Error: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
@@ -253,6 +261,7 @@ async def handle_edit_parallel_limit(update: Update, context: ContextTypes.DEFAU
             parse_mode="Markdown"
         )
         context.user_data["awaiting"] = "edit_parallel"
+        context.user_data["awaiting_set_at"] = _time.time()
     except Exception as e:
         logger.error(f"❌ Error: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
@@ -267,6 +276,7 @@ async def handle_edit_max_filesize(update: Update, context: ContextTypes.DEFAULT
             parse_mode="Markdown"
         )
         context.user_data["awaiting"] = "edit_max_filesize"
+        context.user_data["awaiting_set_at"] = _time.time()
     except Exception as e:
         logger.error(f"❌ Error: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
@@ -281,6 +291,7 @@ async def handle_edit_file_expiry(update: Update, context: ContextTypes.DEFAULT_
             parse_mode="Markdown"
         )
         context.user_data["awaiting"] = "edit_file_expiry"
+        context.user_data["awaiting_set_at"] = _time.time()
     except Exception as e:
         logger.error(f"❌ Error: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
@@ -374,6 +385,7 @@ async def handle_edit_plan(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             context.user_data["prompt_msg_id"] = msg.message_id
             context.user_data["awaiting"] = f"edit_plan_field_{plan_name}_{internal_key}"
+            context.user_data["awaiting_set_at"] = _time.time()
             return
 
         # Default: Show the plan menu
@@ -1071,6 +1083,7 @@ async def handle_us_prefix(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         context.user_data["prompt_msg_id"] = msg.message_id
         context.user_data["awaiting"] = "us_prefix"
+        context.user_data["awaiting_set_at"] = _time.time()
         logger.info(f"✅ Prefix prompt sent to {update.effective_user.id}")
     except Exception as e:
         logger.error(f"❌ Error in handle_us_prefix: {e}")
@@ -1090,6 +1103,7 @@ async def handle_us_suffix(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         context.user_data["prompt_msg_id"] = msg.message_id
         context.user_data["awaiting"] = "us_suffix"
+        context.user_data["awaiting_set_at"] = _time.time()
         logger.info(f"✅ Suffix prompt sent to {update.effective_user.id}")
     except Exception as e:
         logger.error(f"❌ Error in handle_us_suffix: {e}")

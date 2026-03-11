@@ -12,7 +12,11 @@ import logging
 import traceback
 from datetime import datetime
 from typing import Any, Callable, Optional
+from functools import wraps
+import time
+import re
 
+from cachetools import TTLCache
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -23,17 +27,24 @@ from config.settings import get_admin_ids, get_settings
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-# Active users lock (120s TTL)
-# Maps user_id -> timestamp of lock start
-_ACTIVE_USERS = {}
-_LOCK_TIMEOUT = 120  # seconds
+# ============================================================
+# MARKDOWN ESCAPE HELPER
+# ============================================================
+
+_MD_SPECIAL = re.compile(r'([_*`\[\]])')
+
+def escape_md(text: str) -> str:
+    """Escape Markdown v1 special characters to prevent parse errors."""
+    if not text:
+        return ""
+    return _MD_SPECIAL.sub(r'\\\1', str(text))
 
 # ============================================================
 # BUTTON & ACTION RATE LIMITING
 # ============================================================
 
-from functools import wraps
-import time
+# TTLCache: auto-evicts entries after 120 s — zero memory leak
+_ACTIVE_USERS: TTLCache = TTLCache(maxsize=10_000, ttl=120)
 
 def rate_limit(func: Callable) -> Callable:
     """
@@ -44,33 +55,30 @@ def rate_limit(func: Callable) -> Callable:
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Any:
         if not update.effective_user:
             return await func(update, context)
-            
+
         user_id = update.effective_user.id
         now = time.time()
-        
-        # Check and cleanup lock
+
+        # Check cooldown — TTLCache auto-evicts after 120 s so no manual cleanup needed
         if user_id in _ACTIVE_USERS:
             last_request_time = _ACTIVE_USERS[user_id]
-            if now - last_request_time < 1.5: # Balanced 1.5s cooldown
+            if now - last_request_time < 1.5:
                 logger.warning(f"⏳ Rate limit hit for {user_id}. Ignoring request.")
                 if update.callback_query:
                     try:
                         await update.callback_query.answer("⏳ Please wait a moment...", show_alert=False)
-                    except:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Rate-limit answer skipped: {e}")
                 return
 
-        # Acquire lock
+        # Acquire lock — timestamp held for full duration of call
         _ACTIVE_USERS[user_id] = now
-        
         try:
             return await func(update, context)
         finally:
-            # We DON'T pop immediately. We keep the timestamp to enforce 
-            # a cooldown start from the moment the action was triggered.
-            # We'll rely on the "now - last_request_time < 3" check in the next call.
-            # We only pop if lock is very old (cleanup)
-            pass
+            # Update timestamp on exit so cooldown starts from completion, not from start.
+            # This prevents rapid re-entry while the coroutine is still running.
+            _ACTIVE_USERS[user_id] = time.time()
 
     return wrapper
 
@@ -78,7 +86,7 @@ def rate_limit(func: Callable) -> Callable:
 # ADMIN DECORATOR
 # ============================================================
 
-from functools import wraps
+# (wraps already imported at top)
 
 def admin_only(func: Callable) -> Callable:
     """
@@ -98,8 +106,8 @@ def admin_only(func: Callable) -> Callable:
 
             logger.info(f"🕵️ Admin check: user={user_id} | admins={admin_ids}")
 
-            if user_id not in admin_ids:
-                logger.warning(f"🚫 Unauthorized admin access: {user_id} (not in {admin_ids})")
+            if not await is_admin(user_id):
+                logger.warning(f"🚫 Unauthorized admin access: {user_id} (not in admin list or DB role)")
                 if update.message:
                     await update.message.reply_text(
                         "⛔ You don't have permission to use this command."
@@ -107,8 +115,8 @@ def admin_only(func: Callable) -> Callable:
                 # Fire-and-forget security log (non-blocking)
                 try:
                     await log_security_event(user_id, "unauthorized_admin_access", "high")
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Security event log skipped: {e}")
                 return
 
             return await func(update, context)
@@ -122,11 +130,29 @@ def admin_only(func: Callable) -> Callable:
 
 
 async def verify_admin(user_id: int) -> bool:
-    """Simple admin check."""
+    """Admin check — env-list OR DB role=admin."""
     try:
-        return user_id in get_admin_ids()
+        return await is_admin(user_id)
     except Exception as e:
         logger.error(f"❌ verify_admin error: {e}")
+        return False
+
+
+async def is_admin(user_id: int, db_user: Optional[dict] = None) -> bool:
+    """
+    Unified admin check: returns True if user_id is in the hard-coded
+    ADMIN_IDS list OR if their DB record has role='admin'.
+    Accepts an already-fetched db_user to avoid a redundant DB round-trip.
+    """
+    try:
+        if user_id in get_admin_ids():
+            return True
+        user = db_user or await get_user(user_id)
+        if user and user.get("role") == "admin":
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"❌ is_admin error for {user_id}: {e}")
         return False
 
 
@@ -271,11 +297,11 @@ async def error_handler(update: Optional[Update], context: ContextTypes.DEFAULT_
             try:
                 await update.effective_message.reply_text(
                     f"❌ Something went wrong. Please try again.\n\n"
-                    f"Error: {error_msg[:100]}",
+                    f"Error: `{escape_md(error_msg[:100])}`",
                     parse_mode="Markdown",
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"User error-reply skipped: {e}")
 
         # Log to channel
         try:
@@ -285,11 +311,11 @@ async def error_handler(update: Optional[Update], context: ContextTypes.DEFAULT_
             if log_channel_id and context.bot:
                 report = (
                     f"🔴 **ERROR REPORT**\n\n"
-                    f"**Type:** `{error_type}`\n"
+                    f"**Type:** `{escape_md(error_type)}`\n"
                     f"**User:** `{user_id}`\n"
                     f"**Time:** `{timestamp}`\n\n"
-                    f"**Message:**\n```\n{error_msg[:500]}\n```\n\n"
-                    f"**Traceback:**\n```\n{traceback.format_exc()[:1000]}\n```"
+                    f"**Message:**\n```\n{escape_md(error_msg[:500])}\n```\n\n"
+                    f"**Traceback:**\n```\n{escape_md(traceback.format_exc()[:1000])}\n```"
                 )
                 await context.bot.send_message(
                     chat_id=log_channel_id,
@@ -306,10 +332,10 @@ async def error_handler(update: Optional[Update], context: ContextTypes.DEFAULT_
                 user_link = f"[{user_id}](tg://user?id={user_id})" if user_id else "`System`"
                 alert = (
                     f"⚠️ **Bot Error Alert**\n\n"
-                    f"Type: `{error_type}`\n"
+                    f"Type: `{escape_md(error_type)}`\n"
                     f"User: {user_link}\n"
                     f"Time: `{timestamp}`\n\n"
-                    f"Message: `{error_msg[:200]}`\n\n"
+                    f"Message: `{escape_md(error_msg[:200])}`\n\n"
                     f"_Check log channel for full details_"
                 )
                 for admin_id in admin_ids:

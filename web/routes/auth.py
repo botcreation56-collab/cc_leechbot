@@ -34,7 +34,7 @@ class VerifyTokenRequest(BaseModel):
 # -------------------------------------------------------------
 # 1. REQUEST MAGIC LINK
 # -------------------------------------------------------------
-@router.post("/request-login-link", dependencies=[Depends(RateLimiter(times=3, seconds=60))])
+@router.post("/request-login-link", dependencies=[Depends(RateLimiter(times=1, seconds=60))])
 async def request_magic_link(req: LoginRequest, request: Request):
     """
     Generate a Magic Link and send via Telegram Bot.
@@ -51,14 +51,27 @@ async def request_magic_link(req: LoginRequest, request: Request):
         
         logger.info(f"✅ User {user_id} found in database")
 
+        # Cooldown: reject if a valid, unused token already exists for this user.
+        db = get_db()
+        existing_token = await db.one_time_keys.find_one({
+            "user_id": user_id,
+            "purpose": "magic_login",
+            "used": {"$ne": True},
+            "expires_at": {"$gt": datetime.utcnow()},
+        })
+        if existing_token:
+            raise HTTPException(
+                status_code=429,
+                detail="A login link was already sent. Please check Telegram or wait for it to expire."
+            )
+
         # Generate Magic Token (UUID)
         magic_token = str(uuid.uuid4())
         expires_at = datetime.utcnow() + timedelta(minutes=10)
         logger.info(f"🔑 Generated token for user {user_id} (expires: {expires_at})")
         
-        # Store in DB 
         logger.info(f"💾 Attempting to store token in database...")
-        success = await create_one_time_key(user_id, magic_token, expires_at)
+        success = await create_one_time_key(user_id, magic_token, expires_at, purpose="magic_login")
         
         if not success:
             logger.error(f"❌ create_one_time_key returned False for user {user_id}")
@@ -114,7 +127,7 @@ async def request_magic_link(req: LoginRequest, request: Request):
 # -------------------------------------------------------------
 # 5. LEGACY ALIASES  (auth.js uses /request-code & /verify-code)
 # -------------------------------------------------------------
-@router.post("/request-code", dependencies=[Depends(RateLimiter(times=3, seconds=60))])
+@router.post("/request-code", dependencies=[Depends(RateLimiter(times=1, seconds=60))])
 async def request_code_alias(req: LoginRequest, request: Request):
     """Alias for /request-login-link — used by auth.js OTP flow."""
     return await request_magic_link(req, request)
@@ -141,7 +154,7 @@ async def verify_magic_token(req: VerifyTokenRequest, request: Request):
         
         # Find token record
         logger.info(f"🔍 Token verification attempt")
-        record = await db.one_time_keys.find_one({"otp": req.token})
+        record = await db.one_time_keys.find_one({"otp": req.token, "purpose": "magic_login"})
         
         if not record:
             logger.warning(f"❌ Invalid token verification attempt")

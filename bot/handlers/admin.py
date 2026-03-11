@@ -1,5 +1,7 @@
+import asyncio
 import logging
 import os
+import time
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Tuple
 import uuid
@@ -147,8 +149,12 @@ async def _require_channels_setup(update: Update, context: ContextTypes.DEFAULT_
     if query:
         try:
             await query.message.edit_text(setup_text, reply_markup=setup_keyboard, parse_mode="Markdown")
-        except Exception:
-            await query.message.reply_text(setup_text, reply_markup=setup_keyboard, parse_mode="Markdown")
+        except Exception as e:
+            # Swallow 'message is not modified' from rapid clicks; re-try as reply for all other errors
+            if "not modified" in str(e).lower():
+                logger.debug(f"Setup screen not modified (rapid click): {e}")
+            else:
+                await query.message.reply_text(setup_text, reply_markup=setup_keyboard, parse_mode="Markdown")
     elif update.message:
         await update.message.reply_text(setup_text, reply_markup=setup_keyboard, parse_mode="Markdown")
     return False
@@ -733,6 +739,7 @@ async def handle_admin_find_user(update: Update, context: ContextTypes.DEFAULT_T
             parse_mode="Markdown"
         )
         context.user_data["awaiting"] = "admin_find_user"
+        context.user_data["awaiting_set_at"] = time.time()
     except Exception as e:
         logger.error(f"❌ Error: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
@@ -745,6 +752,7 @@ async def handle_admin_ban_user(update: Update, context: ContextTypes.DEFAULT_TY
             parse_mode="Markdown"
         )
         context.user_data["awaiting"] = "admin_ban_user"
+        context.user_data["awaiting_set_at"] = time.time()
     except Exception as e:
         logger.error(f"❌ Error: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
@@ -757,6 +765,7 @@ async def handle_admin_unban_user(update: Update, context: ContextTypes.DEFAULT_
             parse_mode="Markdown"
         )
         context.user_data["awaiting"] = "admin_unban_user"
+        context.user_data["awaiting_set_at"] = time.time()
     except Exception as e:
         logger.error(f"❌ Error: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
@@ -770,6 +779,7 @@ async def handle_admin_upgrade_user(update: Update, context: ContextTypes.DEFAUL
             parse_mode="Markdown"
         )
         context.user_data["awaiting"] = "admin_upgrade_user"
+        context.user_data["awaiting_set_at"] = time.time()
     except Exception as e:
         logger.error(f"❌ Error: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)

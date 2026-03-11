@@ -249,11 +249,10 @@ def get_settings() -> Settings:
     global _settings
     if _settings is None:
         _settings = Settings()
-        
-        # ✅ FIX: In production, enforce secrets instead of auto-generating
-        is_production = _settings.ENVIRONMENT.lower() == "production"
 
-        # Auto-generate encryption keys if not set — warn loudly to set them as permanent env vars
+        # Auto-generate encryption keys if not set.
+        # ALWAYS warn — secrets are per-process and sessions/encrypted data become
+        # invalid on every restart until these are set as permanent env vars.
         if not _settings.ENCRYPTION_KEY or _settings.ENCRYPTION_KEY == "":
             try:
                 from cryptography.fernet import Fernet

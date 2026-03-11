@@ -114,8 +114,13 @@ async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE,
     try:
         user_id = update.effective_user.id
         
-        # 0️⃣ ✅ CHECK WIZARD INJECTION STATE
-        awaiting = context.user_data.get("awaiting")
+        # 0️⃣ ✅ CHECK WIZARD INJECTION STATE (keyed per file to avoid race conditions)
+        # Read file_unique_id first to scope the state lookup
+        _inject_file_obj = update.message.document or update.message.audio or update.message.video
+        _fuid = getattr(_inject_file_obj, 'file_unique_id', None) if _inject_file_obj else None
+        # Check both file-scoped key and legacy top-level key for backwards compat
+        awaiting = context.user_data.get(f"awaiting_{_fuid}") if _fuid else None
+        awaiting = awaiting or context.user_data.get("awaiting")
         if awaiting and awaiting.startswith("wiz_inject_"):
             # Handle Injection
             file_obj = update.message.document or update.message.audio or update.message.video
@@ -140,7 +145,10 @@ async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 session['injected_subs'].append(str(path))
                 await update.message.reply_text("✅ Subtitle track added!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to Subs", callback_data="wiz_menu_subs")]]))
 
-            context.user_data.pop('awaiting') # Clear state
+            # Clear both scoped and legacy state keys
+            if _fuid:
+                context.user_data.pop(f'awaiting_{_fuid}', None)
+            context.user_data.pop('awaiting', None)
             return
 
         # 1️⃣ Get user
@@ -380,7 +388,7 @@ async def process_file_task(context: ContextTypes.DEFAULT_TYPE):
     # Generate a cryptographically secure 32-character token
     secure_token = secrets.token_urlsafe(32)
     expires = datetime.utcnow() + timedelta(hours=24)
-    await create_one_time_key(user_id, secure_token, expires)
+    await create_one_time_key(user_id, secure_token, expires, purpose="stream")
     
     # Send user the verification link - this will set the cookie and redirect to clean stream url
     stream_url = f"https://{settings.DOMAIN}/api/verify_link/{dump_file_id}/{secure_token}"
@@ -1307,7 +1315,7 @@ class WizardHandler:
             dump_file_id = upload_result.get("file_id")
             secure_token = secrets.token_urlsafe(32)
             expires = datetime.utcnow() + timedelta(hours=24)
-            await create_one_time_key(user_id, secure_token, expires)
+            await create_one_time_key(user_id, secure_token, expires, purpose="stream")
             
             stream_url = f"https://{settings.DOMAIN}/api/verify_link/{dump_file_id}/{secure_token}" if dump_file_id else None
             
@@ -1542,7 +1550,7 @@ async def execute_processing_flow_by_task(bot, task: dict) -> None:
         if dump_file_id:
             secure_token = secrets.token_urlsafe(32)
             expires = datetime.utcnow() + timedelta(hours=24)
-            await create_one_time_key(user_id, secure_token, expires)
+            await create_one_time_key(user_id, secure_token, expires, purpose="stream")
             stream_url = f"https://{settings.DOMAIN}/api/verify_link/{dump_file_id}/{secure_token}"
 
         # Update card in storage channel

@@ -140,6 +140,7 @@ async def download_with_aria2c(
             "--timeout=300",
             f"--dir={user_dir}",
             f"--out={filename}",
+            "--",  # SECURITY: stop option parsing before URL
             url,
         ]
 

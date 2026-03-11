@@ -56,9 +56,10 @@ async def verify_and_set_cookie(file_id: str, token: str, response: Response, ac
     try:
         db = get_db()
         
-        # Verify Token
+        # Verify Token — only accept stream-purpose tokens
         token_doc = await db.one_time_keys.find_one({
             "otp": token,
+            "purpose": "stream",
             "used": False,
             "expires_at": {"$gt": datetime.utcnow()},
         })
@@ -120,10 +121,13 @@ async def watch_file_endpoint(file_id: str, stream_auth_token: str | None = Cook
         if not file_doc:
             raise HTTPException(status_code=404, detail="File not found")
         
-        # Check Visibility
+        # Check Visibility — owners can always access their own private files
         visibility = file_doc.get("visibility", "public")
-        if visibility == "private":
-             raise HTTPException(status_code=403, detail="🔒 Private File. Access Denied.")
+        requester_id = token_doc.get("user_id")
+        file_owner_id = file_doc.get("user_id") or file_doc.get("owner_id")
+        is_owner = (requester_id and file_owner_id and int(requester_id) == int(file_owner_id))
+        if visibility == "private" and not is_owner:
+            raise HTTPException(status_code=403, detail="🔒 Private File. Access Denied.")
 
         # Stream Size Limits
         user_id = token_doc.get("user_id")
@@ -200,28 +204,32 @@ async def stream_file_endpoint(file_id: str, stream_auth_token: str | None = Coo
         if not file_doc:
             raise HTTPException(status_code=404, detail="File not found")
 
-        # Visibility check
-        if file_doc.get("visibility") == "private":
-            raise HTTPException(status_code=403, detail="🔒 Private File. Access Denied.")
-
-        # --- COOKIE VALIDATION ---
+        # --- COOKIE VALIDATION (must happen before visibility check) ---
         if not stream_auth_token:
             raise HTTPException(status_code=401, detail="Unauthorized. Missing streaming cookie.")
-            
+
+        # Fix 5: enforce used=False so replayed cookies are rejected
         token_doc = await db.one_time_keys.find_one({
             "otp": stream_auth_token,
+            "used": False,
             "expires_at": {"$gt": datetime.utcnow()},
         })
         if not token_doc:
             raise HTTPException(status_code=401, detail="Invalid or expired stream session")
 
-        # Mark token as consumed if it hasn't been yet 
-        if not token_doc.get("used"):
-            await db.one_time_keys.update_one(
-                {"_id": token_doc["_id"]},
-                {"$set": {"used": True}}
-            )
+        # Mark token as consumed (find_one already confirmed used=False, so always mark now)
+        await db.one_time_keys.update_one(
+            {"_id": token_doc["_id"]},
+            {"$set": {"used": True}}
+        )
         # --- END COOKIE VALIDATION ---
+
+        # Visibility check — owners can always access their own private files
+        requester_id = token_doc.get("user_id")
+        file_owner_id = file_doc.get("user_id") or file_doc.get("owner_id")
+        is_owner = (requester_id and file_owner_id and int(requester_id) == int(file_owner_id))
+        if file_doc.get("visibility") == "private" and not is_owner:
+            raise HTTPException(status_code=403, detail="🔒 Private File. Access Denied.")
 
         # Stream Size Limits
         user_id = token_doc.get("user_id")
@@ -357,10 +365,11 @@ async def verify_priority_endpoint(user: int, token: str):
 
         db = get_db()
 
-        # Validate the token belongs to this user and is still valid
+        # Validate the token belongs to this user, is the correct purpose, and is still valid
         token_doc = await db.one_time_keys.find_one({
             "user_id": user,
             "otp": token,
+            "purpose": "priority_verify",
             "used": False,
             "expires_at": {"$gt": datetime.utcnow()},
         })
