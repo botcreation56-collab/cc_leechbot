@@ -424,6 +424,7 @@ async def rclone_auth_redirect(user_id: int, client_id: str, client_secret: str)
     import json
     import base64
     from urllib.parse import quote
+    from bot.database import get_config
     
     state_data = {
         "u": user_id,
@@ -433,7 +434,12 @@ async def rclone_auth_redirect(user_id: int, client_id: str, client_secret: str)
     state = base64.urlsafe_b64encode(json.dumps(state_data).encode()).decode()
     
     # Redirect URI must match what's configured in Google Cloud Console
-    base_url = (settings.WEBHOOK_URL or "").replace("/webhook/telegram", "")
+    config = await get_config() or {}
+    base_url = (config.get("webhook_url") or "").rstrip("/").replace("/webhook/telegram", "")
+    if not base_url:
+        from web.core.config import settings
+        base_url = (settings.WEBHOOK_URL or "").rstrip("/").replace("/webhook/telegram", "")
+        
     redirect_uri = f"{base_url}/api/rclone/callback"
     
     auth_url = (
@@ -465,13 +471,26 @@ async def rclone_callback(request: Request, code: str = None, state: str = None,
     import httpx
     try:
         # Decode state
-        state_data = json.loads(base64.urlsafe_b64decode(state).decode())
-        user_id = state_data["u"]
-        client_id = state_data["i"]
-        client_secret = state_data["s"]
+        try:
+            state_data = json.loads(base64.urlsafe_b64decode(state.encode()).decode())
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid state parameter (CSRF protection blocked request)")
+            
+        user_id = state_data.get("u")
+        client_id = state_data.get("i")
+        client_secret = state_data.get("s")
+        
+        if not user_id or not client_id or not client_secret:
+             raise HTTPException(status_code=400, detail="Malformed state payload")
         
         # Exchange code for token
-        base_url = (settings.WEBHOOK_URL or "").replace("/webhook/telegram", "")
+        from bot.database import get_config
+        config = await get_config() or {}
+        base_url = (config.get("webhook_url") or "").rstrip("/").replace("/webhook/telegram", "")
+        if not base_url:
+            from web.core.config import settings
+            base_url = (settings.WEBHOOK_URL or "").rstrip("/").replace("/webhook/telegram", "")
+            
         redirect_uri = f"{base_url}/api/rclone/callback"
         
         async with httpx.AsyncClient() as client:
