@@ -870,15 +870,39 @@ async def handle_user_settings_text(update: Update, context: ContextTypes.DEFAUL
 # ============================================================
 
         elif state == "us_rclone_service":
-            parts = [p.strip() for p in text.split("|")]
-            if len(parts) != 2:
+            import re
+            
+            client_id, client_secret = None, None
+            text_cleaned = text.strip()
+            
+            # Check for generic property assignment `ID = "..."` `Secret = "..."`
+            id_match = re.search(r'(?:Client[_\s]*ID|ID)\s*=\s*["\']?([^"\'\n\|]+)["\']?', text_cleaned, re.IGNORECASE)
+            sec_match = re.search(r'(?:Client[_\s]*Secret|Secret)\s*=\s*["\']?([^"\'\n\|]+)["\']?', text_cleaned, re.IGNORECASE)
+            
+            if id_match and sec_match:
+                client_id = id_match.group(1).strip()
+                client_secret = sec_match.group(1).strip()
+            # Check for original pipe delimiter `ID | Secret`
+            elif "|" in text_cleaned:
+                parts = [p.strip() for p in text_cleaned.split("|")]
+                if len(parts) == 2:
+                    client_id, client_secret = parts
+            # Check for two lines generic assignment `ID \n Secret`
+            else:
+                lines = [l.strip() for l in text_cleaned.splitlines() if l.strip()]
+                if len(lines) == 2:
+                    client_id, client_secret = lines
+
+            if not client_id or not client_secret:
                 await update.message.reply_text(
-                    "❌ **Invalid Format**\n\nPlease send in format: `Client_ID | Client_Secret`",
+                    "❌ **Invalid Format**\n\n"
+                    "Please send your credentials like this:\n"
+                    "`ID = \"your_client_id_here\"`\n"
+                    "`Secret = \"your_client_secret_here\"`\n\n"
+                    "*(Or just send them separated by a pipe `|`)*",
                     parse_mode="Markdown"
                 )
                 return
-            
-            client_id, client_secret = parts
             user_id = update.effective_user.id
             
             # Deduced base URL from settings (filled in main.py)
@@ -1056,8 +1080,12 @@ async def handle_us_rclone_service(update: Update, context: ContextTypes.DEFAULT
         await query.answer()
         msg = await query.message.reply_text(
             "📁 **Create GDrive Rclone Service**\n\n"
-            "Please send your Google Cloud credentials in this format:\n"
-            "`Client_ID | Client_Secret`\n\n"
+            "Please send your Google Cloud credentials. You can formulate them like this:\n"
+            "```\n"
+            "ID = \"your_client_id_here\"\n"
+            "Secret = \"your_client_secret_here\"\n"
+            "```\n"
+            "*(Or just send them separated by a pipe `|`)*\n\n"
             "**Don't have these?** Check /help for a guide.\n\n"
             "Use /cancel to abort.",
             parse_mode="Markdown"
