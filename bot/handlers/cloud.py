@@ -79,51 +79,20 @@ logger.info("✅ User settings module loaded with all handlers")
 WIZARD_TIMEOUT = 1200
 
 async def handle_admin_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Rclone configuration menu"""
+    """Rclone management entry point — redirects to list view for CRUD."""
     try:
+        # Check setup requirement
         from bot.handlers.admin import _require_channels_setup
         if not await _require_channels_setup(update, context):
             return
-
-        from bot.database import get_config, get_rclone_configs, log_admin_action
+            
+        # Just call the list handler which now serves as the primary CRUD UI
+        await handle_list_rclone_remotes(update, context)
         
-        config = await get_config() or {}
-        rclone_config = config.get("rclone_config", {})
-
-        try:
-            active_configs = await get_rclone_configs(is_active=True)
-            active_count = len(active_configs) if active_configs else 0
-        except Exception as rc_err:
-            logger.error(f"Failed to get rclone configs: {rc_err}", exc_info=True)
-            active_count = 0
-
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("➕ Add Rclone Config", callback_data="admin_add_rclone")],
-            [InlineKeyboardButton("📋 List Remotes", callback_data="list_rclone_remotes")],
-            [InlineKeyboardButton("🧪 Test Rclone", callback_data="test_rclone")],
-            [InlineKeyboardButton("🚫 Disable Rclone", callback_data="disable_rclone")],
-            [InlineKeyboardButton("🔙 Back", callback_data="admin_back")]
-        ])
-
-        rclone_status = "✅ Enabled" if rclone_config.get("enabled") else "❌ Disabled"
-        rclone_text = (
-            f"🔧 **Rclone Configuration**\n\n"
-            f"Status: `{rclone_status}`\n"
-            f"Active configs: `{active_count}`"
-        )
-        await update.callback_query.message.edit_text(
-            rclone_text,
-            reply_markup=keyboard,
-            parse_mode="Markdown"
-        )
-        await log_admin_action(update.effective_user.id, "opened_rclone", {})
-        logger.info(f"✅ Rclone menu opened")
     except Exception as e:
-        logger.error(f"❌ Error in rclone menu: {e}", exc_info=True)
+        logger.error(f"❌ Error in handle_admin_rclone: {e}", exc_info=True)
         if update.callback_query:
-            await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
-        else:
-            await update.message.reply_text(f"❌ Error: {str(e)[:50]}")
+            await update.callback_query.answer("❌ Error opening menu")
 
 async def handle_admin_add_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show existing rclone configs and option to add new"""
@@ -204,42 +173,43 @@ async def handle_admin_add_rclone_wizard(update: Update, context: ContextTypes.D
             await update.callback_query.answer("❌ Error starting wizard", show_alert=True)
 
 async def handle_list_rclone_remotes(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """List configured rclone remotes"""
+    """List configured rclone remotes with CRUD-style simplified UI"""
     try:
         from bot.database import get_rclone_configs
         remotes = await get_rclone_configs()
-        if not remotes:
-            await update.callback_query.message.edit_text(
-                "❌ **No Rclone Remotes Configured**\n\nUse 'Add Rclone Config' to add one.",
-                parse_mode="Markdown",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_rclone")]])
-            )
-            return
-
+        
         keyboard = []
-        for r in remotes:
-            service = r.get("service", "unknown").upper()
-            plan = r.get("plan", "free")
-            active = "✅" if r.get("is_active", True) else "❌"
-            rid = r.get("config_id") or str(r.get("_id", ""))
-            keyboard.append([InlineKeyboardButton(
-                f"{active} {service} | {plan} plan",
-                callback_data=f"view_rclone_{rid}"
-            )])
-        keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="admin_rclone")])
+        if not remotes:
+            text = "❌ **No Rclone Remotes Configured**"
+            keyboard.append([InlineKeyboardButton("➕ Add Remote", callback_data="admin_add_rclone_wizard")])
+        else:
+            text = f"📋 **Rclone Remotes** ({len(remotes)})\n\nSelect a remote to manage:"
+            # [+] Button at the top for quick adding
+            keyboard.append([InlineKeyboardButton("➕ Add New Remote", callback_data="admin_add_rclone_wizard")])
+            
+            for r in remotes:
+                service = r.get("service", "unknown").upper()
+                plan = r.get("plan", "free").upper()
+                active = "✅" if r.get("is_active", True) else "❌"
+                rid = r.get("config_id") or str(r.get("_id", ""))
+                # Use simplified button label as requested
+                label = f"{active} {rid[:12]}"
+                keyboard.append([InlineKeyboardButton(label, callback_data=f"view_rclone_{rid}")])
+        
+        keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="admin_back")])
 
         await update.callback_query.message.edit_text(
-            f"📋 **Rclone Remotes** ({len(remotes)} configured)\n\nSelect one to view/edit:",
+            text,
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode="Markdown"
         )
-        logger.info(f"✅ Rclone remotes listed: {len(remotes)}")
+        logger.info(f"✅ Rclone remotes listed: {len(remotes) if remotes else 0}")
     except Exception as e:
         logger.error(f"❌ Error listing rclone remotes: {e}", exc_info=True)
-        await update.callback_query.answer(f"❌ Error", show_alert=True)
+        await update.callback_query.answer("❌ Error")
 
 async def handle_view_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """View details for a specific rclone remote"""
+    """View details for a specific rclone remote with CRUD UI"""
     try:
         query = update.callback_query
         rid = query.data.replace("view_rclone_", "")
@@ -259,23 +229,20 @@ async def handle_view_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE)
         test_status = config.get("test_status", "N/A")
         
         text = (
-            f"🔍 **Remote Details: {rid}**\n\n"
-            f"🌐 **Service**: `{service}`\n"
-            f"💎 **Plan**: `{plan}`\n"
-            f"👥 **Users**: `{curr_users} / {max_users}`\n"
-            f"⚡ **Status**: `{status}`\n"
-            f"🧪 **Last Test**: `{test_status}`\n"
+            f"🔍 **Remote: {rid}**\n\n"
+            f"🌐 Service: `{service}`\n"
+            f"💎 Plan: `{plan}`\n"
+            f"👥 Users: `{curr_users} / {max_users}`\n"
+            f"⚡ Status: `{status}`\n"
+            f"🧪 Last Test: `{test_status}`\n"
         )
         
-        is_active = config.get("is_active", True)
-        toggle_label = "🚫 Disable Remote" if is_active else "✅ Enable Remote"
-
+        # Simplified and organized buttons as requested
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🧪 Test", callback_data=f"test_single_rclone_{rid}"),
-             InlineKeyboardButton("✏️ Rename", callback_data=f"rclone_rename_prompt_{rid}")],
-            [InlineKeyboardButton("🗑️ Delete", callback_data=f"rclone_delete_prompt_{rid}"),
-             InlineKeyboardButton(toggle_label, callback_data=f"toggle_rclone_{rid}")],
-            [InlineKeyboardButton("👥 View Users", callback_data=f"rclone_users_{rid}"),
+             InlineKeyboardButton("🗑️ Remove", callback_data=f"rclone_delete_prompt_{rid}")],
+            [InlineKeyboardButton("✏️ Edit Credentials (Config)", callback_data=f"rclone_edit_creds_{rid}")],
+            [InlineKeyboardButton("👥 Users", callback_data=f"rclone_users_{rid}"),
              InlineKeyboardButton("🔙 Back", callback_data="list_rclone_remotes")]
         ])
         
@@ -284,6 +251,36 @@ async def handle_view_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE)
     except Exception as e:
         logger.error(f"Error in view_rclone: {e}", exc_info=True)
         await update.callback_query.answer("❌ Error")
+
+async def handle_rclone_edit_creds_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Prompt for new rclone config block/credentials"""
+    try:
+        query = update.callback_query
+        rid = query.data.replace("rclone_edit_creds_", "")
+        
+        from infrastructure.database._legacy_bot._rclone import get_rclone_config
+        config = await get_rclone_config(rid)
+        if not config:
+            await query.answer("❌ Config not found.", show_alert=True)
+            return
+
+        # Attempt to decrypt current config to show it (if it fits)
+        from bot.utils import decrypt_credentials
+        curr_creds_dict = decrypt_credentials(config.get("credentials", ""))
+        curr_conf = curr_creds_dict.get("config", "No current config found.")
+
+        await query.message.edit_text(
+            f"✏️ **Edit Credentials: {rid}**\n\n"
+            f"Paste the new rclone config block for this remote below.\n\n"
+            f"**Current Config (Preview):**\n```\n{curr_conf[:200]}...\n```\n\n"
+            f"Send the full block now or use /cancel.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Cancel", callback_data=f"view_rclone_{rid}")]])
+        )
+        context.user_data["awaiting"] = f"rclone_edit_creds_{rid}"
+        await query.answer()
+    except Exception as e:
+        logger.error(f"❌ handle_rclone_edit_creds_prompt: {e}", exc_info=True)
+        await query.answer("❌ Error")
 
 async def handle_admin_delete_rclone_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Confirm deletion of an rclone remote"""
@@ -611,37 +608,6 @@ async def handle_toggle_rclone(update: Update, context: ContextTypes.DEFAULT_TYP
         logger.error(f"Error toggling rclone: {e}", exc_info=True)
         await update.callback_query.answer("❌ Error")
 
-async def handle_list_rclone_remotes(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """List all rclone remotes configured."""
-    try:
-        query = update.callback_query
-        await query.answer()
-        from bot.database import get_rclone_configs
-        configs = await get_rclone_configs()
-        if not configs:
-            await query.message.edit_text(
-                "📋 **Rclone Remotes**\n\nNo remotes configured yet.",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("➕ Add Remote", callback_data="admin_add_rclone_wizard")],
-                    [InlineKeyboardButton("🔙 Back", callback_data="admin_rclone")],
-                ]),
-                parse_mode="Markdown"
-            )
-            return
-        lines = ["📋 **Rclone Remotes**\n"]
-        for c in configs:
-            status = "✅" if c.get("is_active") else "❌"
-            lines.append(f"{status} `{c.get('config_id')}` — {c.get('service')} ({c.get('plan')})")
-        await query.message.edit_text(
-            "\n".join(lines),
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔙 Back", callback_data="admin_rclone")]
-            ]),
-            parse_mode="Markdown"
-        )
-    except Exception as e:
-        logger.error(f"❌ handle_list_rclone_remotes: {e}", exc_info=True)
-        await update.callback_query.answer("❌ Error", show_alert=True)
 
 async def handle_disable_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Disable a rclone remote (stub)."""
@@ -663,6 +629,30 @@ async def rclone_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     wizard = context.user_data.setdefault("rclone_wizard", {})
 
     try:
+        if awaiting and awaiting.startswith("rclone_edit_creds_"):
+            rid = awaiting.replace("rclone_edit_creds_", "")
+            if len(text) < 10:
+                await update.message.reply_text("❌ Config looks too short. Please paste the full block.")
+                return
+
+            from bot.utils import encrypt_credentials
+            from infrastructure.database._legacy_bot._rclone import update_rclone_config
+            
+            encrypted = encrypt_credentials({"config": text})
+            success = await update_rclone_config(rid, {"credentials": encrypted})
+            
+            if success:
+                await update.message.reply_text(
+                    f"✅ **Credentials Updated for {rid}!**\n\nYou should now test the connection.",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🧪 Test Connection", callback_data=f"test_single_rclone_{rid}"),
+                                                         InlineKeyboardButton("🔙 Back", callback_data=f"view_rclone_{rid}")]])
+                )
+            else:
+                await update.message.reply_text("❌ Failed to update credentials in database.")
+            
+            context.user_data.pop("awaiting", None)
+            return
+
         if awaiting and awaiting.startswith("rclone_rename_"):
             old_rid = awaiting.replace("rclone_rename_", "")
             new_rid = text.strip().replace(" ", "_")

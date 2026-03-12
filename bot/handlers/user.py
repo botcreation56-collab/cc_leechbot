@@ -254,7 +254,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             handle_storage_stats, handle_admin_fsub_req_toggle, handle_us_dest_add,
             handle_us_dest_manage, handle_us_dest_remove_confirm, handle_us_dest_remove_do,
             handle_admin_delete_rclone_prompt, handle_admin_delete_rclone_confirm,
-            handle_admin_rename_rclone_prompt
+            handle_admin_rename_rclone_prompt, handle_view_rclone, handle_test_single_rclone,
+            handle_rclone_edit_creds_prompt, rclone_users_callback, handle_toggle_rclone
         )
 
         # Admin-only callbacks
@@ -446,6 +447,16 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await handle_admin_delete_rclone_confirm(update, context)
             elif data.startswith("rclone_rename_prompt_"):
                 await handle_admin_rename_rclone_prompt(update, context)
+            elif data.startswith("view_rclone_"):
+                await handle_view_rclone(update, context)
+            elif data.startswith("test_single_rclone_"):
+                await handle_test_single_rclone(update, context)
+            elif data.startswith("rclone_edit_creds_"):
+                await handle_rclone_edit_creds_prompt(update, context)
+            elif data.startswith("rclone_users_"):
+                await rclone_users_callback(update, context)
+            elif data.startswith("toggle_rclone_"):
+                await handle_toggle_rclone(update, context)
 
             # ── Terabox ──
             elif data == "terabox_setup_key":

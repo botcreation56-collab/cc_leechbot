@@ -944,8 +944,9 @@ async def handle_admin_set_force_sub_channel(update: Update, context: ContextTyp
             for ch in fsub_channels:
                 cid = ch.get("id", "unknown")
                 metadata = ch.get("metadata", {})
-                title = metadata.get("title") or ch.get("name") or str(cid)
-                enabled = metadata.get("enabled", True)
+                title = metadata.get("title") or ch.get("name") or ch.get("title") or str(cid)
+                # Check enabled from metadata, or fallback to top-level if legacy
+                enabled = metadata.get("enabled", ch.get("enabled", True))
                 status_icon = "🟢" if enabled else "🔴"
                 keyboard.append([InlineKeyboardButton(f"{status_icon} {title}", callback_data=f"admin_fsub_manage_{cid}")])
         else:
@@ -974,7 +975,10 @@ async def handle_admin_fsub_manage(update: Update, context: ContextTypes.DEFAULT
     """Manage a specific force-sub channel with req_join toggle"""
     try:
         query = update.callback_query
-        await query.answer()
+        try:
+            await query.answer()
+        except:
+            pass
         if channel_id is None:
             channel_id = int(query.data.replace("admin_fsub_manage_", ""))
 
@@ -987,9 +991,10 @@ async def handle_admin_fsub_manage(update: Update, context: ContextTypes.DEFAULT
             return
 
         metadata = channel.get("metadata", {})
-        title = metadata.get("title") or channel.get("name") or str(channel_id)
+        title = metadata.get("title") or channel.get("name") or channel.get("title") or str(channel_id)
         req_join = metadata.get("req_join", False)
-        enabled = metadata.get("enabled", True)
+        # Check enabled from metadata, or fallback to top-level if legacy
+        enabled = metadata.get("enabled", channel.get("enabled", True))
         
         # Icons for better visualization
         req_icon = "✅" if req_join else "❌"
@@ -1029,12 +1034,14 @@ async def handle_admin_fsub_req_toggle(update: Update, context: ContextTypes.DEF
         if channel:
             metadata = channel.get("metadata", {})
             current = metadata.get("req_join", False)
-            await update_force_sub_metadata(channel_id, {"req_join": not current}, admin_id=update.effective_user.id)
-            await query.answer(f"✅ Req to Join: {'OFF ❌' if current else 'ON ✅'}", show_alert=False)
+            success = await update_force_sub_metadata(channel_id, {"req_join": not current}, admin_id=update.effective_user.id)
             
-            # Small delay to ensure DB propagation before menu refresh
-            await asyncio.sleep(0.3)
-            await handle_admin_fsub_manage(update, context, channel_id=channel_id)
+            if success:
+                await query.answer(f"✅ Req to Join: {'OFF ❌' if current else 'ON ✅'}", show_alert=False)
+                # Refresh UI immediately
+                await handle_admin_fsub_manage(update, context, channel_id=channel_id)
+            else:
+                await query.answer("❌ Failed to update metadata. Please try again.", show_alert=True)
     except Exception as e:
         logger.error(f"❌ Error toggling req_join: {e}")
         await query.answer("❌ Error", show_alert=True)
@@ -1051,14 +1058,17 @@ async def handle_admin_fsub_toggle(update: Update, context: ContextTypes.DEFAULT
         
         if channel:
             metadata = channel.get("metadata", {})
-            current = metadata.get("enabled", True)
-            await update_force_sub_metadata(channel_id, {"enabled": not current}, admin_id=update.effective_user.id)
-            new_status = "❌ Disabled" if current else "✅ Enabled"
-            await query.answer(f"Channel {new_status}", show_alert=False)
+            # Read from metadata or legacy top-level
+            current = metadata.get("enabled", channel.get("enabled", True))
+            success = await update_force_sub_metadata(channel_id, {"enabled": not current}, admin_id=update.effective_user.id)
             
-            # Small delay to ensure DB propagation before menu refresh
-            await asyncio.sleep(0.3)
-            await handle_admin_fsub_manage(update, context, channel_id=channel_id)
+            if success:
+                new_status = "❌ Disabled" if current else "✅ Enabled"
+                await query.answer(f"Channel {new_status}", show_alert=False)
+                # Refresh UI immediately
+                await handle_admin_fsub_manage(update, context, channel_id=channel_id)
+            else:
+                await query.answer("❌ Failed to toggle channel status.", show_alert=True)
     except Exception as e:
         logger.error(f"❌ Error toggling fsub: {e}", exc_info=True)
         await query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
@@ -1362,7 +1372,14 @@ async def handle_admin_forwards(update: Update, context: ContextTypes.DEFAULT_TY
                 (c.get("id") if isinstance(c, dict) else c) == channel_id
                 for c in fsub_list
             ):
-                fsub_list.append({"id": channel_id, "name": channel_title, "enabled": True})
+                fsub_list.append({
+                    "id": channel_id, 
+                    "metadata": {
+                        "title": channel_title,
+                        "enabled": True,
+                        "req_join": False
+                    }
+                })
                 await set_config({"channels.force_sub": fsub_list})
             label = "Force Subscribe Channel"
         else:

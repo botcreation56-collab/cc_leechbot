@@ -210,6 +210,8 @@ async def update_force_sub_metadata(
         updated = False
         for ch in existing:
             if ch.get("id") == channel_id:
+                if "metadata" not in ch:
+                    ch["metadata"] = {}
                 ch["metadata"].update(updates)
                 updated = True
                 break
