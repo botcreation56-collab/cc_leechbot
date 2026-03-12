@@ -109,6 +109,7 @@ async def upload_to_rclone(
     remote_path: str = "/",
     user_id: int = None,
     progress_callback=None,
+    task_id: str = None,
 ) -> Optional[Dict[str, Any]]:
     """Upload file to rclone-configured cloud service."""
     config_file = None
@@ -136,15 +137,28 @@ async def upload_to_rclone(
         rclone_bin = await ensure_rclone_binary()
         
         remote_name = f"{service}_{rclone_config_id[:8]}"
-        destination = f"{remote_name}:{remote_path}"
+        destination_dir_only = f"{remote_name}:{remote_path}"
 
-        cmd = [
-            rclone_bin, "copy", str(path), destination,
-            f"--config={config_file}", "--progress",
-            "--transfers=4", "--checkers=8", "--retries=3",
-        ]
-
-        logger.info(f"Running: rclone copy {path.name} {destination}")
+        if task_id:
+            # Obfuscate the filename (Copyright Hashing)
+            ext = path.suffix
+            remote_filepath = f"{remote_path.rstrip('/')}/task_{task_id}{ext}"
+            destination = f"{remote_name}:{remote_filepath}"
+            cmd = [
+                rclone_bin, "copyto", str(path), destination,
+                f"--config={config_file}", "--progress",
+                "--transfers=4", "--checkers=8", "--retries=3",
+            ]
+            logger.info(f"Running: rclone copyto {path.name} {destination}")
+        else:
+            destination = destination_dir_only
+            remote_filepath = f"{remote_path.rstrip('/')}/{path.name}"
+            cmd = [
+                rclone_bin, "copy", str(path), destination,
+                f"--config={config_file}", "--progress",
+                "--transfers=4", "--checkers=8", "--retries=3",
+            ]
+            logger.info(f"Running: rclone copy {path.name} {destination}")
 
         process = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
@@ -179,8 +193,8 @@ async def upload_to_rclone(
 
         logger.info(f"✅ Upload successful: {path.name}")
 
-        shared_link = await generate_rclone_link(remote_name, f"{remote_path}/{path.name}", config_file)
-        cloud_url = f"{destination}/{path.name}"
+        cloud_url = f"{remote_name}:{remote_filepath}"
+        shared_link = await generate_rclone_link(remote_name, remote_filepath, config_file)
 
         return {
             "cloud_url": cloud_url,
@@ -549,6 +563,7 @@ async def upload_and_send_file(
             remote_path=f"/{user_id}/",
             user_id=user_id,
             progress_callback=rclone_progress,
+            task_id=task_id,
         )
         if not rclone_result:
             raise UploadError("Cloud upload failed.")

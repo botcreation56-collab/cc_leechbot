@@ -1037,8 +1037,10 @@ async def clear_user_session(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not context or not context.user_data:
         return
         
-    user_id = update.effective_user.id if update.effective_user else "unknown"
-    
+    if update and update.effective_user:
+        user_id = update.effective_user.id
+    else:
+        user_id = "unknown"
     keys_to_clear = [
         "awaiting", "wizard", "bypass_url", "queued_task", 
         "processing_lock", "current_task_id", "awaiting_channel_type"
@@ -1057,10 +1059,12 @@ async def clear_user_session(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def handle_check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Callback for '✅ I Joined' button. Retriggers force-sub check & resumes task."""
+    """Callback for '🔍 Check Status' button. Retriggers force-sub check & refreshes UI."""
     query = update.callback_query
-    await query.answer("Checking subscription...")  # brief popup while we verify
+    await query.answer("🔄 Refreshing status...")
     
+    # Rerun check_force_sub. This will automatically edit the message
+    # since we have fsub_msg_id in user_data.
     if await check_force_sub(update, context):
         # Verified — edit the force-sub message to a success notice
         try:
@@ -1094,8 +1098,7 @@ async def handle_check_subscription(update: Update, context: ContextTypes.DEFAUL
             except Exception:
                 pass
     else:
-        # Still not joined — check_force_sub already edited the message in‑place
-        # (it uses fsub_msg_id stored in user_data). Nothing more to do here.
+        # Still not joined/requested — check_force_sub already edited the message in‑place.
         pass
 
 async def finalize_progress(bot, task_id, success=True, result_text="", reply_markup=None):
@@ -1239,13 +1242,13 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # BUG-10 FIX: edit_* config states were being discarded (fell through to warning)
         if awaiting.startswith("edit_") or awaiting.startswith("add_shortener"):
-            # Special case: rclone creds have their own dedicated handler
-            if awaiting == "edit_rclone_creds":
-                from bot.handlers.settings import handle_rclone_creds_input
-                await handle_rclone_creds_input(update, context)
-                return
             from bot.handlers.settings import handle_config_edit_input
             await handle_config_edit_input(update, context, awaiting)
+            return
+
+        if awaiting.startswith("us_rclone_"):
+            from bot.handlers.settings import handle_user_rclone_setup_step
+            await handle_user_rclone_setup_step(update, context)
             return
 
         if awaiting == "wiz_rename" or (awaiting and awaiting.startswith("wiz_meta_")):
@@ -1371,13 +1374,15 @@ async def check_force_sub(update: Update, context: ContextTypes.DEFAULT_TYPE, pe
                     req_join = False
                     invite_link = ""
 
-                # FORCE a new link if req_join is enabled to ensure creates_join_request is active
+                # GENERATE UNIQUE INVITE LINK if req_join is enabled or no link exists
                 if not invite_link or req_join:
                     try:
+                        # creates_join_request=True means "Request to Join"
                         link = await context.bot.create_chat_invite_link(
                             channel_id,
                             creates_join_request=req_join,
                             name=f"FSub_{user_id}_{int(time.time())}",
+                            member_limit=1 # One-time use link
                         )
                         invite_link = link.invite_link
                     except TelegramError as e:
@@ -1387,46 +1392,47 @@ async def check_force_sub(update: Update, context: ContextTypes.DEFAULT_TYPE, pe
                     label = f"✨ Request to Join {channel_name}" if req_join else f"✨ Join {channel_name}"
                     keyboard.append([InlineKeyboardButton(label, url=invite_link)])
 
-            keyboard.append([InlineKeyboardButton("✅ I Joined, Continue", callback_data="check_subscription")])
+            keyboard.append([InlineKeyboardButton("🔍 Check Status", callback_data="check_subscription")])
 
             if keyboard:
                 fsub_text = (
                     "⚠️ **Subscription Required**\n\n"
                     "To use this bot, you must join our channels first.\n\n"
-                    "👇 Click the button(s) below to join:"
+                    "👇 Click the button(s) below to join/request:"
                 )
                 reply_markup = InlineKeyboardMarkup(keyboard)
 
-                # Try to EDIT the existing fsub message to avoid duplicate messages.
-                # `fsub_msg_id` is stored when we first send the force-sub prompt.
+                # Try to EDIT the existing fsub message
                 existing_msg_id = context.user_data.get("fsub_msg_id")
                 edited = False
 
-                if update.callback_query and existing_msg_id:
+                if existing_msg_id:
                     try:
-                        await update.callback_query.message.edit_text(
-                            fsub_text,
+                        # We use the bot directly to edit to avoid issues with update context
+                        await context.bot.edit_message_text(
+                            chat_id=user_id,
+                            message_id=existing_msg_id,
+                            text=fsub_text,
                             reply_markup=reply_markup,
                             parse_mode="Markdown"
                         )
                         edited = True
                     except Exception:
-                        pass  # Message may have changed type – fall through to send
+                        pass
 
                 if not edited:
-                    # First time showing the force-sub prompt — send a new message
                     msg = None
                     if update.message:
                         msg = update.message
                     elif update.callback_query:
                         msg = update.callback_query.message
+                    
                     if msg:
                         sent = await msg.reply_text(
                             fsub_text,
                             reply_markup=reply_markup,
                             parse_mode="Markdown"
                         )
-                        # Remember this message so future retries can edit it
                         context.user_data["fsub_msg_id"] = sent.message_id
 
             return False
@@ -1438,7 +1444,7 @@ async def check_force_sub(update: Update, context: ContextTypes.DEFAULT_TYPE, pe
         return True
 
 async def handle_chat_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Track join requests in DB and revoke the unique link used. Manual approval only."""
+    """Track join requests in DB and revoke the unique link used. Auto-approve logic."""
     try:
         request = update.chat_join_request
         user_id = request.from_user.id
@@ -1455,7 +1461,7 @@ async def handle_chat_join_request(update: Update, context: ContextTypes.DEFAULT
         if int(chat_id) not in [int(c) for c in requested]:
             requested.append(int(chat_id))
             await update_user(user_id, {"requested_fsub": requested})
-            logger.info(f"📝 User {user_id} requested to join channel {chat_id}")
+            logger.info(f"📝 User {user_id} added to requested_fsub for channel {chat_id}")
 
         # Revoke the invite link used if it was a custom one-time link
         if invite_link_str:
@@ -1465,14 +1471,46 @@ async def handle_chat_join_request(update: Update, context: ContextTypes.DEFAULT
             except Exception as e:
                 logger.warning(f"Could not revoke link {invite_link_str}: {e}")
 
-        # Notify the user
-        try:
-            await context.bot.send_message(
-                chat_id=user_id,
-                text="✅ **Join Request Received!**\n\nYou have requested to join the channel. Our admins will approve you soon.\n\n**You can now return to the bot and click 'I Joined' to continue!**",
-                parse_mode="Markdown"
-            )
-        except: pass
+        # AUTO-RESUME LOGIC: Check if all FS requirements are now met (joined or requested)
+        if await check_force_sub(update, context):
+            # All requirements satisfied!
+            
+            # 1. DELETE the force-sub prompt message if it exists
+            fsub_msg_id = context.user_data.pop("fsub_msg_id", None)
+            if fsub_msg_id:
+                try:
+                    await context.bot.delete_message(chat_id=user_id, message_id=fsub_msg_id)
+                except:
+                    pass
+
+            # 2. RESUME pending task
+            pending = context.user_data.pop("pending_fsub_data", None)
+            if pending:
+                logger.info(f"🚀 Auto-resuming task for {user_id} after join request approval")
+                if pending["type"] == "url":
+                    from bot.handlers.files import handle_url_input
+                    await handle_url_input(update, context, resumed_url=pending["url"])
+                elif pending["type"] == "file":
+                    from bot.handlers.files import handle_file_upload
+                    await handle_file_upload(update, context, resumed_file=True, file_id=pending.get("file_id"))
+            else:
+                # Notify the user they are cleared
+                try:
+                    await context.bot.send_message(
+                        chat_id=user_id,
+                        text="✅ **Force Subscribe Released!**\n\nYou have requested to join all required channels. You can now use the bot freely.",
+                        parse_mode="Markdown"
+                    )
+                except: pass
+        else:
+            # Not all joined yet — notify them about this specific request
+            try:
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text="✅ **Join Request Received!**\n\nYour request has been logged. Please make sure you have requested to join **ALL** required channels listed in the bot.",
+                    parse_mode="Markdown"
+                )
+            except: pass
 
     except Exception as e:
         logger.error(f"❌ Error in handle_chat_join_request: {e}", exc_info=True)

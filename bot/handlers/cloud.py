@@ -527,15 +527,30 @@ async def rclone_plan_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         parts = query.data.split("_")  # rclone_plan_free / rclone_plan_pro
         plan = parts[-1] if parts else "free"
         context.user_data.setdefault("rclone_wizard", {})["plan"] = plan
-        context.user_data["awaiting"] = "rclone_name"
-        await query.message.reply_text(
-            f"✅ Plan: **{plan.upper()}**\n\n"
-            "**Step 3 / 5 — Remote Name**\n\n"
-            "Enter a short name for this remote (letters, numbers, hyphens).\n"
-            "Example: `my-gdrive-main`\n\n"
-            "Use /cancel to abort.",
-            parse_mode="Markdown"
-        )
+        
+        service = context.user_data.get("rclone_wizard", {}).get("service", "")
+        
+        if service == "gdrive":
+            context.user_data["awaiting"] = "rclone_client_id"
+            await query.message.reply_text(
+                f"✅ Plan: **{plan.upper()}**\n\n"
+                "**Step 3 / 6 — Google Client ID**\n\n"
+                "This will create a global Rclone configuration usable by multiple users depending on their plan.\n\n"
+                "Please enter your Google **Client ID**.\n"
+                "*(It usually ends with `apps.googleusercontent.com`)*\n\n"
+                "Use /cancel to abort.",
+                parse_mode="Markdown"
+            )
+        else:
+            context.user_data["awaiting"] = "rclone_name"
+            await query.message.reply_text(
+                f"✅ Plan: **{plan.upper()}**\n\n"
+                "**Step 3 / 5 — Remote Name**\n\n"
+                "Enter a short name for this remote (letters, numbers, hyphens).\n"
+                "Example: `my-gdrive-main`\n\n"
+                "Use /cancel to abort.",
+                parse_mode="Markdown"
+            )
     except Exception as e:
         logger.error(f"❌ rclone_plan_callback: {e}", exc_info=True)
 
@@ -668,6 +683,100 @@ async def rclone_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("❌ Rename failed. It might be due to a duplicate ID or database error.")
             
             context.user_data.pop("awaiting", None)
+            return
+
+        if awaiting == "rclone_client_id":
+            if not text or len(text) < 10 or "." not in text:
+                await update.message.reply_text("❌ Invalid Client ID. Please try again or /cancel.")
+                return
+            wizard["client_id"] = text
+            context.user_data["awaiting"] = "rclone_client_secret"
+            await update.message.reply_text(
+                "**Step 4 / 6 — Google Client Secret**\n\n"
+                "Please enter your Google **Client Secret**.\n\n"
+                "Use /cancel to abort.",
+                parse_mode="Markdown"
+            )
+            return
+
+        if awaiting == "rclone_client_secret":
+            if not text or len(text) < 5:
+                await update.message.reply_text("❌ Invalid Client Secret. Please try again or /cancel.")
+                return
+            wizard["client_secret"] = text
+            context.user_data["awaiting"] = "rclone_max_users_oauth"
+            await update.message.reply_text(
+                "**Step 5 / 6 — Max Simultaneous Users**\n\n"
+                "How many users can share this remote simultaneously?\n"
+                "Enter a number (e.g. `10`).\n\n"
+                "Use /cancel to abort.",
+                parse_mode="Markdown"
+            )
+            return
+
+        if awaiting == "rclone_max_users_oauth":
+            try:
+                max_users = int(text)
+                if max_users < 1: raise ValueError
+            except ValueError:
+                await update.message.reply_text("❌ Please enter a valid number (e.g. `10`).")
+                return
+            
+            wizard["max_users"] = max_users
+            
+            # Now generate OAUTH URL!
+            client_id = wizard.get("client_id")
+            client_secret = wizard.get("client_secret")
+            plan = wizard.get("plan", "free")
+            
+            import json, base64
+            from urllib.parse import quote
+            from config.config import get_config
+            import config.settings as app_settings
+
+            config = await get_config() or {}
+            
+            state_data = {
+                "u": user_id, 
+                "i": client_id, 
+                "s": client_secret,
+                "p": plan,
+                "m": max_users
+            }
+            state = base64.urlsafe_b64encode(json.dumps(state_data).encode()).decode()
+
+            base_url = (config.get("webhook_url") or "").rstrip("/").replace("/webhook/telegram", "")
+            if not base_url:
+                base_url = (app_settings.WEBHOOK_URL or "").rstrip("/").replace("/webhook/telegram", "")
+
+            redirect_uri = f"{base_url}/api/rclone/callback"
+
+            auth_url = (
+                "https://accounts.google.com/o/oauth2/v2/auth"
+                f"?client_id={quote(client_id)}"
+                f"&redirect_uri={quote(redirect_uri)}"
+                "&response_type=code"
+                "&scope=https://www.googleapis.com/auth/drive"
+                "&access_type=offline"
+                "&prompt=consent"
+                f"&state={quote(state)}"
+            )
+
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔗 Authorize with Google Drive", url=auth_url)],
+                [InlineKeyboardButton("❌ Cancel", callback_data="admin_rclone")]
+            ])
+
+            await update.message.reply_text(
+                f"**Step 6 / 6 — Authorization**\n\n"
+                f"Click the button below to authorize `leechbot` to access this Google Drive account.\n"
+                f"Once authorized, the callback will automatically save and register the remote for the `{plan}` plan.",
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+            
+            context.user_data.pop("awaiting", None)
+            context.user_data.pop("rclone_wizard", None)
             return
 
         # ── Step 2: Remote name ──────────────────────────────────────

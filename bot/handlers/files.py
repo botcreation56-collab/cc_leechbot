@@ -1293,6 +1293,8 @@ class WizardHandler:
             if not upload_result:
                 raise RuntimeError("Upload failed.")
             
+            dump_file_id = upload_result.get("file_id")
+
             # 5.5 Update card in storage channel
             await create_or_update_storage_message(
                 bot,
@@ -1312,7 +1314,6 @@ class WizardHandler:
             import secrets
             from datetime import datetime, timedelta
             
-            dump_file_id = upload_result.get("file_id")
             secure_token = secrets.token_urlsafe(32)
             expires = datetime.utcnow() + timedelta(hours=24)
             await create_one_time_key(user_id, secure_token, expires, purpose="stream")

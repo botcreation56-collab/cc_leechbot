@@ -149,7 +149,7 @@ async def increment_rclone_usage(config_id: str, delta: int = 1) -> bool:
 
 
 async def upload_to_rclone(
-    file_path: str, remote_name: str, folder_path: str = "/"
+    file_path: str, remote_name: str, folder_path: str = "/", task_id: str = None
 ) -> Optional[Dict[str, Any]]:
     """
     Upload file to rclone remote and return shareable link.
@@ -158,9 +158,14 @@ async def upload_to_rclone(
     try:
         from pathlib import Path as _Path
         remote_path = f"{remote_name}:{folder_path}"
-        full_remote = f"{remote_path}/{_Path(file_path).name}"
-
-        cmd = ["rclone", "copy", file_path, full_remote, "--progress", "--transfers=1"]
+        
+        if task_id:
+            ext = _Path(file_path).suffix
+            full_remote = f"{remote_path}/task_{task_id}{ext}"
+            cmd = ["rclone", "copyto", file_path, full_remote, "--progress", "--transfers=1"]
+        else:
+            full_remote = f"{remote_path}/{_Path(file_path).name}"
+            cmd = ["rclone", "copy", file_path, full_remote, "--progress", "--transfers=1"]
         process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,

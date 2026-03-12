@@ -161,6 +161,27 @@ async def show_config_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"❌ Error in config menu: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
 
+async def handle_edit_rclone_creds(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Callback: Start the admin-side global Rclone setup wizard (Hybrid Auth)."""
+    try:
+        query = update.callback_query
+        await query.answer()
+
+        context.user_data["awaiting"] = "edit_rclone_client_id"
+        
+        await query.message.reply_text(
+            "📂 **Global Admin Google Drive Setup (Hybrid Auth)**\n\n"
+            "This will create a global Rclone configuration usable by multiple users depending on their plan.\n\n"
+            "**Step 1:** Please enter your Google **Client ID**.\n"
+            "*(It usually ends with `apps.googleusercontent.com`)*\n\n"
+            "Use /cancel to abort.",
+            parse_mode="Markdown"
+        )
+        logger.info(f"✅ Admin Rclone hybrid auth setup started by {update.effective_user.id}")
+    except Exception as e:
+        logger.error(f"❌ Error in handle_edit_rclone_creds: {e}")
+        await update.callback_query.answer("❌ Error starting setup", show_alert=True)
+
 async def handle_edit_start_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Edit /start command message"""
     try:
@@ -1086,63 +1107,26 @@ async def handle_us_close(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         logger.error(f"❌ Error closing settings: {e}")
 
 async def handle_us_rclone_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Callback: skip credential prompt — read global credentials from admin config and
-    send the Google OAuth URL directly. Users just click once to authorize."""
+    """Callback: Start the user-side Rclone setup wizard.
+    Asks the user to provide their own Google Client ID."""
     try:
         query = update.callback_query
         await query.answer()
-        user_id = update.effective_user.id
 
-        # Load global rclone credentials set by admin
-        config = await get_config() or {}
-        client_id = config.get("rclone_client_id", "").strip()
-        client_secret = config.get("rclone_client_secret", "").strip()
-
-        if not client_id or not client_secret:
-            await query.message.reply_text(
-                "❌ **Rclone Not Configured**\n\n"
-                "The admin has not configured Google OAuth credentials yet.\n"
-                "Please contact the admin to set them up.",
-                parse_mode="Markdown"
-            )
-            return
-
-        import json
-        import base64
-        from urllib.parse import quote
-
-        state_data = {"u": user_id, "i": client_id, "s": client_secret}
-        state = base64.urlsafe_b64encode(json.dumps(state_data).encode()).decode()
-
-        base_url = (config.get("webhook_url") or "").rstrip("/").replace("/webhook/telegram", "")
-        if not base_url:
-            base_url = (settings.WEBHOOK_URL or "").rstrip("/").replace("/webhook/telegram", "")
-
-        redirect_uri = f"{base_url}/api/rclone/callback"
-
-        auth_url = (
-            "https://accounts.google.com/o/oauth2/v2/auth"
-            f"?client_id={quote(client_id)}"
-            f"&redirect_uri={quote(redirect_uri)}"
-            "&response_type=code"
-            "&scope=https://www.googleapis.com/auth/drive"
-            "&access_type=offline"
-            "&prompt=consent"
-            f"&state={state}"
-        )
-
-        keyboard = [[InlineKeyboardButton("🔗 Authorize with Google Drive", url=auth_url)]]
+        context.user_data["awaiting"] = "us_rclone_client_id"
+        
         await query.message.reply_text(
-            "📂 **Connect Google Drive**\n\n"
-            "Click the button below to authorize the bot to access your Google Drive.\n\n"
-            "Once authorized, your Rclone remote will be set up automatically.",
-            reply_markup=InlineKeyboardMarkup(keyboard),
+            "📂 **Setup Google Drive (Hybrid Auth)**\n\n"
+            "To connect your Google Drive safely, please generate your own Google Cloud app credentials.\n\n"
+            "**Step 1:** Please enter your Google **Client ID**.\n"
+            "*(It usually ends with `apps.googleusercontent.com`)*\n\n"
+            "Use /cancel to abort.",
             parse_mode="Markdown"
         )
-        logger.info(f"✅ Rclone OAuth link generated for {user_id}")
+        logger.info(f"✅ Rclone hybrid auth setup started for {update.effective_user.id}")
     except Exception as e:
         logger.error(f"❌ Error in handle_us_rclone_service: {e}")
-        await update.callback_query.answer("❌ Error", show_alert=True)
+        await update.callback_query.answer("❌ Error starting setup", show_alert=True)
 
 async def handle_us_prefix(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Callback: show prompt to set filename prefix"""
@@ -1322,76 +1306,82 @@ async def handle_toggle_plan_rclone(update: Update, context: ContextTypes.DEFAUL
         await update.callback_query.answer("❌ Error", show_alert=True)
 
 
-async def handle_edit_rclone_creds(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Admin callback: prompt to set global Google OAuth credentials for Rclone."""
-    try:
-        query = update.callback_query
-        await query.answer()
+# ─────────────────────────────────────────────────────────────────────────────
+# USER: Manual Rclone Config Input Handlers (replaces Web OAuth)
+# ─────────────────────────────────────────────────────────────────────────────
 
-        config = await get_config() or {}
-        has_id = bool(config.get("rclone_client_id", "").strip())
-        has_secret = bool(config.get("rclone_client_secret", "").strip())
-        status = "✅ Set" if (has_id and has_secret) else "❌ Not configured"
-
-        msg = await query.message.reply_text(
-            f"☁️ **Rclone Google OAuth Credentials**\n\n"
-            f"Current status: {status}\n\n"
-            f"Send your Google Cloud credentials in this format:\n"
-            f"`CLIENT_ID | CLIENT_SECRET`\n\n"
-            f"These are set **once by the admin** and shared by all authorised users.\n"
-            f"Users never see or enter these — they just click Authorize.\n\n"
-            f"Use /cancel to abort.",
-            parse_mode="Markdown"
-        )
-        context.user_data["prompt_msg_id"] = msg.message_id
-        context.user_data["awaiting"] = "edit_rclone_creds"
-        context.user_data["awaiting_set_at"] = _time.time()
-        logger.info(f"✅ Rclone creds prompt sent to admin {update.effective_user.id}")
-    except Exception as e:
-        logger.error(f"❌ Error in handle_edit_rclone_creds: {e}")
-        await update.callback_query.answer("❌ Error", show_alert=True)
-
-
-async def handle_rclone_creds_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle admin text input for edit_rclone_creds awaiting state."""
+async def handle_user_rclone_setup_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle text inputs for the manual user-side Google Drive setup wizard."""
     try:
         text = (update.message.text or "").strip()
-        if "|" not in text:
+        user_id = update.effective_user.id
+        awaiting = context.user_data.get("awaiting")
+
+        if awaiting == "us_rclone_client_id":
+            if not text or len(text) < 10 or "." not in text:
+                await update.message.reply_text("❌ Invalid Client ID. Please try again or /cancel.")
+                return
+            context.user_data["temp_rclone_client_id"] = text
+            context.user_data["awaiting"] = "us_rclone_client_secret"
             await update.message.reply_text(
-                "❌ **Invalid Format**\n\nSend as: `CLIENT_ID | CLIENT_SECRET`",
+                "**Step 2:** Please enter your Google **Client Secret**.\n\n"
+                "Use /cancel to abort.",
                 parse_mode="Markdown"
             )
             return
 
-        parts = [p.strip() for p in text.split("|", 1)]
-        if len(parts) != 2 or not parts[0] or not parts[1]:
+        if awaiting == "us_rclone_client_secret":
+            if not text or len(text) < 5:
+                await update.message.reply_text("❌ Invalid Client Secret. Please try again or /cancel.")
+                return
+
+            client_id = context.user_data.get("temp_rclone_client_id")
+            client_secret = text
+            
+            import json
+            import base64
+            from urllib.parse import quote
+            from config.config import get_config
+            import config.settings as app_settings
+
+            config = await get_config() or {}
+            
+            state_data = {"u": user_id, "i": client_id, "s": client_secret}
+            state = base64.urlsafe_b64encode(json.dumps(state_data).encode()).decode()
+
+            base_url = (config.get("webhook_url") or "").rstrip("/").replace("/webhook/telegram", "")
+            if not base_url:
+                base_url = (app_settings.WEBHOOK_URL or "").rstrip("/").replace("/webhook/telegram", "")
+
+            redirect_uri = f"{base_url}/api/rclone/callback"
+
+            auth_url = (
+                "https://accounts.google.com/o/oauth2/v2/auth"
+                f"?client_id={quote(client_id)}"
+                f"&redirect_uri={quote(redirect_uri)}"
+                "&response_type=code"
+                "&scope=https://www.googleapis.com/auth/drive"
+                "&access_type=offline"
+                "&prompt=consent"
+                f"&state={state}"
+            )
+
+            keyboard = [[InlineKeyboardButton("🔗 Authorize with Google Drive", url=auth_url)]]
             await update.message.reply_text(
-                "❌ Both Client ID and Client Secret are required.",
+                "**Step 3:** Connect Google Drive\n\n"
+                "Click the button below to open Chrome and authorize the bot to access your Google Drive using your custom application.\n\n"
+                "Once authorized, you will see a success page and the bot will notify you.",
+                reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode="Markdown"
             )
+            
+            # Clear text wizard state, OAuth server takes over
+            context.user_data.pop("awaiting", None)
+            context.user_data.pop("temp_rclone_client_id", None)
+            logger.info(f"✅ User {user_id} generated Hybrid OAuth link with custom credentials")
             return
-
-        client_id, client_secret = parts
-        from bot.database import set_config
-        ok = await set_config({
-            "rclone_client_id": client_id,
-            "rclone_client_secret": client_secret
-        })
-
-        if ok:
-            await update.message.reply_text(
-                "✅ **Rclone Credentials Saved!**\n\n"
-                "Users with Rclone-enabled plans can now authorize Google Drive\n"
-                "by clicking the button in their settings — no input needed from them.",
-                parse_mode="Markdown"
-            )
-            await log_admin_action(update.effective_user.id, "set_rclone_credentials", {})
-        else:
-            await update.message.reply_text("❌ Failed to save credentials. Please try again.")
-
-        context.user_data.pop("awaiting", None)
 
     except Exception as e:
-        logger.error(f"❌ Error saving rclone credentials: {e}", exc_info=True)
-        await update.message.reply_text(f"❌ Error: {str(e)[:100]}")
+        logger.error(f"❌ Error in handle_user_rclone_setup_step: {e}", exc_info=True)
+        await update.message.reply_text("❌ Error processing configuration. Press /cancel and try again.")
         context.user_data.pop("awaiting", None)

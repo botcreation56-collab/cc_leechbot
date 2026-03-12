@@ -232,7 +232,7 @@ def setup_handlers(application: Application) -> None:
         handle_us_thumbnail_view, handle_us_thumbnail_delete, handle_us_thumbnail_delete_confirm,
         handle_meta_author, handle_us_rclone_service,
         # Rclone feature gating
-        handle_toggle_plan_rclone, handle_edit_rclone_creds,
+        handle_toggle_plan_rclone,
         # Rclone post-auth user action
         handle_us_rclone_dest_activate,
     )
@@ -468,7 +468,6 @@ def setup_handlers(application: Application) -> None:
             ("^edit_parallel$",         handle_edit_parallel_limit),
             ("^edit_max_filesize$",     handle_edit_max_filesize),
             ("^edit_file_expiry$",      handle_edit_file_expiry),
-            ("^edit_rclone_creds$",     handle_edit_rclone_creds),   # Admin sets global OAuth creds
             ("^edit_plan_free$",        handle_edit_plan),
             ("^edit_plan_premium$",     handle_edit_plan),
             ("^toggle_plan_rclone_",    handle_toggle_plan_rclone),  # Admin toggles rclone per plan

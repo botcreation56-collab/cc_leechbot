@@ -470,15 +470,18 @@ async def rclone_callback(request: Request, code: str = None, state: str = None,
     import base64
     import httpx
     try:
-        # Decode state
+        # Decode state (adds padding missing from URLs)
         try:
-            state_data = json.loads(base64.urlsafe_b64decode(state.encode()).decode())
+            padded_state = state + "=" * ((4 - len(state) % 4) % 4)
+            state_data = json.loads(base64.urlsafe_b64decode(padded_state.encode()).decode())
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid state parameter (CSRF protection blocked request)")
             
         user_id = state_data.get("u")
         client_id = state_data.get("i")
         client_secret = state_data.get("s")
+        plan = state_data.get("p", "user")
+        max_users = state_data.get("m", 1)
         
         if not user_id or not client_id or not client_secret:
              raise HTTPException(status_code=400, detail="Malformed state payload")
@@ -527,38 +530,62 @@ async def rclone_callback(request: Request, code: str = None, state: str = None,
         from bot.database import add_rclone_config
         config_id = await add_rclone_config(
             service="gdrive",
-            plan="user",
-            max_users=1,
+            plan=plan,
+            max_users=max_users,
             credentials=config_snippet,
             admin_id=user_id
         )
         
         if config_id:
+            # Update the config snippet to reflect the assigned DB ID as its internal section name
+            from infrastructure.database._legacy_bot._rclone import update_rclone_config
+            updated_snippet = config_snippet.replace(f"[{remote_name}]", f"[{config_id}]")
+            await update_rclone_config(config_id, {"credentials": updated_snippet})
+
             # Notify user via bot — show them the config and a confirm button
             from telegram import InlineKeyboardButton, InlineKeyboardMarkup
             bot = request.app.state.bot
             
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton(
-                    "☁️ Use as Default Upload Destination",
-                    callback_data=f"us_set_rclone_dest_{remote_name}"
-                )],
-                [InlineKeyboardButton("⚙️ My Settings", callback_data="us_settings")]
-            ])
-            
-            await bot.send_message(
-                chat_id=user_id,
-                text=(
-                    f"✅ **Google Drive Connected!**\n\n"
-                    f"Your Rclone remote has been created and saved.\n\n"
-                    f"📋 **Remote Name:** `{remote_name}`\n\n"
-                    f"```\n{config_snippet.strip()}\n```\n\n"
-                    "You can copy the config above to use with `rclone` locally.\n"
-                    "Or tap the button below to use this Drive as your default upload destination."
-                ),
-                reply_markup=keyboard,
-                parse_mode="Markdown"
-            )
+            if plan == "user":
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton(
+                        "☁️ Use as Default Upload Destination",
+                        callback_data=f"us_set_rclone_dest_{config_id}"
+                    )],
+                    [InlineKeyboardButton("⚙️ My Settings", callback_data="us_settings")]
+                ])
+                
+                await bot.send_message(
+                    chat_id=user_id,
+                    text=(
+                        f"✅ **Google Drive Connected!**\n\n"
+                        f"Your Rclone remote has been created and saved.\n\n"
+                        f"📋 **Remote Name:** `{config_id}`\n\n"
+                        f"```\n{updated_snippet.strip()}\n```\n\n"
+                        "You can copy the config above to use with `rclone` locally.\n"
+                        "Or tap the button below to use this Drive as your default upload destination."
+                    ),
+                    reply_markup=keyboard,
+                    parse_mode="Markdown"
+                )
+            else:
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("⚙️ Back to Admin Rclone", callback_data="admin_rclone")]
+                ])
+                
+                await bot.send_message(
+                    chat_id=user_id,
+                    text=(
+                        f"✅ **Global Google Drive Connected!**\n\n"
+                        f"The Admin Rclone remote for the `{plan}` plan has been successfully created and saved.\n\n"
+                        f"📋 **Remote ID:** `{config_id}`\n\n"
+                        f"```\n{updated_snippet.strip()}\n```\n\n"
+                        "You can now manage this remote in the Admin -> Cloud -> Rclone menu."
+                    ),
+                    reply_markup=keyboard,
+                    parse_mode="Markdown"
+                )
+
             return {"status": "success", "message": "Rclone service created! You can close this window and return to the bot."}
 
         else:
