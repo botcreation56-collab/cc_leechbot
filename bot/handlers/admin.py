@@ -32,7 +32,7 @@ from bot.database import (
     update_force_sub_metadata,
     set_channel_config
 )
-from bot.utils import log_info, log_error, log_user_update, validate_url
+from bot.utils import send_auto_delete_msg, log_info, log_error, log_user_update, validate_url
 from bot.handlers.user import paginate_keyboard
 from bot.services import create_or_update_storage_message, FFmpegService
 from config.constants import ERROR_MESSAGES, BROADCAST_RATE_LIMIT
@@ -240,10 +240,9 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ],
             [
                 InlineKeyboardButton("🔧 Rclone", callback_data="admin_rclone"),
-                InlineKeyboardButton("📦 Terabox", callback_data="admin_terabox")
+                InlineKeyboardButton("🗄️ File Size", callback_data="admin_filesize")
             ],
             [
-                InlineKeyboardButton("🗄️ File Size", callback_data="admin_filesize"),
                 InlineKeyboardButton("📋 Logs", callback_data="admin_logs")
             ],
             [
@@ -614,7 +613,7 @@ async def handle_unban_from_list(update: Update, context: ContextTypes.DEFAULT_T
                 pass
             # Refresh the list
             await show_banned_users(update, context)
-            from bot.utils import log_admin_action
+            from bot.utils import send_auto_delete_msg, log_admin_action
             await log_admin_action(update.effective_user.id, "unbanned_user", {"user_id": user_id})
         else:
             await query.answer("❌ Failed to unban user", show_alert=True)
@@ -839,8 +838,10 @@ async def handle_admin_set_log_channel(update: Update, context: ContextTypes.DEF
 
     keyboard = []
     if ch_id:
-        keyboard.append([InlineKeyboardButton(f"Channel: {display_name}", callback_data="ignore")])
-        keyboard.append([InlineKeyboardButton("🗑️ Remove Channel", callback_data="admin_remove_log")])
+        keyboard.append([
+            InlineKeyboardButton(f"📁 {display_name}", callback_data="ignore"),
+            InlineKeyboardButton("🗑️ Remove", callback_data="admin_remove_log")
+        ])
     else:
         keyboard.append([InlineKeyboardButton("➕ Add Channel", callback_data="admin_add_log_channel")])
     
@@ -875,8 +876,10 @@ async def handle_admin_set_dump_channel(update: Update, context: ContextTypes.DE
 
     keyboard = []
     if ch_id:
-        keyboard.append([InlineKeyboardButton(f"Channel: {display_name}", callback_data="ignore")])
-        keyboard.append([InlineKeyboardButton("🗑️ Remove Channel", callback_data="admin_remove_dump")])
+        keyboard.append([
+            InlineKeyboardButton(f"📁 {display_name}", callback_data="ignore"),
+            InlineKeyboardButton("🗑️ Remove", callback_data="admin_remove_dump")
+        ])
     else:
         keyboard.append([InlineKeyboardButton("➕ Add Channel", callback_data="admin_add_dump_channel")])
     
@@ -911,8 +914,10 @@ async def handle_admin_set_storage_channel(update: Update, context: ContextTypes
 
     keyboard = []
     if ch_id:
-        keyboard.append([InlineKeyboardButton(f"Channel: {display_name}", callback_data="ignore")])
-        keyboard.append([InlineKeyboardButton("🗑️ Remove Channel", callback_data="admin_remove_storage")])
+        keyboard.append([
+            InlineKeyboardButton(f"📁 {display_name}", callback_data="ignore"),
+            InlineKeyboardButton("🗑️ Remove", callback_data="admin_remove_storage")
+        ])
     else:
         keyboard.append([InlineKeyboardButton("➕ Add Channel", callback_data="admin_add_storage_channel")])
     
@@ -941,14 +946,25 @@ async def handle_admin_set_force_sub_channel(update: Update, context: ContextTyp
         
         # [Configured Channel List]
         if fsub_channels:
-            for ch in fsub_channels:
+            if len(fsub_channels) > 1:
+                for ch in fsub_channels:
+                    cid = ch.get("id", "unknown")
+                    metadata = ch.get("metadata", {})
+                    title = metadata.get("title") or ch.get("name") or ch.get("title") or str(cid)
+                    enabled = metadata.get("enabled", ch.get("enabled", True))
+                    status_icon = "🟢" if enabled else "🔴"
+                    keyboard.append([InlineKeyboardButton(f"{status_icon} {title}", callback_data=f"admin_fsub_manage_{cid}")])
+            elif len(fsub_channels) == 1:
+                ch = fsub_channels[0]
                 cid = ch.get("id", "unknown")
                 metadata = ch.get("metadata", {})
                 title = metadata.get("title") or ch.get("name") or ch.get("title") or str(cid)
-                # Check enabled from metadata, or fallback to top-level if legacy
                 enabled = metadata.get("enabled", ch.get("enabled", True))
                 status_icon = "🟢" if enabled else "🔴"
-                keyboard.append([InlineKeyboardButton(f"{status_icon} {title}", callback_data=f"admin_fsub_manage_{cid}")])
+                keyboard.append([
+                    InlineKeyboardButton(f"{status_icon} {title}", callback_data=f"admin_fsub_manage_{cid}"),
+                    InlineKeyboardButton("🗑️ Remove", callback_data=f"admin_fsub_remove_confirm_{cid}")
+                ])
         else:
             keyboard.append([InlineKeyboardButton("ℹ️ No channels configured", callback_data="ignore")])
 
@@ -1212,10 +1228,10 @@ async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                     )
                     await update.message.reply_text(user_info, parse_mode="Markdown")
                 else:
-                    await update.message.reply_text("❌ User not found.")
+                    await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ User not found.", parse_mode="Markdown")
             except Exception as e:
                 logger.error(f"Error finding user: {e}")
-                await update.message.reply_text("❌ Invalid User ID.")
+                await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Invalid User ID.", parse_mode="Markdown")
             context.user_data.pop("awaiting", None)
             return
 
@@ -1227,11 +1243,11 @@ async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 from bot.database import ban_user
                 ok = await ban_user(uid, reason=reason, admin_id=user_id)
                 if ok:
-                    await update.message.reply_text(f"✅ User `{uid}` has been banned.\nReason: {reason}", parse_mode="Markdown")
+                    await send_auto_delete_msg(context.bot, update.effective_chat.id, f"✅ User `{uid}` has been banned.\nReason: {reason}", parse_mode="Markdown")
                 else:
-                    await update.message.reply_text(f"❌ Could not ban user `{uid}`. User may not exist.", parse_mode="Markdown")
+                    await send_auto_delete_msg(context.bot, update.effective_chat.id, f"❌ Could not ban user `{uid}`. User may not exist.", parse_mode="Markdown")
             except Exception as e:
-                await update.message.reply_text(f"❌ Invalid input. Send: `<user_id> <reason>`", parse_mode="Markdown")
+                await send_auto_delete_msg(context.bot, update.effective_chat.id, f"❌ Invalid input. Send: `<user_id> <reason>`", parse_mode="Markdown")
             context.user_data.pop("awaiting", None)
             return
 
@@ -1241,11 +1257,11 @@ async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 from bot.database import unban_user
                 ok = await unban_user(uid, admin_id=user_id)
                 if ok:
-                    await update.message.reply_text(f"✅ User `{uid}` has been unbanned.", parse_mode="Markdown")
+                    await send_auto_delete_msg(context.bot, update.effective_chat.id, f"✅ User `{uid}` has been unbanned.", parse_mode="Markdown")
                 else:
-                    await update.message.reply_text(f"❌ Could not unban user `{uid}`. User may not exist.", parse_mode="Markdown")
+                    await send_auto_delete_msg(context.bot, update.effective_chat.id, f"❌ Could not unban user `{uid}`. User may not exist.", parse_mode="Markdown")
             except Exception as e:
-                await update.message.reply_text("❌ Invalid User ID. Please send a number.", parse_mode="Markdown")
+                await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Invalid User ID. Please send a number.", parse_mode="Markdown")
             context.user_data.pop("awaiting", None)
             return
 
@@ -1256,11 +1272,11 @@ async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 plan = parts[1].lower() if len(parts) > 1 else "premium"
                 ok = await update_user(uid, {"plan": plan})
                 if ok:
-                    await update.message.reply_text(f"✅ User `{uid}` upgraded to `{plan}`.", parse_mode="Markdown")
+                    await send_auto_delete_msg(context.bot, update.effective_chat.id, f"✅ User `{uid}` upgraded to `{plan}`.", parse_mode="Markdown")
                 else:
-                    await update.message.reply_text(f"❌ Could not upgrade user `{uid}`.", parse_mode="Markdown")
+                    await send_auto_delete_msg(context.bot, update.effective_chat.id, f"❌ Could not upgrade user `{uid}`.", parse_mode="Markdown")
             except Exception as e:
-                await update.message.reply_text("❌ Usage: `<user_id> [plan_name]`\nExample: `123456789 premium`", parse_mode="Markdown")
+                await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Usage: `<user_id> [plan_name]`\nExample: `123456789 premium`", parse_mode="Markdown")
             context.user_data.pop("awaiting", None)
             return
 
@@ -1275,11 +1291,11 @@ async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                         f"💬 **Message from Support**\n\n{text}",
                         parse_mode="Markdown"
                     )
-                    await update.message.reply_text(f"✅ Message sent to `{user_id_to_reply}`.")
+                    await send_auto_delete_msg(context.bot, update.effective_chat.id, f"✅ Message sent to `{user_id_to_reply}`.", parse_mode="Markdown")
                 except Exception as e:
-                    await update.message.reply_text(f"❌ Failed to deliver message to user: {e}")
+                    await send_auto_delete_msg(context.bot, update.effective_chat.id, f"❌ Failed to deliver message to user: {e}", parse_mode="Markdown")
             else:
-                await update.message.reply_text("❌ Failed to save message to database.")
+                await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Failed to save message to database.", parse_mode="Markdown")
             # Keep the state so admin can send multiple messages
             return
 
@@ -1287,7 +1303,7 @@ async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
     except Exception as e:
         logger.error(f"Error in handle_admin_input: {e}", exc_info=True)
-        await update.message.reply_text(f"❌ Error: {str(e)[:100]}")
+        await send_auto_delete_msg(context.bot, update.effective_chat.id, f"❌ Error: {str(e)[:100]}", parse_mode="Markdown")
 
 async def get_broadcast_stats() -> Dict[str, Any]:
     """Get broadcast statistics"""
@@ -1385,7 +1401,7 @@ async def handle_admin_forwards(update: Update, context: ContextTypes.DEFAULT_TY
         else:
             nested_key = TYPE_TO_NESTED_KEY.get(channel_type)
             if not nested_key:
-                await msg.reply_text(f"❌ Unknown channel type: `{channel_type}`", parse_mode="Markdown")
+                await send_auto_delete_msg(context.bot, update.effective_chat.id, f"❌ Unknown channel type: `{channel_type}`", parse_mode="Markdown")
                 return
             # Save as nested object with id + metadata
             await set_config({nested_key: {"id": channel_id, "metadata": {"title": channel_title}}})
@@ -1411,7 +1427,7 @@ async def handle_admin_forwards(update: Update, context: ContextTypes.DEFAULT_TY
 
     except Exception as e:
         logger.error(f"❌ Error in handle_admin_forwards: {e}", exc_info=True)
-        await update.message.reply_text("❌ Failed to save channel. Please try again.")
+        await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Failed to save channel. Please try again.", parse_mode="Markdown")
 
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

@@ -14,6 +14,7 @@ NOTE: MockDB / MockBot / MockContext / MockUpdate have been removed from this fi
 """
 
 import asyncio
+import contextlib
 import ipaddress
 import json
 import logging
@@ -520,6 +521,23 @@ async def send_to_log_channel(bot: Bot, message: str, parse_mode: str = "Markdow
     except Exception as e:
         logger.error(f"Failed to send to log channel: {e}")
         return False
+
+
+async def auto_delete_message(bot: Bot, chat_id: int, message_id: int, delay: int = 5):
+    """Wait for 'delay' seconds and then delete the message."""
+    await asyncio.sleep(delay)
+    with contextlib.suppress(Exception):
+        await bot.delete_message(chat_id=chat_id, message_id=message_id)
+
+async def send_auto_delete_msg(bot: Bot, chat_id: int, text: str, delay: int = 10, **kwargs):
+    """Sends a message and deletes it after `delay` seconds."""
+    try:
+        msg = await bot.send_message(chat_id=chat_id, text=text, **kwargs)
+        asyncio.create_task(auto_delete_message(bot, chat_id, msg.message_id, delay))
+        return msg
+    except Exception as e:
+        logger.error(f"Failed to send auto-delete message: {e}")
+        return None
 
 
 # ============================================================

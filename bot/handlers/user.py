@@ -36,7 +36,7 @@ from bot.database import (
     get_user_position, # Added
     get_task, # Added
 )
-from bot.utils import log_info, log_error, log_user_update, validate_url
+from bot.utils import send_auto_delete_msg, log_info, log_error, log_user_update, validate_url
 from bot.services import create_or_update_storage_message, FFmpegService
 # Circular imports moved inside functions:
 # from bot.handlers.files import handle_url_input
@@ -497,6 +497,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await handle_us_dest_remove_confirm(update, context)
             elif data.startswith("us_dest_remove_do_"):
                 await handle_us_dest_remove_do(update, context)
+            elif data.startswith("send_dest_"):
+                await handle_send_to_destination(update, context)
+            elif data.startswith("fwd_dest_"):
+                await handle_forward_to_destination(update, context)
             elif data.startswith("refresh_q_"):
                 task_id = data.replace("refresh_q_", "")
                 from bot.database import get_task, get_user_position
@@ -617,10 +621,19 @@ async def handle_us_destination_button(update: Update, context: ContextTypes.DEF
         
         # [Configured Channel List]
         if destinations:
-            for d in destinations:
+            if len(destinations) > 1:
+                for d in destinations:
+                    cid = d.get("id", "unknown")
+                    title = d.get("title") or str(cid)
+                    keyboard.append([InlineKeyboardButton(f"📁 {title}", callback_data=f"us_dest_manage_{cid}")])
+            elif len(destinations) == 1:
+                d = destinations[0]
                 cid = d.get("id", "unknown")
                 title = d.get("title") or str(cid)
-                keyboard.append([InlineKeyboardButton(f"📁 {title}", callback_data=f"us_dest_manage_{cid}")])
+                keyboard.append([
+                    InlineKeyboardButton(f"📁 {title}", callback_data=f"us_dest_manage_{cid}"),
+                    InlineKeyboardButton("🗑️ Remove", callback_data=f"us_dest_remove_confirm_{cid}")
+                ])
         else:
             keyboard.append([InlineKeyboardButton("ℹ️ No destinations configured", callback_data="ignore")])
 
@@ -799,14 +812,14 @@ async def handle_us_dest_meta_input(update: Update, context: ContextTypes.DEFAUL
             if channel_id not in dest_metadata:
                 dest_metadata[channel_id] = {}
             dest_metadata[channel_id]["title"] = text
-            await update.message.reply_text(f"✅ Custom name updated to: `{text}`", parse_mode="Markdown")
+            await send_auto_delete_msg(context.bot, update.effective_chat.id, f"✅ Custom name updated to: `{text}`", parse_mode="Markdown")
 
         elif awaiting.startswith("us_dest_meta_auth_"):
             channel_id = awaiting.replace("us_dest_meta_auth_", "")
             if channel_id not in dest_metadata:
                 dest_metadata[channel_id] = {}
             dest_metadata[channel_id]["author"] = text
-            await update.message.reply_text(f"✅ Custom author updated to: `{text}`", parse_mode="Markdown")
+            await send_auto_delete_msg(context.bot, update.effective_chat.id, f"✅ Custom author updated to: `{text}`", parse_mode="Markdown")
 
         settings["destination_metadata"] = dest_metadata
         await update_user(user_id, {"settings": settings})
@@ -849,14 +862,95 @@ async def handle_user_destination_forward(update: Update, context: ContextTypes.
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to List", callback_data="us_destination")]])
                 )
             else:
-                await msg.reply_text("❌ Failed to add destination. Maybe it's already there?")
+                await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Failed to add destination. Maybe it's already there?", parse_mode="Markdown")
             
             context.user_data.pop("awaiting", None)
         else:
-            await msg.reply_text("❌ Could not read channel from this forward. Please forward a message directly from your channel.")
+            await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Could not read channel from this forward. Please forward a message directly from your channel.", parse_mode="Markdown")
     except Exception as e:
         logger.error(f"❌ Error in handle_user_destination_forward: {e}")
-        await update.message.reply_text("❌ Error setting destination. Please try again.")
+        await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Error setting destination. Please try again.", parse_mode="Markdown")
+
+async def handle_send_to_destination(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show list of destinations to forward a file to."""
+    query = update.callback_query
+    await query.answer()
+    file_id = query.data.replace("send_dest_", "")
+    user_id = query.from_user.id
+    
+    from bot.database import get_user_destinations
+    destinations = await get_user_destinations(user_id)
+    
+    if not destinations:
+        await query.message.reply_text(
+            "ℹ️ **No Destinations Set!**\n\n"
+            "You haven't configured any custom destinations.\n"
+            "Please go to `Settings > Custom Destinations` to add one, or use the button below.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Add Destination", callback_data="us_dest_add")]]),
+            parse_mode="Markdown"
+        )
+        return
+        
+    context.user_data[f"fwd_file_{file_id[-10:]}"] = file_id
+    
+    keyboard = []
+    for d in destinations:
+        cid = d.get("id")
+        title = d.get("title") or str(cid)
+        keyboard.append([InlineKeyboardButton(f"➡️ {title}", callback_data=f"fwd_dest_{cid}_{file_id[-10:]}")])
+        
+    keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="wiz_cancel")])
+    
+    await query.message.reply_text(
+        "📤 **Select Destination:**\n\nChoose where to forward this file:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def handle_forward_to_destination(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Forward file to selected destination"""
+    query = update.callback_query
+    await query.answer()
+    
+    parts = query.data.split("_")
+    if len(parts) < 4:
+        return
+        
+    cid = parts[2]
+    short_id = parts[3]
+    full_file_id = context.user_data.get(f"fwd_file_{short_id}")
+    
+    if not full_file_id:
+        await query.answer("❌ File reference expired.", show_alert=True)
+        return
+        
+    meta = context.user_data.get(f"fwd_meta_{short_id}", {})
+    filename = meta.get("filename", "")
+    size = meta.get("size", 0)
+    
+    caption_lines = []
+    if filename:
+        caption_lines.append(f"📁 **{filename}**")
+    if size > 0:
+        from bot.utils import format_bytes
+        caption_lines.append(f"📦 Size: {format_bytes(size)}")
+        
+    caption = "\n\n".join(caption_lines) if caption_lines else None
+        
+    try:
+        try:
+            msg = await context.bot.send_document(chat_id=cid, document=full_file_id, caption=caption, parse_mode="Markdown")
+        except Exception:
+            try:
+                msg = await context.bot.send_video(chat_id=cid, video=full_file_id, caption=caption, parse_mode="Markdown")
+            except Exception as e:
+                await query.message.edit_text(f"❌ Failed to reach destination: {e}")
+                return
+                
+        await query.message.edit_text(f"✅ Sent to destination successfully!")
+        
+    except Exception as e:
+        logger.error(f"Error sending to dest: {e}")
+        await query.message.edit_text("❌ Error sending to destination.")
 
 def get_progress_bar(progress: int) -> str:
     """
@@ -1088,16 +1182,23 @@ async def handle_check_subscription(update: Update, context: ContextTypes.DEFAUL
             pass
         
         # RESUME LOGIC
-        pending = context.user_data.pop("pending_fsub_data", None)
+        pending_queue = context.user_data.pop("pending_fsub_data", [])
+        if not isinstance(pending_queue, list):
+            pending_queue = [pending_queue] if pending_queue else []
+
         context.user_data.pop("fsub_msg_id", None)
-        if pending:
-            logger.info(f"🔄 Resuming pending task for {update.effective_user.id}: {pending.get('type')}")
-            if pending["type"] == "url":
-                from bot.handlers.files import handle_url_input
-                await handle_url_input(update, context, resumed_url=pending["url"])
-            elif pending["type"] == "file":
-                from bot.handlers.files import handle_file_upload
-                await handle_file_upload(update, context, resumed_file=True, file_id=pending.get("file_id"))
+
+        if pending_queue:
+            logger.info(f"🔄 Resuming {len(pending_queue)} pending tasks for {update.effective_user.id}")
+            for pending in pending_queue:
+                if pending["type"] == "url":
+                    from bot.handlers.files import handle_url_input
+                    await handle_url_input(update, context, resumed_url=pending["url"])
+                elif pending["type"] == "file":
+                    from bot.handlers.files import handle_file_upload
+                    await handle_file_upload(update, context, resumed_file=True, file_id=pending.get("file_id"))
+                # Small delay to prevent flood
+                await asyncio.sleep(0.5)
         else:
             try:
                 await query.edit_message_text(
@@ -1193,7 +1294,7 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if not awaiting:
             # If no awaiting state, check if it's a URL
-            from bot.utils import validate_url
+            from bot.utils import send_auto_delete_msg, validate_url
             if validate_url(text)[0]:
                 if not await check_force_sub(update, context, pending_data={"type": "url", "url": text}):
                     return
@@ -1274,10 +1375,7 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             from infrastructure.database._legacy_bot._channels import add_chatbox_message
             success = await add_chatbox_message(user_id, text, sender_type="user")
             if success:
-                await update.message.reply_text(
-                    "✅ **Message Sent!**\n\nThe admin has been notified. Please wait for a reply.",
-                    parse_mode="Markdown"
-                )
+                await send_auto_delete_msg(context.bot, update.effective_chat.id, "✅ **Message Sent!**\n\nThe admin has been notified. Please wait for a reply.", parse_mode="Markdown")
                 context.user_data.pop("awaiting", None)
                 
                 # Notify admins
@@ -1294,12 +1392,12 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         )
                     except: pass
             else:
-                await update.message.reply_text("❌ Failed to send message. Please try again later.")
+                await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Failed to send message. Please try again later.", parse_mode="Markdown")
             return
 
     except Exception as e:
         logger.error(f"❌ Error in handle_text_input: {e}", exc_info=True)
-        await update.message.reply_text(f"❌ **Error Processing Input**\n\n{str(e)[:100]}")
+        await send_auto_delete_msg(context.bot, update.effective_chat.id, f"❌ **Error Processing Input**\n\n{str(e)[:100]}", parse_mode="Markdown")
     finally:
         # Optional: Clear state if it's a one-shot input
         # context.user_data.pop("awaiting", None)
@@ -1355,20 +1453,37 @@ async def check_force_sub(update: Update, context: ContextTypes.DEFAULT_TYPE, pe
                 member = await context.bot.get_chat_member(channel_id, user_id)
                 if member.status in ["member", "administrator", "creator"]:
                     is_member = True
+                elif member.status in ["left", "kicked"]:
+                    # User left or was kicked — remove from requested list to secure bypass
+                    if int(channel_id) in [int(c) for c in requested]:
+                        requested = [c for c in requested if int(c) != int(channel_id)]
+                        await update_user(user_id, {"requested_fsub": requested})
+                        logger.info(f"🗑️ Removed {user_id} from requested_fsub for {channel_id} (status: {member.status})")
             except TelegramError:
                 pass # Proceed to check requested list
 
             # 2. Check if user has a pending join request tracked in DB
+            req_join = channel.get("metadata", {}).get("req_join", False)
             is_requested = int(channel_id) in [int(c) for c in requested]
+            can_bypass = is_requested and req_join
 
-            if not is_member and not is_requested:
+            if not is_member and not can_bypass:
                 not_joined.append(channel)
 
         if not_joined:
-            # SAVE FOR RESUME
+            # SAVE FOR RESUME (List-based queue to prevent overwrite)
             if pending_data:
-                context.user_data["pending_fsub_data"] = pending_data
-                logger.info(f"💾 Saved pending data for {user_id} during FSub interruption")
+                if "pending_fsub_data" not in context.user_data:
+                    context.user_data["pending_fsub_data"] = []
+                
+                # Check for duplicates in queue
+                queue = context.user_data["pending_fsub_data"]
+                if not isinstance(queue, list): queue = [queue]
+                
+                if pending_data not in queue:
+                    queue.append(pending_data)
+                    context.user_data["pending_fsub_data"] = queue
+                    logger.info(f"💾 Added task to FSub queue for {user_id} (Total: {len(queue)})")
 
             keyboard = []
 
@@ -1494,16 +1609,21 @@ async def handle_chat_join_request(update: Update, context: ContextTypes.DEFAULT
                 except:
                     pass
 
-            # 2. RESUME pending task
-            pending = context.user_data.pop("pending_fsub_data", None)
-            if pending:
-                logger.info(f"🚀 Auto-resuming task for {user_id} after join request approval")
-                if pending["type"] == "url":
-                    from bot.handlers.files import handle_url_input
-                    await handle_url_input(update, context, resumed_url=pending["url"])
-                elif pending["type"] == "file":
-                    from bot.handlers.files import handle_file_upload
-                    await handle_file_upload(update, context, resumed_file=True, file_id=pending.get("file_id"))
+            # 2. RESUME pending tasks
+            pending_queue = context.user_data.pop("pending_fsub_data", [])
+            if not isinstance(pending_queue, list):
+                pending_queue = [pending_queue] if pending_queue else []
+
+            if pending_queue:
+                logger.info(f"🚀 Auto-resuming {len(pending_queue)} tasks for {user_id} after join request approval")
+                for pending in pending_queue:
+                    if pending["type"] == "url":
+                        from bot.handlers.files import handle_url_input
+                        await handle_url_input(update, context, resumed_url=pending["url"])
+                    elif pending["type"] == "file":
+                        from bot.handlers.files import handle_file_upload
+                        await handle_file_upload(update, context, resumed_file=True, file_id=pending.get("file_id"))
+                    await asyncio.sleep(0.5)
             else:
                 # Notify the user they are cleared
                 try:
@@ -1565,10 +1685,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                          parse_mode="Markdown"
                      )
                  else:
-                     await update.message.reply_text(
-                         "❌ **Invalid or Expired Token**\n\nThis bypass link is no longer valid or has already been used.",
-                         parse_mode="Markdown"
-                     )
+                     await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ **Invalid or Expired Token**\n\nThis bypass link is no longer valid or has already been used.", parse_mode="Markdown")
                  return
              
         # Fetch or create user in the database
@@ -1626,10 +1743,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"❌ Error in support command: {e}", exc_info=True)
         await log_error(f"❌ Error in support command: {str(e)}")
-        await update.message.reply_text(
-            "❌ Unable to load support info. Please try again.",
-            parse_mode="Markdown"
-        )
+        await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Unable to load support info. Please try again.", parse_mode="Markdown")
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /cancel — context-aware cancel of current awaiting state"""
@@ -1650,13 +1764,13 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             task = await get_task(task_id)
             
             if not task:
-                await update.message.reply_text(f"❌ **Task Not Found**\n\nTask ID: `{task_id}`", parse_mode="Markdown")
+                await send_auto_delete_msg(context.bot, update.effective_chat.id, f"❌ **Task Not Found**\n\nTask ID: `{task_id}`", parse_mode="Markdown")
                 return
 
             # Check ownership (unless admin)
             from config.settings import get_admin_ids
             if task.get("user_id") != user_id and user_id not in get_admin_ids():
-                await update.message.reply_text("❌ **Access Denied**\n\nYou can only cancel your own tasks.", parse_mode="Markdown")
+                await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ **Access Denied**\n\nYou can only cancel your own tasks.", parse_mode="Markdown")
                 return
 
             if task.get("status") in ["completed", "failed"]:
@@ -1669,10 +1783,7 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # TODO: Signal the worker if it's currently processing
             # For now, worker will check status periodically or fail on next step
             
-            await update.message.reply_text(
-                f"✅ **Task Cancelled**\n\nTask `{task_id}` has been marked as cancelled.",
-                parse_mode="Markdown"
-            )
+            await send_auto_delete_msg(context.bot, update.effective_chat.id, f"✅ **Task Cancelled**\n\nTask `{task_id}` has been marked as cancelled.", parse_mode="Markdown")
             logger.info(f"🛑 Task {task_id} cancelled by user {user_id}")
             return
 
@@ -1798,10 +1909,7 @@ async def cancel_task_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     except Exception as e:
         logger.error(f"❌ Error in cancel_task_command: {e}", exc_info=True)
-        await update.message.reply_text(
-            "❌ Could not cancel the task. Please try again.",
-            parse_mode="Markdown"
-        )
+        await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Could not cancel the task. Please try again.", parse_mode="Markdown")
 
 from bot.database import get_config
 async def unknown_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1913,10 +2021,7 @@ async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Error in support command: {e}", exc_info=True)
         await log_error(f"❌ Error in support command: {str(e)}")
-        await update.message.reply_text(
-            "❌ Unable to load support info. Please try again.",
-            parse_mode="Markdown"
-        )
+        await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Unable to load support info. Please try again.", parse_mode="Markdown")
 
 async def handle_subtitle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:

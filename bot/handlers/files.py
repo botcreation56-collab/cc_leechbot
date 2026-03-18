@@ -33,7 +33,7 @@ from bot.database import (
     create_task,
     update_task,
 )
-from bot.utils import log_info, log_error, log_user_update, validate_url, validate_file_size
+from bot.utils import send_auto_delete_msg, log_info, log_error, log_user_update, validate_url, validate_file_size
 from bot.services import create_or_update_storage_message, FFmpegService
 from core.exceptions import DownloadError
 from bot.handlers.settings import handle_edit_max_filesize
@@ -125,7 +125,7 @@ async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE,
             # Handle Injection
             file_obj = update.message.document or update.message.audio or update.message.video
             if not file_obj:
-                 await update.message.reply_text("❌ Please send a valid file.")
+                 await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Please send a valid file.", parse_mode="Markdown")
                  return
             
             # Download
@@ -135,7 +135,7 @@ async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE,
             
             session = context.user_data.get('wizard')
             if not session:
-                await update.message.reply_text("❌ Session expired.")
+                await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Session expired.", parse_mode="Markdown")
                 return
 
             if awaiting == "wiz_inject_audio":
@@ -151,11 +151,21 @@ async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE,
             context.user_data.pop('awaiting', None)
             return
 
+        # 0.5️⃣ ✅ LOCK SESSION IF IN WIZARD
+        in_wizard = context.user_data.get('wizard') is not None
+        if in_wizard or awaiting:
+            if update.message:
+                msg = await update.message.reply_text("⚠️ **Active Session**\n\nPlease finish or cancel your curren action before sending a new file.")
+                from bot.utils import send_auto_delete_msg, auto_delete_message
+                import asyncio
+                asyncio.create_task(auto_delete_message(context.bot, update.effective_chat.id, msg.message_id, 7))
+            return
+
         # 1️⃣ Get user
         user = await get_user(user_id)
         if not user:
             if update.message:
-                await update.message.reply_text("❌ User not found.")
+                await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ User not found.", parse_mode="Markdown")
             return
         
         if user.get("banned"):
@@ -199,8 +209,11 @@ async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE,
         if not file_obj and file_id:
             # We can't get the full metadata from just file_id without a call
             # So we rely on user_data which was saved in handle_file_upload initially
-            pending = context.user_data.get("pending_fsub_data")
-            if pending and pending.get("file_id") == file_id:
+            pending_data = context.user_data.get("pending_fsub_data", [])
+            if not isinstance(pending_data, list): pending_data = [pending_data]
+            pending = next((p for p in pending_data if p and p.get("file_id") == file_id), None)
+            
+            if pending:
                 # Mock a file object for the rest of the logic
                 from dataclasses import dataclass
                 @dataclass
@@ -223,10 +236,10 @@ async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
         # 2.5️⃣ ✅ PREEMPTIVE SIZE CHECK
         file_size = getattr(file_obj, 'file_size', 0)
-        from bot.utils import validate_file_size
+        from bot.utils import send_auto_delete_msg, validate_file_size
         is_val, err = validate_file_size(file_size, user.get("plan", "free"))
         if not is_val:
-            await update.message.reply_text(f"❌ {err}\n\n{ERROR_MESSAGES.get('file_too_large', '')}")
+            await send_auto_delete_msg(context.bot, update.effective_chat.id, f"❌ {err}\n\n{ERROR_MESSAGES.get('file_too_large', '')}", parse_mode="Markdown")
             return
             
         filename = getattr(file_obj, 'file_name', 'file')
@@ -244,7 +257,7 @@ async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE,
             if not filename.strip() or filename == ".":
                 filename = "file"
                 
-        from bot.utils import sanitize_filename
+        from bot.utils import send_auto_delete_msg, sanitize_filename
         filename = sanitize_filename(filename)
 
         file_size = getattr(file_obj, 'file_size', 0)
@@ -406,6 +419,18 @@ async def process_file_task(context: ContextTypes.DEFAULT_TYPE):
         }
     )
 
+    keyboard = []
+    if stream_url:
+        keyboard = [
+            [
+                InlineKeyboardButton("📺 VLC Player", url=f"vlc://{stream_url}"),
+                InlineKeyboardButton("📱 MX Player", url=f"intent:{stream_url}#Intent;package=com.mxtech.videoplayer.ad;S.title={display_name};end")
+            ],
+            [
+                InlineKeyboardButton("📤 Send to Destination", callback_data=f"send_dest_{dump_file_id}")
+            ]
+        ]
+
     # 5. ✅ SEND RESULT TO USER PM
     await context.bot.send_message(
         chat_id=user_id,
@@ -413,9 +438,10 @@ async def process_file_task(context: ContextTypes.DEFAULT_TYPE):
             f"✅ **File Ready!**\n\n"
             f"🔗 Stream Link: {stream_url}\n\n"
             f"🆔 Task: `{task_id}`\n\n"
-            f"⚠️ **Note**: If the file stream is not playable, please use an external player like MX Player, PlayIt, or VLC. Alternatively, use the Download button. Download speed restrictions remain unchanged."
+            f"⚠️ **Note**: If the file stream is not playable, please use an external player like MX Player, PlayIt, or VLC."
         ),
-        parse_mode="Markdown"
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
     )
 
     # Cleanup temp file
@@ -430,17 +456,17 @@ async def handle_url_input(update: Update, context: ContextTypes.DEFAULT_TYPE, r
         url = resumed_url or update.message.text.strip()
 
         # Validate URL
-        from bot.utils import validate_url
+        from bot.utils import send_auto_delete_msg, validate_url
         is_valid, error_msg = validate_url(url)
         if not is_valid:
-            await update.message.reply_text(f"❌ {error_msg}")
+            await send_auto_delete_msg(context.bot, update.effective_chat.id, f"❌ {error_msg}", parse_mode="Markdown")
             return
 
         # Get user
         user = await get_user(user_id)
         if not user:
             if update.message:
-                await update.message.reply_text("❌ User not found.")
+                await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ User not found.", parse_mode="Markdown")
             return
 
         if user.get("banned"):
@@ -530,7 +556,7 @@ async def handle_url_input(update: Update, context: ContextTypes.DEFAULT_TYPE, r
 
     except Exception as e:
         logger.error(f"❌ Error in handle_url_input: {e}", exc_info=True)
-        await update.message.reply_text(f"❌ Error: {str(e)[:100]}")
+        await send_auto_delete_msg(context.bot, update.effective_chat.id, f"❌ Error: {str(e)[:100]}", parse_mode="Markdown")
 
 async def handle_document_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle document uploads (files to process)"""
@@ -546,16 +572,22 @@ async def handle_document_input(update: Update, context: ContextTypes.DEFAULT_TY
             if awaiting.startswith("wiz_inject_"):
                 # Let handle_file_upload deal with it (injections need file processing)
                 logger.info("   Allowing wizard injection file pass-through")
+                await handle_file_upload(update, context) # MUST process it!
                 return
 
-            logger.info(f"   User in awaiting state, not processing as file")
-            await update.message.reply_text(
-                "⚠️ **Unexpected File**\n\n"
-                "Please complete the current operation first.\n\n"
+        in_wizard = context.user_data.get('wizard') is not None
+        if in_wizard or awaiting:
+            logger.info(f"   User in awaiting/wizard state, blocking file")
+            msg = await update.message.reply_text(
+                "⚠️ **Active Session**\n\n"
+                "Please finish or cancel your current operation first.\n\n"
                 "Use /cancel to cancel current operation.",
                 parse_mode="Markdown"
             )
-            return  # ← FIX: must return here, not fall through
+            from bot.utils import send_auto_delete_msg, auto_delete_message
+            import asyncio
+            asyncio.create_task(auto_delete_message(context.bot, update.effective_chat.id, msg.message_id, 10))
+            return  # ← FIX: MUST RETURN
 
         # No awaiting state — process as a normal file upload
         await handle_file_upload(update, context)
@@ -578,7 +610,7 @@ async def handle_wizard_text_input(update: Update, context: ContextTypes.DEFAULT
                 text = text.lstrip("-")
             
             if awaiting == "wiz_rename":
-                from bot.utils import sanitize_filename
+                from bot.utils import send_auto_delete_msg, sanitize_filename
                 # Sanitize explicitly against command injection & path traversal
                 safe_name = sanitize_filename(text)
                 
@@ -637,7 +669,7 @@ async def handle_wizard_text_input(update: Update, context: ContextTypes.DEFAULT
                 
     except Exception as e:
         logger.error(f"❌ Error in wizard text input: {e}", exc_info=True)
-        await update.message.reply_text(f"❌ Error: {str(e)[:100]}")
+        await send_auto_delete_msg(context.bot, update.effective_chat.id, f"❌ Error: {str(e)[:100]}", parse_mode="Markdown")
 
 async def myfiles_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /myfiles command - Direct access to user files"""
@@ -659,10 +691,7 @@ async def myfiles_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"❌ Error in myfiles command: {e}", exc_info=True)
         await log_error(f"❌ Error in myfiles command: {str(e)}")
-        await update.message.reply_text(
-            "❌ Unable to load files. Please try again.",
-            parse_mode="Markdown"
-        )
+        await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Unable to load files. Please try again.", parse_mode="Markdown")
 
 async def handle_us_thumbnail_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Callback: show thumbnail options or prompt"""
@@ -681,8 +710,10 @@ async def handle_us_thumbnail_menu(update: Update, context: ContextTypes.DEFAULT
             # Sub-menu for existing thumbnail
             text = "🖼️ **Custom Thumbnail Set**\n\nYou already have a custom thumbnail. What would you like to do?"
             keyboard = [
-                [InlineKeyboardButton("👁️ View Thumb", callback_data="us_thumbnail_view")],
-                [InlineKeyboardButton("🗑️ Delete Thumb", callback_data="us_thumbnail_delete")],
+                [
+                    InlineKeyboardButton("👁️ View Thumb", callback_data="us_thumbnail_view"),
+                    InlineKeyboardButton("🗑️ Delete Thumb", callback_data="us_thumbnail_delete")
+                ],
                 [InlineKeyboardButton("🖼️ Set New (Send Photo)", callback_data="ignore")],
                 [InlineKeyboardButton("🔙 Back to Settings", callback_data="go_back_to_settings")]
             ]
@@ -708,7 +739,7 @@ async def handle_us_thumbnail(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         # 1. Size Validation (Limit to 5MB)
         if photo.file_size > 5 * 1024 * 1024:
-             await update.message.reply_text("❌ **Too Large**: Thumbnail must be under 5MB.")
+             await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ **Too Large**: Thumbnail must be under 5MB.", parse_mode="Markdown")
              return
 
         # 2. Get User (Create if missing)
@@ -1307,6 +1338,13 @@ class WizardHandler:
                 user_id=user_id,
                 message_id=ledger_msg_id
             )
+            
+            # Store metadata for destination forward
+            if dump_file_id:
+                context.user_data[f"fwd_meta_{dump_file_id[-10:]}"] = {
+                    "filename": custom_name,
+                    "size": session.get("file_size", 0)
+                }
                 
                 
             # 6. Generate Stream Link with Shortener Token logic if needed
@@ -1331,6 +1369,9 @@ class WizardHandler:
                     [
                         InlineKeyboardButton("📺 VLC Player", url=f"vlc://{stream_url}"),
                         InlineKeyboardButton("📱 MX Player", url=f"intent:{stream_url}#Intent;package=com.mxtech.videoplayer.ad;S.title={custom_name};end")
+                    ],
+                    [
+                        InlineKeyboardButton("📤 Send to Destination", callback_data=f"send_dest_{dump_file_id}")
                     ]
                 ]
 

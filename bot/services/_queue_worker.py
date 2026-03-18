@@ -148,8 +148,8 @@ class QueueWorker:
                     await asyncio.sleep(1)
                     continue
 
-                if is_pro:
-                    # Pro: Immediately process
+                if is_pro or task.get("wait_responded_at"):
+                    # Pro or User already responded: Immediately process
                     task = await db.tasks.find_one_and_update(
                         {"task_id": task["task_id"], "status": "queued"},
                         {"$set": {"status": "processing", "started_at": datetime.utcnow()}}

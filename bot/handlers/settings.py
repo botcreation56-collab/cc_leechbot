@@ -34,7 +34,7 @@ from bot.database import (
     create_task,
     update_task,
 )
-from bot.utils import log_info, log_error, log_user_update, validate_url
+from bot.utils import send_auto_delete_msg, log_info, log_error, log_user_update, validate_url
 from bot.services import create_or_update_storage_message, FFmpegService
 from config.constants import ERROR_MESSAGES, BROADCAST_RATE_LIMIT
 from config.settings import get_settings, get_admin_ids
@@ -140,7 +140,6 @@ async def show_config_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
              InlineKeyboardButton("⚡ Parallel Limit", callback_data="edit_parallel")],
             [InlineKeyboardButton("📦 Max File Size", callback_data="edit_max_filesize"),
              InlineKeyboardButton("📅 File Expiry", callback_data="edit_file_expiry")],
-            [InlineKeyboardButton("☁️ Rclone Credentials", callback_data="edit_rclone_creds")],
             [InlineKeyboardButton("📢 Force Sub Channels", callback_data="admin_set_force_sub_channel")],
             [InlineKeyboardButton("📌 Set Log Channel", callback_data="admin_set_log_channel"),
              InlineKeyboardButton("💾 Set Dump Channel", callback_data="admin_set_dump_channel")],
@@ -489,10 +488,7 @@ async def handle_config_edit_input(update: Update, context: ContextTypes.DEFAULT
                             except Exception as e:
                                 logger.error(f"Failed to update service limits: {e}")
                 except ValueError:
-                    await update.message.reply_text(
-                        f"❌ **Invalid Value**\n\nPlease enter a number.",
-                        parse_mode="Markdown"
-                    )
+                    await send_auto_delete_msg(context.bot, update.effective_chat.id, f"❌ **Invalid Value**\n\nPlease enter a number.", parse_mode="Markdown")
                     return
             else:
                 value = text
@@ -508,7 +504,7 @@ async def handle_config_edit_input(update: Update, context: ContextTypes.DEFAULT
                 )
                 await log_admin_action(user_id, f"updated_config_{config_key}", {"value": str(value)[:100]})
             else:
-                await update.message.reply_text("❌ Failed to save config. Please try again.")
+                await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Failed to save config. Please try again.", parse_mode="Markdown")
 
         elif state.startswith("edit_plan_field_"):
             # Format: edit_plan_field_{plan_name}_{internal_key}
@@ -525,7 +521,7 @@ async def handle_config_edit_input(update: Update, context: ContextTypes.DEFAULT
                 else:
                     value = text
             except ValueError:
-                await update.message.reply_text("❌ Please enter a valid number.")
+                await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Please enter a valid number.", parse_mode="Markdown")
                 return
 
             from bot.database import get_config, set_config
@@ -547,14 +543,14 @@ async def handle_config_edit_input(update: Update, context: ContextTypes.DEFAULT
                 )
                 await log_admin_action(user_id, f"updated_plan_{plan_name}_{field_key}", {"value": str(value)})
             else:
-                await update.message.reply_text("❌ Failed to save plan configuration.")
+                await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Failed to save plan configuration.", parse_mode="Markdown")
             
             context.user_data.pop("awaiting", None)
             return
 
         elif state == "add_shortener_api":
             if len(text) < 5:
-                await update.message.reply_text("❌ API key seems too short. Try again.")
+                await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ API key seems too short. Try again.", parse_mode="Markdown")
                 return
             context.user_data["temp_shortener_api"] = text
             context.user_data["awaiting"] = "add_shortener_url"
@@ -569,7 +565,7 @@ async def handle_config_edit_input(update: Update, context: ContextTypes.DEFAULT
         elif state == "add_shortener_url":
             api_key = context.user_data.pop("temp_shortener_api", None)
             if not api_key:
-                await update.message.reply_text("❌ Missing API key. Please start over.")
+                await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Missing API key. Please start over.", parse_mode="Markdown")
                 context.user_data.pop("awaiting", None)
                 return
 
@@ -585,24 +581,21 @@ async def handle_config_edit_input(update: Update, context: ContextTypes.DEFAULT
             shorteners.append({"domain": domain, "api_key": api_key})
             ok = await set_config({"shorteners": shorteners})
             if ok:
-                await update.message.reply_text(
-                    f"✅ **Shortener Added**\n\nSite: `{domain}`",
-                    parse_mode="Markdown"
-                )
+                await send_auto_delete_msg(context.bot, update.effective_chat.id, f"✅ **Shortener Added**\n\nSite: `{domain}`", parse_mode="Markdown")
                 await log_admin_action(user_id, "added_shortener", {"domain": domain})
             else:
-                await update.message.reply_text("❌ Failed to save shortener.")
+                await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Failed to save shortener.", parse_mode="Markdown")
             
             context.user_data.pop("awaiting", None)
 
         else:
             logger.warning(f"Unhandled config edit state: {state}")
-            await update.message.reply_text("❌ Unknown config state. Please try again from the admin menu.")
+            await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Unknown config state. Please try again from the admin menu.", parse_mode="Markdown")
             context.user_data.pop("awaiting", None)
 
     except Exception as e:
         logger.error(f"❌ Error in handle_config_edit_input (state={state}): {e}", exc_info=True)
-        await update.message.reply_text(f"❌ Error saving config: {str(e)[:100]}")
+        await send_auto_delete_msg(context.bot, update.effective_chat.id, f"❌ Error saving config: {str(e)[:100]}", parse_mode="Markdown")
         context.user_data.pop("awaiting", None)
 
 async def handle_us_prefix(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -611,7 +604,7 @@ async def handle_us_prefix(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
         text = update.message.text
         await update_user(user_id, {"prefix": text})
-        await update.message.reply_text(f"✅ Prefix updated to: `{text}`", parse_mode="Markdown")
+        await send_auto_delete_msg(context.bot, update.effective_chat.id, f"✅ Prefix updated to: `{text}`", parse_mode="Markdown")
         context.user_data.pop("awaiting", None)
     except Exception as e:
         logger.error(f"❌ Error in handle_us_prefix: {e}")
@@ -622,7 +615,7 @@ async def handle_us_suffix(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
         text = update.message.text
         await update_user(user_id, {"suffix": text})
-        await update.message.reply_text(f"✅ Suffix updated to: `{text}`", parse_mode="Markdown")
+        await send_auto_delete_msg(context.bot, update.effective_chat.id, f"✅ Suffix updated to: `{text}`", parse_mode="Markdown")
         context.user_data.pop("awaiting", None)
     except Exception as e:
         logger.error(f"❌ Error in handle_us_suffix: {e}")
@@ -641,10 +634,7 @@ async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"❌ Error in settings command: {e}", exc_info=True)
         await log_error(f"❌ Error in settings command: {str(e)}")
-        await update.message.reply_text(
-            "❌ Unable to open settings. Please try /ussettings instead.",
-            parse_mode="Markdown"
-        )
+        await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Unable to open settings. Please try /ussettings instead.", parse_mode="Markdown")
 
 async def ussettings_command(update: Update, context: ContextTypes.DEFAULT_TYPE, photo_file_id: str = None) -> None:
     """User settings handler - displays settings menu"""
@@ -715,13 +705,6 @@ async def ussettings_command(update: Update, context: ContextTypes.DEFAULT_TYPE,
             else:
                 updates_url = updates_ch
             keyboard[-2][0].url = updates_url  # index -2 = Updates Channel row, -1 = Back
-
-        # Rclone button: only show for admin or if the user's plan has rclone_allowed=True
-        plans = config.get("plans", {})
-        user_plan_data = plans.get(user.get("plan", "free"), {})
-        if user_id in ADMIN_IDS or user_plan_data.get("rclone_allowed", False):
-            # Insert before the Back button row
-            keyboard.insert(-1, [InlineKeyboardButton("🛠️ Create Rclone Service", callback_data="us_rclone_service")])
 
         # Get user settings
         settings = user.get("settings", {})
@@ -814,7 +797,7 @@ async def handle_user_settings_text(update: Update, context: ContextTypes.DEFAUL
     try:
         user = await get_user(user_id)
         if not user:
-            await update.message.reply_text("❌ User not found. Use /start first.")
+            await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ User not found. Use /start first.", parse_mode="Markdown")
             context.user_data.pop("awaiting", None)
             return
         
@@ -941,7 +924,7 @@ async def handle_user_settings_text(update: Update, context: ContextTypes.DEFAUL
             # Deduced base URL from settings (filled in main.py)
             base_url = (settings.WEBHOOK_URL or "").replace("/webhook/telegram", "")
             if not base_url:
-                await update.message.reply_text("❌ **Error**: Webhook URL not configured. Contact admin.")
+                await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ **Error**: Webhook URL not configured. Contact admin.", parse_mode="Markdown")
                 return
 
             auth_url = f"{base_url}/api/rclone/auth?user_id={user_id}&client_id={client_id}&client_secret={client_secret}"
@@ -1011,7 +994,7 @@ async def handle_us_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         user = await get_user(user_id)
         if not user:
-            await query.message.reply_text("❌ User not found")
+            await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ User not found", parse_mode="Markdown")
             return
 
         current_mode = user.get("settings", {}).get("mode", "video")
@@ -1319,7 +1302,7 @@ async def handle_user_rclone_setup_step(update: Update, context: ContextTypes.DE
 
         if awaiting == "us_rclone_client_id":
             if not text or len(text) < 10 or "." not in text:
-                await update.message.reply_text("❌ Invalid Client ID. Please try again or /cancel.")
+                await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Invalid Client ID. Please try again or /cancel.", parse_mode="Markdown")
                 return
             context.user_data["temp_rclone_client_id"] = text
             context.user_data["awaiting"] = "us_rclone_client_secret"
@@ -1332,7 +1315,7 @@ async def handle_user_rclone_setup_step(update: Update, context: ContextTypes.DE
 
         if awaiting == "us_rclone_client_secret":
             if not text or len(text) < 5:
-                await update.message.reply_text("❌ Invalid Client Secret. Please try again or /cancel.")
+                await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Invalid Client Secret. Please try again or /cancel.", parse_mode="Markdown")
                 return
 
             client_id = context.user_data.get("temp_rclone_client_id")
@@ -1383,5 +1366,5 @@ async def handle_user_rclone_setup_step(update: Update, context: ContextTypes.DE
 
     except Exception as e:
         logger.error(f"❌ Error in handle_user_rclone_setup_step: {e}", exc_info=True)
-        await update.message.reply_text("❌ Error processing configuration. Press /cancel and try again.")
+        await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Error processing configuration. Press /cancel and try again.", parse_mode="Markdown")
         context.user_data.pop("awaiting", None)
