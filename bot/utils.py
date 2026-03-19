@@ -41,6 +41,7 @@ logger = logging.getLogger("filebot")
 # ENCRYPTION
 # ============================================================
 
+
 class EncryptionManager:
     """Manages Fernet encryption/decryption of sensitive credentials."""
 
@@ -50,7 +51,11 @@ class EncryptionManager:
                 encryption_key = os.getenv("ENCRYPTION_KEY")
             if not encryption_key:
                 raise ValueError("ENCRYPTION_KEY not set in environment")
-            key_bytes = encryption_key.encode() if isinstance(encryption_key, str) else encryption_key
+            key_bytes = (
+                encryption_key.encode()
+                if isinstance(encryption_key, str)
+                else encryption_key
+            )
             self.cipher = Fernet(key_bytes)
         except Exception as e:
             logger.error(f"Encryption initialization failed: {e}")
@@ -98,6 +103,7 @@ def decrypt_credentials(encrypted: str) -> Dict[str, Any]:
 # LOGGING SETUP
 # ============================================================
 
+
 def setup_logging() -> None:
     """Configure root logger (call once at startup)."""
     settings = get_settings()
@@ -118,12 +124,15 @@ def setup_logging() -> None:
     for lib in ("httpx", "urllib3", "motor", "passlib", "telegram"):
         logging.getLogger(lib).setLevel(logging.WARNING)
 
-    logger.info(f"Logging initialized | Level: {settings.LOG_LEVEL} | File: {settings.LOG_FILE}")
+    logger.info(
+        f"Logging initialized | Level: {settings.LOG_LEVEL} | File: {settings.LOG_FILE}"
+    )
 
 
 # ============================================================
 # ASYNC LOG HELPERS
 # ============================================================
+
 
 async def log_info(message: str) -> None:
     """Async-safe info log."""
@@ -138,33 +147,43 @@ async def log_error(message: str) -> None:
 # Per-user lock for storage channel sync to prevent race conditions
 _sync_locks: Dict[int, asyncio.Lock] = {}
 
+
 async def _sync_user_profile_to_storage(bot: Bot, user_id: int) -> None:
     # Get or create lock for this user
     if user_id not in _sync_locks:
         _sync_locks[user_id] = asyncio.Lock()
-    
+
     async with _sync_locks[user_id]:
         try:
             from bot.database import get_user, update_user, get_storage_channel
+
             user = await get_user(user_id)
-            if not user: return
-                
+            if not user:
+                return
+
             storage_channel = await get_storage_channel()
-            if not storage_channel or not storage_channel.get("id"): return
-                
+            if not storage_channel or not storage_channel.get("id"):
+                return
+
             channel_id = storage_channel["id"]
             settings = user.get("settings", {})
             plan = user.get("plan", "free").upper()
-            
+
             prefix = settings.get("prefix") or "None"
             suffix = settings.get("suffix") or "None"
-            thumb_id = settings.get("thumbnail_file_id") if settings.get("thumbnail") == "custom" else None
-            
+            thumb_id = (
+                settings.get("thumbnail_file_id")
+                if settings.get("thumbnail") == "custom"
+                else None
+            )
+
             from bot.database import get_user_destinations
+
             try:
                 dests = await get_user_destinations(user_id)
                 dest_count = len(dests) if dests else 0
-            except: dest_count = 0
+            except:
+                dest_count = 0
 
             profile_text = (
                 f"👤 **User Profile Sync**\n"
@@ -177,19 +196,21 @@ async def _sync_user_profile_to_storage(bot: Bot, user_id: int) -> None:
                 f"Thumbnail: `{'Set ✅' if thumb_id else 'None ❌'}`\n\n"
                 f"🕒 Last Update: `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`"
             )
-            
+
             msg_id = settings.get("storage_msg_id")
-            
+
             # 🗑️ DELETE PREVIOUS MESSAGE IF IT EXISTS
             # This ensures only one "active" card exists in storage channel
             if msg_id:
                 try:
                     await bot.delete_message(chat_id=channel_id, message_id=msg_id)
-                    logger.info(f"🗑️ Deleted old storage message {msg_id} for user {user_id}")
+                    logger.info(
+                        f"🗑️ Deleted old storage message {msg_id} for user {user_id}"
+                    )
                 except Exception as de:
                     logger.debug(f"Could not delete old storage msg {msg_id}: {de}")
-                msg_id = None # Reset to force resend below
-            
+                msg_id = None  # Reset to force resend below
+
             # If we have a thumbnail, we prefer sending as a photo
             try:
                 if not msg_id:
@@ -198,25 +219,24 @@ async def _sync_user_profile_to_storage(bot: Bot, user_id: int) -> None:
                             chat_id=channel_id,
                             photo=thumb_id,
                             caption=profile_text,
-                            parse_mode="Markdown"
+                            parse_mode="Markdown",
                         )
                     else:
                         new_msg = await bot.send_message(
-                            chat_id=channel_id,
-                            text=profile_text,
-                            parse_mode="Markdown"
+                            chat_id=channel_id, text=profile_text, parse_mode="Markdown"
                         )
-                    
+
                     # Directly update DB with new MSG ID to avoid race conditions with old user objects
-                    from infrastructure.database._legacy_bot._connection import get_db
+                    from database.connection import get_db
+
                     db = get_db()
                     await db.users.update_one(
                         {"telegram_id": user_id},
-                        {"$set": {"settings.storage_msg_id": new_msg.message_id}}
+                        {"$set": {"settings.storage_msg_id": new_msg.message_id}},
                     )
             except Exception as e:
                 logger.warning(f"⚠️ Storage sync partial failure: {e}")
-                
+
         except Exception as e:
             logger.error(f"Failed to sync user {user_id} profile to storage: {e}")
 
@@ -233,18 +253,14 @@ async def log_user_update(
         if details:
             msg += f" | {details}"
         logger.info(msg)
-        
+
         # Log to Telegram
-        telegram_msg = (
-            f"👤 **USER ACTION**\n"
-            f"User: `{user_id}`\n"
-            f"Action: `{action}`"
-        )
+        telegram_msg = f"👤 **USER ACTION**\nUser: `{user_id}`\nAction: `{action}`"
         if details:
             telegram_msg += f"\nDetails: `{details}`"
-        
+
         asyncio.create_task(send_to_log_channel(bot, telegram_msg))
-        
+
         # Sync profile to storage channel in background
         asyncio.create_task(_sync_user_profile_to_storage(bot, user_id))
     except Exception as e:
@@ -263,19 +279,17 @@ async def log_admin_action(
         if details:
             msg += " | " + " | ".join(f"{k}: {v}" for k, v in details.items())
         logger.info(msg)
-        
+
         if bot:
             telegram_msg = (
-                f"🛡️ **ADMIN ACTION**\n"
-                f"Admin: `{admin_id}`\n"
-                f"Action: `{action}`"
+                f"🛡️ **ADMIN ACTION**\nAdmin: `{admin_id}`\nAction: `{action}`"
             )
             if details:
                 telegram_msg += "\n\n**Details:**\n"
                 telegram_msg += "\n".join(f"- {k}: `{v}`" for k, v in details.items())
-            
+
             asyncio.create_task(send_to_log_channel(bot, telegram_msg))
-            
+
     except Exception as e:
         logger.error(f"Failed to log admin action for {admin_id}: {e}", exc_info=True)
 
@@ -283,6 +297,7 @@ async def log_admin_action(
 # ============================================================
 # FILE HELPERS
 # ============================================================
+
 
 def format_bytes(num_bytes: int) -> str:
     """Format bytes to human-readable string."""
@@ -333,7 +348,19 @@ def get_file_name_without_ext(filename: str) -> str:
 
 
 def is_video_file(filename: str) -> bool:
-    VIDEO_EXT = {".mp4", ".mkv", ".avi", ".mov", ".flv", ".webm", ".m3u8", ".ts", ".wmv", ".3gp", ".ogv"}
+    VIDEO_EXT = {
+        ".mp4",
+        ".mkv",
+        ".avi",
+        ".mov",
+        ".flv",
+        ".webm",
+        ".m3u8",
+        ".ts",
+        ".wmv",
+        ".3gp",
+        ".ogv",
+    }
     return get_file_extension(filename) in VIDEO_EXT
 
 
@@ -369,10 +396,10 @@ def sanitize_filename(filename: str) -> str:
     """
     if not filename:
         return "unknown_file"
-    filename = os.path.basename(filename)          # Block path traversal
-    filename = filename.replace("\x00", "")        # Strip null bytes
-    clean = FILENAME_ILLEGAL.sub("_", filename)    # Replace only illegal chars
-    clean = clean.strip()                          # Trim whitespace edges only
+    filename = os.path.basename(filename)  # Block path traversal
+    filename = filename.replace("\x00", "")  # Strip null bytes
+    clean = FILENAME_ILLEGAL.sub("_", filename)  # Replace only illegal chars
+    clean = clean.strip()  # Trim whitespace edges only
     return clean[:255] or "unnamed_file"
 
 
@@ -392,7 +419,7 @@ def check_disk_space(path: str, min_gb: float = 1.0) -> bool:
     """Return True if free disk space >= min_gb, False otherwise."""
     try:
         _, _, free = shutil.disk_usage(path)
-        free_gb = free / (1024 ** 3)
+        free_gb = free / (1024**3)
         if free_gb < min_gb:
             logger.critical(f"❌ LOW DISK SPACE: {free_gb:.2f}GB free (min {min_gb}GB)")
             return False
@@ -408,15 +435,15 @@ def check_disk_space(path: str, min_gb: float = 1.0) -> bool:
 
 # Blocks private / link-local / loopback ranges per RFC 1918 / RFC 4193 / RFC 5737
 _PRIVATE_NETWORKS = [
-    ipaddress.ip_network("127.0.0.0/8"),     # loopback
-    ipaddress.ip_network("10.0.0.0/8"),       # RFC 1918
-    ipaddress.ip_network("172.16.0.0/12"),    # RFC 1918
-    ipaddress.ip_network("192.168.0.0/16"),   # RFC 1918
-    ipaddress.ip_network("169.254.0.0/16"),   # link-local
-    ipaddress.ip_network("::1/128"),          # IPv6 loopback
-    ipaddress.ip_network("fc00::/7"),         # IPv6 unique-local
-    ipaddress.ip_network("fe80::/10"),        # IPv6 link-local
-    ipaddress.ip_network("0.0.0.0/8"),        # "this network"
+    ipaddress.ip_network("127.0.0.0/8"),  # loopback
+    ipaddress.ip_network("10.0.0.0/8"),  # RFC 1918
+    ipaddress.ip_network("172.16.0.0/12"),  # RFC 1918
+    ipaddress.ip_network("192.168.0.0/16"),  # RFC 1918
+    ipaddress.ip_network("169.254.0.0/16"),  # link-local
+    ipaddress.ip_network("::1/128"),  # IPv6 loopback
+    ipaddress.ip_network("fc00::/7"),  # IPv6 unique-local
+    ipaddress.ip_network("fe80::/10"),  # IPv6 link-local
+    ipaddress.ip_network("0.0.0.0/8"),  # "this network"
 ]
 
 _BLOCKED_SCHEMES = {"javascript", "data", "file", "ftp", "gopher"}
@@ -472,6 +499,7 @@ def validate_url(url: str) -> Tuple[bool, str]:
     blocked_domains = ["youtube.com", "youtu.be", "www.youtube.com"]
     try:
         from urllib.parse import urlparse
+
         parsed = urlparse(url)
         host = (parsed.hostname or "").lower()
         if any(domain in host for domain in blocked_domains):
@@ -485,6 +513,7 @@ def validate_url(url: str) -> Tuple[bool, str]:
     # Extract hostname
     try:
         from urllib.parse import urlparse
+
         parsed = urlparse(url)
         host = parsed.hostname or ""
     except Exception:
@@ -499,22 +528,24 @@ def validate_url(url: str) -> Tuple[bool, str]:
     return True, ""
 
 
-async def send_to_log_channel(bot: Bot, message: str, parse_mode: str = "Markdown") -> bool:
+async def send_to_log_channel(
+    bot: Bot, message: str, parse_mode: str = "Markdown"
+) -> bool:
     """Send a message to the configured log channel."""
     try:
         from bot.database import get_channel_id
         from config.settings import get_settings
-        
+
         db_log_channel = await get_channel_id("log")
         settings = get_settings()
         log_channel_id = db_log_channel if db_log_channel else settings.LOG_CHANNEL_ID
-        
+
         if log_channel_id:
             await bot.send_message(
                 chat_id=log_channel_id,
                 text=message,
                 parse_mode=parse_mode,
-                disable_web_page_preview=True
+                disable_web_page_preview=True,
             )
             return True
         return False
@@ -529,7 +560,10 @@ async def auto_delete_message(bot: Bot, chat_id: int, message_id: int, delay: in
     with contextlib.suppress(Exception):
         await bot.delete_message(chat_id=chat_id, message_id=message_id)
 
-async def send_auto_delete_msg(bot: Bot, chat_id: int, text: str, delay: int = 10, **kwargs):
+
+async def send_auto_delete_msg(
+    bot: Bot, chat_id: int, text: str, delay: int = 10, **kwargs
+):
     """Sends a message and deletes it after `delay` seconds."""
     try:
         msg = await bot.send_message(chat_id=chat_id, text=text, **kwargs)
@@ -543,6 +577,7 @@ async def send_auto_delete_msg(bot: Bot, chat_id: int, text: str, delay: int = 1
 # ============================================================
 # OTHER VALIDATORS
 # ============================================================
+
 
 def validate_user_id(user_id: int) -> Tuple[bool, str]:
     """Validate Telegram user ID."""
@@ -558,7 +593,7 @@ def validate_file_size(size: int, limit: Any) -> Tuple[bool, str]:
     """
     try:
         from config.constants import MAX_FILE_SIZE_FREE, MAX_FILE_SIZE_PRO
-        
+
         # If limit is a string (plan name), resolve it to bytes
         if isinstance(limit, str):
             plan = limit.lower()
@@ -573,7 +608,7 @@ def validate_file_size(size: int, limit: Any) -> Tuple[bool, str]:
             max_bytes = int(limit)
 
         if size > max_bytes:
-            max_gb = max_bytes / (1024 ** 3)
+            max_gb = max_bytes / (1024**3)
             return False, f"File exceeds {max_gb:.1f}GB limit"
         return True, ""
     except Exception as e:

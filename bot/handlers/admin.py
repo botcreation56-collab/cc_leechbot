@@ -30,13 +30,20 @@ from bot.database import (
     add_chatbox_message,
     get_force_sub_channels,
     update_force_sub_metadata,
-    set_channel_config
+    set_channel_config,
 )
-from bot.utils import send_auto_delete_msg, log_info, log_error, log_user_update, validate_url
+from bot.utils import (
+    send_auto_delete_msg,
+    log_info,
+    log_error,
+    log_user_update,
+    validate_url,
+)
 from bot.handlers.user import paginate_keyboard
 from bot.services import create_or_update_storage_message, FFmpegService
 from config.constants import ERROR_MESSAGES, BROADCAST_RATE_LIMIT
 from config.settings import get_settings, get_admin_ids
+
 settings = get_settings()
 ADMIN_IDS = get_admin_ids()
 HELP_TEXT = """
@@ -78,16 +85,23 @@ logger.info("User commands module loaded successfully")
 logger.info("✅ User settings module loaded with all handlers")
 WIZARD_TIMEOUT = 1200
 
+
 async def get_queue_stats() -> Dict[str, Any]:
     """Return basic queue/task statistics from DB."""
     try:
         db = get_db()
         pending = await db.tasks.count_documents({"status": "pending"})
-        processing = await db.tasks.count_documents({"status": {"$in": ["downloading", "processing", "uploading"]}})
-        completed_today = await db.tasks.count_documents({
-            "status": "completed",
-            "completed_at": {"$gte": datetime.utcnow().replace(hour=0, minute=0, second=0)}
-        })
+        processing = await db.tasks.count_documents(
+            {"status": {"$in": ["downloading", "processing", "uploading"]}}
+        )
+        completed_today = await db.tasks.count_documents(
+            {
+                "status": "completed",
+                "completed_at": {
+                    "$gte": datetime.utcnow().replace(hour=0, minute=0, second=0)
+                },
+            }
+        )
         failed = await db.tasks.count_documents({"status": "failed"})
         return {
             "pending": pending,
@@ -100,7 +114,9 @@ async def get_queue_stats() -> Dict[str, Any]:
         return {"pending": 0, "processing": 0, "completed_today": 0, "failed": 0}
 
 
-async def _require_channels_setup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+async def _require_channels_setup(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> bool:
     """Guard helper: returns True if all 3 global channels are configured.
     If any channel is missing, shows the setup screen in-place and returns False.
     Must be called from a callback_query handler.
@@ -108,8 +124,8 @@ async def _require_channels_setup(update: Update, context: ContextTypes.DEFAULT_
     config = await get_config() or {}
     ch = config.get("channels") or {}
     configured = {
-        "log":     bool(ch.get("log") or config.get("log_channel_id")),
-        "dump":    bool(ch.get("dump") or config.get("dump_channel_id")),
+        "log": bool(ch.get("log") or config.get("log_channel_id")),
+        "dump": bool(ch.get("dump") or config.get("dump_channel_id")),
         "storage": bool(ch.get("storage") or config.get("storage_channel_id")),
     }
     if all(configured.values()):
@@ -118,27 +134,28 @@ async def _require_channels_setup(update: Update, context: ContextTypes.DEFAULT_
     # Build setup screen
     def ch_label(key, icon, name):
         return InlineKeyboardButton(
-            f"⚠️ {icon} Set {name}",
-            callback_data=f"admin_set_{key}_channel"
+            f"⚠️ {icon} Set {name}", callback_data=f"admin_set_{key}_channel"
         )
 
     keyboard = []
-    
+
     if not configured["log"]:
         keyboard.append([ch_label("log", "📌", "Log Channel")])
     if not configured["dump"]:
         keyboard.append([ch_label("dump", "💾", "Dump Channel")])
     if not configured["storage"]:
         keyboard.append([ch_label("storage", "🗄️", "Storage Channel")])
-        
-    keyboard.append([InlineKeyboardButton("▶ Open Panel",  callback_data="admin_check_and_open")])
-    keyboard.append([InlineKeyboardButton("❌ Cancel",      callback_data="start")])
-    
+
+    keyboard.append(
+        [InlineKeyboardButton("▶ Open Panel", callback_data="admin_check_and_open")]
+    )
+    keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="start")])
+
     setup_keyboard = InlineKeyboardMarkup(keyboard)
 
     done_count = sum(configured.values())
     missing_names = [k.title() for k, v in configured.items() if not v]
-    
+
     setup_text = (
         "⚙️ **Admin Setup — Global Channels**\n\n"
         f"Progress: `{done_count}/3` channels configured\n\n"
@@ -148,18 +165,26 @@ async def _require_channels_setup(update: Update, context: ContextTypes.DEFAULT_
     query = update.callback_query
     if query:
         try:
-            await query.message.edit_text(setup_text, reply_markup=setup_keyboard, parse_mode="Markdown")
+            await query.message.edit_text(
+                setup_text, reply_markup=setup_keyboard, parse_mode="Markdown"
+            )
         except Exception as e:
             # Swallow 'message is not modified' from rapid clicks; re-try as reply for all other errors
             if "not modified" in str(e).lower():
                 logger.debug(f"Setup screen not modified (rapid click): {e}")
             else:
-                await query.message.reply_text(setup_text, reply_markup=setup_keyboard, parse_mode="Markdown")
+                await query.message.reply_text(
+                    setup_text, reply_markup=setup_keyboard, parse_mode="Markdown"
+                )
     elif update.message:
-        await update.message.reply_text(setup_text, reply_markup=setup_keyboard, parse_mode="Markdown")
+        await update.message.reply_text(
+            setup_text, reply_markup=setup_keyboard, parse_mode="Markdown"
+        )
     return False
 
+
 # Removing local get_admin_ids shadow
+
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Main admin panel entry point - Responsive"""
@@ -176,6 +201,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = user.id
 
         from bot.database import get_user, get_config
+
         db_user = await get_user(user_id)
 
         if not db_user:
@@ -187,13 +213,18 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         from config.settings import get_admin_ids
+
         admin_ids = get_admin_ids()
         role = db_user.get("role", "user")
 
-        logger.info(f"🕵️ Admin Command Check: user={user_id} | role={role} | admins={admin_ids}")
+        logger.info(
+            f"🕵️ Admin Command Check: user={user_id} | role={role} | admins={admin_ids}"
+        )
 
         if role != "admin" and user_id not in admin_ids:
-            logger.warning(f"🚫 Admin Command Denied: user={user_id} | role={role} | admins={admin_ids}")
+            logger.warning(
+                f"🚫 Admin Command Denied: user={user_id} | role={role} | admins={admin_ids}"
+            )
             text = "🚫 **Access Denied**\n\nYou are not an admin."
             if is_callback:
                 await message.edit_text(text, parse_mode="Markdown")
@@ -220,47 +251,60 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             updates_url = f"https://t.me/{settings.BOT_USERNAME or 'cc_leechbot'}"
 
-
-        keyboard = InlineKeyboardMarkup([
+        keyboard = InlineKeyboardMarkup(
             [
-                InlineKeyboardButton("👥 Users", callback_data="admin_users"),
-                InlineKeyboardButton("📊 Statistics", callback_data="admin_stats")
-            ],
-            [
-                InlineKeyboardButton("⚙️ Configuration", callback_data="admin_config"),
-                InlineKeyboardButton("⭐ Plans", callback_data="admin_plans")
-            ],
-            [
-                InlineKeyboardButton("🔗 Shorteners", callback_data="admin_shorteners"),
-                InlineKeyboardButton("📢 Broadcast", callback_data="admin_broadcast")
-            ],
-            [
-                InlineKeyboardButton("🚫 Banned Users", callback_data="admin_bans"),
-                InlineKeyboardButton("💬 Chatbox", callback_data="admin_chatbox")
-            ],
-            [
-                InlineKeyboardButton("🔧 Rclone", callback_data="admin_rclone"),
-                InlineKeyboardButton("🗄️ File Size", callback_data="admin_filesize")
-            ],
-            [
-                InlineKeyboardButton("📋 Logs", callback_data="admin_logs")
-            ],
-            [
-                InlineKeyboardButton("📜 Terms of Service", callback_data="edit_tos"),
-                InlineKeyboardButton("💎 Upgrade Text", callback_data="edit_upgrade_text")
-            ],
-            [
-                InlineKeyboardButton("📢 Updates Channel", callback_data="edit_updates_channel"),
-                InlineKeyboardButton("🔄 Telegram Redirect", url=updates_url)
+                [
+                    InlineKeyboardButton("👥 Users", callback_data="admin_users"),
+                    InlineKeyboardButton("📊 Statistics", callback_data="admin_stats"),
+                ],
+                [
+                    InlineKeyboardButton(
+                        "⚙️ Configuration", callback_data="admin_config"
+                    ),
+                    InlineKeyboardButton("⭐ Plans", callback_data="admin_plans"),
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🔗 Shorteners", callback_data="admin_shorteners"
+                    ),
+                    InlineKeyboardButton(
+                        "📢 Broadcast", callback_data="admin_broadcast"
+                    ),
+                ],
+                [
+                    InlineKeyboardButton("🚫 Banned Users", callback_data="admin_bans"),
+                    InlineKeyboardButton("💬 Chatbox", callback_data="admin_chatbox"),
+                ],
+                [
+                    InlineKeyboardButton("🔧 Rclone", callback_data="admin_rclone"),
+                    InlineKeyboardButton("🗄️ File Size", callback_data="admin_filesize"),
+                ],
+                [InlineKeyboardButton("📋 Logs", callback_data="admin_logs")],
+                [
+                    InlineKeyboardButton(
+                        "📜 Terms of Service", callback_data="edit_tos"
+                    ),
+                    InlineKeyboardButton(
+                        "💎 Upgrade Text", callback_data="edit_upgrade_text"
+                    ),
+                ],
+                [
+                    InlineKeyboardButton(
+                        "📢 Updates Channel", callback_data="edit_updates_channel"
+                    ),
+                    InlineKeyboardButton("🔄 Telegram Redirect", url=updates_url),
+                ],
             ]
-        ])
+        )
 
         # Build force-sub channel summary
         config = await get_config() or {}
         fsub_channels = config.get("channels", {}).get("force_sub", [])
         if fsub_channels:
             fsub_names = ", ".join(
-                ch.get("metadata", {}).get("title") or ch.get("name") or str(ch.get("id", "?"))
+                ch.get("metadata", {}).get("title")
+                or ch.get("name")
+                or str(ch.get("id", "?"))
                 for ch in fsub_channels
                 if isinstance(ch, dict)
             )
@@ -275,9 +319,13 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         if is_callback:
-            await message.edit_text(admin_message, reply_markup=keyboard, parse_mode="Markdown")
+            await message.edit_text(
+                admin_message, reply_markup=keyboard, parse_mode="Markdown"
+            )
         else:
-            await message.reply_text(admin_message, reply_markup=keyboard, parse_mode="Markdown")
+            await message.reply_text(
+                admin_message, reply_markup=keyboard, parse_mode="Markdown"
+            )
 
         await log_admin_action(user_id, "opened_admin_panel", {})
         logger.info(f"✅ Admin panel opened by {user_id}")
@@ -288,6 +336,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.effective_message.reply_text("❌ Error opening admin panel.")
         except:
             pass
+
 
 async def admin_check_and_open(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Callback: ▶ Open Panel on the setup screen.
@@ -301,8 +350,8 @@ async def admin_check_and_open(update: Update, context: ContextTypes.DEFAULT_TYP
     ch = config.get("channels") or {}
 
     configured = {
-        "log":     bool(ch.get("log") or config.get("log_channel_id")),
-        "dump":    bool(ch.get("dump") or config.get("dump_channel_id")),
+        "log": bool(ch.get("log") or config.get("log_channel_id")),
+        "dump": bool(ch.get("dump") or config.get("dump_channel_id")),
         "storage": bool(ch.get("storage") or config.get("storage_channel_id")),
     }
 
@@ -315,50 +364,71 @@ async def admin_check_and_open(update: Update, context: ContextTypes.DEFAULT_TYP
     def ch_label(key, icon, name):
         tick = "✅" if configured[key] else "⚠️"
         return InlineKeyboardButton(
-            f"{tick} {icon} {name}",
-            callback_data=f"admin_set_{key}_channel"
+            f"{tick} {icon} {name}", callback_data=f"admin_set_{key}_channel"
         )
 
     done_count = sum(configured.values())
     missing_names = [k.title() for k, v in configured.items() if not v]
-    setup_keyboard = InlineKeyboardMarkup([
-        [ch_label("log",     "📌", "Log Channel")],
-        [ch_label("dump",    "💾", "Dump Channel")],
-        [ch_label("storage", "🗄️", "Storage Channel")],
-        [InlineKeyboardButton("▶ Open Panel",  callback_data="admin_check_and_open")],
-        [InlineKeyboardButton("❌ Cancel",      callback_data="start")],
-    ])
+    setup_keyboard = InlineKeyboardMarkup(
+        [
+            [ch_label("log", "📌", "Log Channel")],
+            [ch_label("dump", "💾", "Dump Channel")],
+            [ch_label("storage", "🗄️", "Storage Channel")],
+            [
+                InlineKeyboardButton(
+                    "▶ Open Panel", callback_data="admin_check_and_open"
+                )
+            ],
+            [InlineKeyboardButton("❌ Cancel", callback_data="start")],
+        ]
+    )
     await query.message.edit_text(
         f"⚙️ **Admin Setup — Global Channels**\n\n"
         f"Progress: `{done_count}/3` channels configured\n\n"
         f"Still needed: {', '.join(missing_names)}\n\n"
         "Tap a ⚠️ channel to set it, then press **▶ Open Panel**.",
         reply_markup=setup_keyboard,
-        parse_mode="Markdown"
+        parse_mode="Markdown",
     )
+
 
 async def handle_admin_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Return to main admin menu"""
     await admin_command(update, context)
+
 
 async def handle_admin_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """User management menu"""
     try:
         if not await _require_channels_setup(update, context):
             return
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔍 Find User", callback_data="admin_find_user")],
-            [InlineKeyboardButton("📜 List All Users", callback_data="admin_list_users_0")],
-            [InlineKeyboardButton("🔨 Ban User", callback_data="admin_ban_user")],
-            [InlineKeyboardButton("🔓 Unban User", callback_data="admin_unban_user")],
-            [InlineKeyboardButton("⬆️ Upgrade User", callback_data="admin_upgrade_user")],
-            [InlineKeyboardButton("🔙 Back", callback_data="admin_back")]
-        ])
+        keyboard = InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton("🔍 Find User", callback_data="admin_find_user")],
+                [
+                    InlineKeyboardButton(
+                        "📜 List All Users", callback_data="admin_list_users_0"
+                    )
+                ],
+                [InlineKeyboardButton("🔨 Ban User", callback_data="admin_ban_user")],
+                [
+                    InlineKeyboardButton(
+                        "🔓 Unban User", callback_data="admin_unban_user"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "⬆️ Upgrade User", callback_data="admin_upgrade_user"
+                    )
+                ],
+                [InlineKeyboardButton("🔙 Back", callback_data="admin_back")],
+            ]
+        )
 
         await update.callback_query.message.edit_text(
             "👥 **User Management**\n\nSelect an action:",
             reply_markup=keyboard,
-            parse_mode="Markdown"
+            parse_mode="Markdown",
         )
 
         await log_admin_action(update.effective_user.id, "opened_user_management", {})
@@ -367,13 +437,18 @@ async def handle_admin_users(update: Update, context: ContextTypes.DEFAULT_TYPE)
         logger.error(f"❌ Error in users menu: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
 
-async def handle_admin_list_users(update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0):
+
+async def handle_admin_list_users(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0
+):
     """Show all users paginated"""
     try:
         # Extract page from callback_data if called from router
         if update.callback_query and update.callback_query.data:
             data = update.callback_query.data
-            if data.startswith("admin_list_users_") or data.startswith("listusers_page_"):
+            if data.startswith("admin_list_users_") or data.startswith(
+                "listusers_page_"
+            ):
                 try:
                     page = int(data.split("_")[-1])
                 except ValueError:
@@ -386,7 +461,7 @@ async def handle_admin_list_users(update: Update, context: ContextTypes.DEFAULT_
             await update.callback_query.message.edit_text(
                 "✅ **No Users Yet**\n\nNo users registered in the system.",
                 reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode="Markdown"
+                parse_mode="Markdown",
             )
             return
 
@@ -399,19 +474,20 @@ async def handle_admin_list_users(update: Update, context: ContextTypes.DEFAULT_
             status = "🚫" if user.get("banned") else "🟢"
             buttons.append(
                 InlineKeyboardButton(
-                    f"{status} {name} | {plan}",
-                    callback_data=f"view_user_{uid}"
+                    f"{status} {name} | {plan}", callback_data=f"view_user_{uid}"
                 )
             )
         keyboard = paginate_keyboard(buttons, page, per_page=6, prefix="listusers_page")
         keyboard_buttons = list(keyboard.inline_keyboard)
-        keyboard_buttons.append([InlineKeyboardButton("🔙 Back", callback_data="admin_users")])
+        keyboard_buttons.append(
+            [InlineKeyboardButton("🔙 Back", callback_data="admin_users")]
+        )
         keyboard = InlineKeyboardMarkup(keyboard_buttons)
 
         await update.callback_query.message.edit_text(
             f"📜 **All Users** ({len(users)})\n\nClick to view details:",
             reply_markup=keyboard,
-            parse_mode="Markdown"
+            parse_mode="Markdown",
         )
 
         logger.info(f"✅ Listed {len(users)} users (page {page})")
@@ -419,6 +495,7 @@ async def handle_admin_list_users(update: Update, context: ContextTypes.DEFAULT_
     except Exception as e:
         logger.error(f"❌ Error listing users: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
+
 
 async def handle_view_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """View detailed user information"""
@@ -433,9 +510,15 @@ async def handle_view_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.edit_text(
                 f"❌ **User Not Found**\n\nUser ID: `{user_id}`",
                 parse_mode="Markdown",
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🔙 Back", callback_data="admin_list_users_0")
-                ]])
+                reply_markup=InlineKeyboardMarkup(
+                    [
+                        [
+                            InlineKeyboardButton(
+                                "🔙 Back", callback_data="admin_list_users_0"
+                            )
+                        ]
+                    ]
+                ),
             )
             return
 
@@ -465,39 +548,58 @@ async def handle_view_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"- Mode: {user.get('settings', {}).get('mode', 'Video')}\n"
         )
 
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔨 Ban User", callback_data=f"admin_ban_user_{user_id}")],
-            [InlineKeyboardButton("⬆️ Upgrade Plan", callback_data=f"upgrade_user_{user_id}")],
-            [InlineKeyboardButton("📊 View Files", callback_data=f"view_files_{user_id}")],
-            [InlineKeyboardButton("🗑️ Clear Storage", callback_data=f"clear_storage_{user_id}")],
-            [InlineKeyboardButton("🔙 Back", callback_data="admin_list_users_0")]
-        ])
+        keyboard = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "🔨 Ban User", callback_data=f"admin_ban_user_{user_id}"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "⬆️ Upgrade Plan", callback_data=f"upgrade_user_{user_id}"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "📊 View Files", callback_data=f"view_files_{user_id}"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🗑️ Clear Storage", callback_data=f"clear_storage_{user_id}"
+                    )
+                ],
+                [InlineKeyboardButton("🔙 Back", callback_data="admin_list_users_0")],
+            ]
+        )
 
         # FIX: was 'info' (undefined), now correctly 'text'
         await query.message.edit_text(
-            text,
-            reply_markup=keyboard,
-            parse_mode="Markdown"
+            text, reply_markup=keyboard, parse_mode="Markdown"
         )
 
-        await log_admin_action(update.effective_user.id, "viewed_user", {"user_id": user_id})
+        await log_admin_action(
+            update.effective_user.id, "viewed_user", {"user_id": user_id}
+        )
         logger.info(f"✅ Admin viewed user {user_id}")
 
     except Exception as e:
         logger.error(f"❌ Error viewing user: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
 
+
 async def handle_admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show bot statistics"""
     try:
         query = update.callback_query
         await query.answer("📊 Refreshing Stats...", show_alert=False)
-        
+
         from bot.database import get_admin_stats
-        
+
         db_stats = await get_admin_stats()
         queue_stats = await get_queue_stats()
-        
+
         db = get_db()
         pipeline = [{"$group": {"_id": None, "total": {"$sum": "$daily_used"}}}]
         res = await db.users.aggregate(pipeline).to_list(1)
@@ -521,15 +623,20 @@ async def handle_admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.callback_query.message.edit_text(
             stats_text,
             reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="Markdown"
+            parse_mode="Markdown",
         )
 
-        await log_admin_action(update.effective_user.id, "viewed_stats", {"total_users": db_stats.get('total_users', 0)})
+        await log_admin_action(
+            update.effective_user.id,
+            "viewed_stats",
+            {"total_users": db_stats.get("total_users", 0)},
+        )
         logger.info(f"✅ Stats displayed: {db_stats.get('total_users', 0)} users")
 
     except Exception as e:
         logger.error(f"❌ Error in stats: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
+
 
 async def handle_admin_bans(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show banned users list"""
@@ -540,7 +647,10 @@ async def handle_admin_bans(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"❌ Error showing banned users: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
 
-async def show_banned_users(update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0):
+
+async def show_banned_users(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0
+):
     """Show paginated list of banned users"""
     try:
         # Extract page from callback if called from router
@@ -559,7 +669,7 @@ async def show_banned_users(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             await update.callback_query.message.edit_text(
                 "✅ **No Banned Users**\n\nAll users are currently active!",
                 reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode="Markdown"
+                parse_mode="Markdown",
             )
             return
 
@@ -570,26 +680,30 @@ async def show_banned_users(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             reason = user.get("ban_reason", "No reason")[:15]
             buttons.append(
                 InlineKeyboardButton(
-                    f"🚫 {name} - {reason}",
-                    callback_data=f"unban_user_{uid}"
+                    f"🚫 {name} - {reason}", callback_data=f"unban_user_{uid}"
                 )
             )
 
         keyboard = paginate_keyboard(buttons, page, per_page=6, prefix="banned_page")
         keyboard_buttons = list(keyboard.inline_keyboard)
-        keyboard_buttons.append([InlineKeyboardButton("🔙 Back", callback_data="admin_back")])
+        keyboard_buttons.append(
+            [InlineKeyboardButton("🔙 Back", callback_data="admin_back")]
+        )
         keyboard = InlineKeyboardMarkup(keyboard_buttons)
 
         await update.callback_query.message.edit_text(
             f"🚫 **Banned Users** ({len(banned_users)} total)\n\nClick a user to unban them:",
             reply_markup=keyboard,
-            parse_mode="Markdown"
+            parse_mode="Markdown",
         )
-        logger.info(f"✅ Banned users list shown: {len(banned_users)} users (page {page})")
+        logger.info(
+            f"✅ Banned users list shown: {len(banned_users)} users (page {page})"
+        )
 
     except Exception as e:
         logger.error(f"❌ Error showing banned users: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
+
 
 async def handle_unban_from_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Unban user directly from banned users list"""
@@ -598,7 +712,8 @@ async def handle_unban_from_list(update: Update, context: ContextTypes.DEFAULT_T
         await query.answer()
 
         user_id = int(query.data.split("_")[-1])
-        from infrastructure.database._legacy_bot._users import unban_user
+        from bot.database import unban_user
+
         result = await unban_user(user_id, admin_id=update.effective_user.id)
 
         if result:
@@ -607,46 +722,67 @@ async def handle_unban_from_list(update: Update, context: ContextTypes.DEFAULT_T
                 await context.bot.send_message(
                     user_id,
                     "✅ **You've Been Unbanned!**\n\nYou can now use the bot again.\n\nUse /start to continue.",
-                    parse_mode="Markdown"
+                    parse_mode="Markdown",
                 )
             except:
                 pass
             # Refresh the list
             await show_banned_users(update, context)
             from bot.utils import send_auto_delete_msg, log_admin_action
-            await log_admin_action(update.effective_user.id, "unbanned_user", {"user_id": user_id})
+
+            await log_admin_action(
+                update.effective_user.id, "unbanned_user", {"user_id": user_id}
+            )
         else:
             await query.answer("❌ Failed to unban user", show_alert=True)
     except Exception as e:
         logger.error(f"❌ Error unbanning from list: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
 
+
 async def handle_admin_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Broadcast menu"""
     try:
         if not await _require_channels_setup(update, context):
             return
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✉️ Send Message", callback_data="broadcast_compose")],
-            [InlineKeyboardButton("📊 View Stats", callback_data="broadcast_stats")],
-            [InlineKeyboardButton("⏸️ Pending Broadcasts", callback_data="broadcast_pending")],
-            [InlineKeyboardButton("❌ Cancel All", callback_data="broadcast_cancel_input")],
-            [InlineKeyboardButton("🔙 Back", callback_data="admin_back")]
-        ])
+        keyboard = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "✉️ Send Message", callback_data="broadcast_compose"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "📊 View Stats", callback_data="broadcast_stats"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "⏸️ Pending Broadcasts", callback_data="broadcast_pending"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "❌ Cancel All", callback_data="broadcast_cancel_input"
+                    )
+                ],
+                [InlineKeyboardButton("🔙 Back", callback_data="admin_back")],
+            ]
+        )
         broadcast_text = (
             "📢 **Broadcast Center**\n\n"
             "Send a message to all users.\n\n"
             "Use the buttons below to compose, view stats or cancel."
         )
         await update.callback_query.message.edit_text(
-            broadcast_text,
-            reply_markup=keyboard,
-            parse_mode="Markdown"
+            broadcast_text, reply_markup=keyboard, parse_mode="Markdown"
         )
         logger.info(f"✅ Broadcast menu opened by {update.effective_user.id}")
     except Exception as e:
         logger.error(f"❌ Error in broadcast menu: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
+
 
 async def handle_broadcast_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show broadcast statistics"""
@@ -669,12 +805,15 @@ async def handle_broadcast_stats(update: Update, context: ContextTypes.DEFAULT_T
         await update.callback_query.message.edit_text(
             stats_text,
             parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_broadcast")]])
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("🔙 Back", callback_data="admin_broadcast")]]
+            ),
         )
         logger.info("✅ Broadcast stats shown")
     except Exception as e:
         logger.error(f"❌ Error showing broadcast stats: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
+
 
 async def handle_admin_filesize(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """File size management menu"""
@@ -684,14 +823,28 @@ async def handle_admin_filesize(update: Update, context: ContextTypes.DEFAULT_TY
         config = await get_config() or {}
         max_size = config.get("max_file_size_gb", 10)
         storage_used = config.get("storage_used_gb", 0)
-        auto_cleanup = config.get('auto_cleanup', False)
+        auto_cleanup = config.get("auto_cleanup", False)
 
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📏 Set Max Size", callback_data="set_max_filesize")],
-            [InlineKeyboardButton("🗑️ Cleanup Old Files", callback_data="cleanup_old_files")],
-            [InlineKeyboardButton("📊 Storage Stats", callback_data="storage_stats")],
-            [InlineKeyboardButton("🔙 Back", callback_data="admin_back")]
-        ])
+        keyboard = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "📏 Set Max Size", callback_data="set_max_filesize"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🗑️ Cleanup Old Files", callback_data="cleanup_old_files"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "📊 Storage Stats", callback_data="storage_stats"
+                    )
+                ],
+                [InlineKeyboardButton("🔙 Back", callback_data="admin_back")],
+            ]
+        )
 
         filesize_text = (
             f"🗄️ **File Size Management**\n\n"
@@ -700,15 +853,14 @@ async def handle_admin_filesize(update: Update, context: ContextTypes.DEFAULT_TY
             f"Auto-cleanup: `{'✅ On' if auto_cleanup else '❌ Off'}`"
         )
         await update.callback_query.message.edit_text(
-            filesize_text,
-            reply_markup=keyboard,
-            parse_mode="Markdown"
+            filesize_text, reply_markup=keyboard, parse_mode="Markdown"
         )
         await log_admin_action(update.effective_user.id, "opened_filesize", {})
         logger.info("✅ File size menu opened")
     except Exception as e:
         logger.error(f"❌ Error in filesize menu: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
+
 
 async def handle_storage_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show storage statistics"""
@@ -718,24 +870,26 @@ async def handle_storage_stats(update: Update, context: ContextTypes.DEFAULT_TYP
         cursor = db.cloud_files.aggregate(pipeline)
         result = await cursor.to_list(length=1)
         total_bytes = result[0]["total"] if result else 0
-        total_gb = total_bytes / (1024 ** 3)
+        total_gb = total_bytes / (1024**3)
 
         await update.callback_query.message.edit_text(
-            f"📊 **Storage Statistics**\n\n"
-            f"Total cloud files size: `{total_gb:.2f} GB`",
+            f"📊 **Storage Statistics**\n\nTotal cloud files size: `{total_gb:.2f} GB`",
             parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_filesize")]])
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("🔙 Back", callback_data="admin_filesize")]]
+            ),
         )
     except Exception as e:
         logger.error(f"❌ Error in storage stats: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
+
 
 async def handle_admin_find_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Prompt for user ID to find"""
     try:
         await update.callback_query.message.reply_text(
             "🔍 **Find User**\n\nSend the User ID to search:\n\nExample: `123456789`\n\nUse /cancel to abort.",
-            parse_mode="Markdown"
+            parse_mode="Markdown",
         )
         context.user_data["awaiting"] = "admin_find_user"
         context.user_data["awaiting_set_at"] = time.time()
@@ -743,12 +897,13 @@ async def handle_admin_find_user(update: Update, context: ContextTypes.DEFAULT_T
         logger.error(f"❌ Error: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
 
+
 async def handle_admin_ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Prompt for user ID to ban"""
     try:
         await update.callback_query.message.reply_text(
             "🔨 **Ban User**\n\nSend the User ID to ban:\n\nExample: `123456789`\n\nUse /cancel to abort.",
-            parse_mode="Markdown"
+            parse_mode="Markdown",
         )
         context.user_data["awaiting"] = "admin_ban_user"
         context.user_data["awaiting_set_at"] = time.time()
@@ -756,12 +911,13 @@ async def handle_admin_ban_user(update: Update, context: ContextTypes.DEFAULT_TY
         logger.error(f"❌ Error: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
 
+
 async def handle_admin_unban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Prompt for user ID to unban"""
     try:
         await update.callback_query.message.reply_text(
             "🔓 **Unban User**\n\nSend the User ID to unban:\n\nExample: `123456789`\n\nUse /cancel to abort.",
-            parse_mode="Markdown"
+            parse_mode="Markdown",
         )
         context.user_data["awaiting"] = "admin_unban_user"
         context.user_data["awaiting_set_at"] = time.time()
@@ -769,13 +925,14 @@ async def handle_admin_unban_user(update: Update, context: ContextTypes.DEFAULT_
         logger.error(f"❌ Error: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
 
+
 async def handle_admin_upgrade_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Prompt for user ID to upgrade"""
     try:
         await update.callback_query.message.reply_text(
             "⬆️ **Upgrade User Plan**\n\nSend the User ID and plan:\n\n"
             "Format: `123456789 premium`\n\nAvailable plans: free, premium, pro\n\nUse /cancel to abort.",
-            parse_mode="Markdown"
+            parse_mode="Markdown",
         )
         context.user_data["awaiting"] = "admin_upgrade_user"
         context.user_data["awaiting_set_at"] = time.time()
@@ -791,21 +948,32 @@ async def handle_admin_terabox(update: Update, context: ContextTypes.DEFAULT_TYP
         terabox_config = config.get("terabox_config", {})
         status = "✅ Enabled" if terabox_config.get("enabled") else "❌ Disabled"
 
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔑 Setup API Key", callback_data="terabox_setup_key")],
-            [InlineKeyboardButton("🧪 Test Connection", callback_data="terabox_test")],
-            [InlineKeyboardButton("📊 Stats", callback_data="terabox_stats")],
-            [InlineKeyboardButton("🚫 Disable", callback_data="terabox_disable")],
-            [InlineKeyboardButton("🔙 Back", callback_data="admin_back")]
-        ])
+        keyboard = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "🔑 Setup API Key", callback_data="terabox_setup_key"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🧪 Test Connection", callback_data="terabox_test"
+                    )
+                ],
+                [InlineKeyboardButton("📊 Stats", callback_data="terabox_stats")],
+                [InlineKeyboardButton("🚫 Disable", callback_data="terabox_disable")],
+                [InlineKeyboardButton("🔙 Back", callback_data="admin_back")],
+            ]
+        )
         await update.callback_query.message.edit_text(
             f"📦 **Terabox Configuration**\n\nStatus: `{status}`",
             reply_markup=keyboard,
-            parse_mode="Markdown"
+            parse_mode="Markdown",
         )
     except Exception as e:
         logger.error(f"❌ Error in terabox menu: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
+
 
 async def handle_terabox_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show terabox statistics"""
@@ -813,14 +981,19 @@ async def handle_terabox_stats(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.callback_query.message.edit_text(
             "📊 **Terabox Statistics**\n\nFeature coming soon.",
             parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_terabox")]])
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("🔙 Back", callback_data="admin_terabox")]]
+            ),
         )
         await log_admin_action(update.effective_user.id, "viewed_terabox_stats", {})
     except Exception as e:
         logger.error(f"❌ Error showing terabox stats: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
 
-async def handle_admin_set_log_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+async def handle_admin_set_log_channel(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
     """Show log channel management menu"""
     config = await get_config() or {}
     ch = (config.get("channels") or {}).get("log") or {}
@@ -838,27 +1011,42 @@ async def handle_admin_set_log_channel(update: Update, context: ContextTypes.DEF
 
     keyboard = []
     if ch_id:
-        keyboard.append([
-            InlineKeyboardButton(f"📁 {display_name}", callback_data="ignore"),
-            InlineKeyboardButton("🗑️ Remove", callback_data="admin_remove_log")
-        ])
+        keyboard.append(
+            [
+                InlineKeyboardButton(f"📁 {display_name}", callback_data="ignore"),
+                InlineKeyboardButton("🗑️ Remove", callback_data="admin_remove_log"),
+            ]
+        )
     else:
-        keyboard.append([InlineKeyboardButton("➕ Add Channel", callback_data="admin_add_log_channel")])
-    
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    "➕ Add Channel", callback_data="admin_add_log_channel"
+                )
+            ]
+        )
+
     keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="admin_config")])
 
     await update.callback_query.message.edit_text(
         "📌 **Log Channel Management**\n\nManage the channel where bot logs are sent.",
         reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode="Markdown"
+        parse_mode="Markdown",
     )
 
-async def handle_admin_add_log_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+async def handle_admin_add_log_channel(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
     """Prompt admin to set log channel"""
     from bot.handlers.user import ask_channel_forward
+
     await ask_channel_forward(update, context, "log_channel")
 
-async def handle_admin_set_dump_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+async def handle_admin_set_dump_channel(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
     """Show dump channel management menu"""
     config = await get_config() or {}
     ch = (config.get("channels") or {}).get("dump") or {}
@@ -876,27 +1064,42 @@ async def handle_admin_set_dump_channel(update: Update, context: ContextTypes.DE
 
     keyboard = []
     if ch_id:
-        keyboard.append([
-            InlineKeyboardButton(f"📁 {display_name}", callback_data="ignore"),
-            InlineKeyboardButton("🗑️ Remove", callback_data="admin_remove_dump")
-        ])
+        keyboard.append(
+            [
+                InlineKeyboardButton(f"📁 {display_name}", callback_data="ignore"),
+                InlineKeyboardButton("🗑️ Remove", callback_data="admin_remove_dump"),
+            ]
+        )
     else:
-        keyboard.append([InlineKeyboardButton("➕ Add Channel", callback_data="admin_add_dump_channel")])
-    
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    "➕ Add Channel", callback_data="admin_add_dump_channel"
+                )
+            ]
+        )
+
     keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="admin_config")])
 
     await update.callback_query.message.edit_text(
         "💾 **Dump Channel Management**\n\nManage the channel where user files are stored securely.",
         reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode="Markdown"
+        parse_mode="Markdown",
     )
 
-async def handle_admin_add_dump_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+async def handle_admin_add_dump_channel(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
     """Prompt admin to set dump channel"""
     from bot.handlers.user import ask_channel_forward
+
     await ask_channel_forward(update, context, "dump_channel")
 
-async def handle_admin_set_storage_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+async def handle_admin_set_storage_channel(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
     """Show storage channel management menu"""
     config = await get_config() or {}
     ch = (config.get("channels") or {}).get("storage") or {}
@@ -914,59 +1117,107 @@ async def handle_admin_set_storage_channel(update: Update, context: ContextTypes
 
     keyboard = []
     if ch_id:
-        keyboard.append([
-            InlineKeyboardButton(f"📁 {display_name}", callback_data="ignore"),
-            InlineKeyboardButton("🗑️ Remove", callback_data="admin_remove_storage")
-        ])
+        keyboard.append(
+            [
+                InlineKeyboardButton(f"📁 {display_name}", callback_data="ignore"),
+                InlineKeyboardButton("🗑️ Remove", callback_data="admin_remove_storage"),
+            ]
+        )
     else:
-        keyboard.append([InlineKeyboardButton("➕ Add Channel", callback_data="admin_add_storage_channel")])
-    
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    "➕ Add Channel", callback_data="admin_add_storage_channel"
+                )
+            ]
+        )
+
     keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="admin_config")])
 
     await update.callback_query.message.edit_text(
         "🗄️ **Storage Channel Management**\n\nManage the backend database channel.",
         reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode="Markdown"
+        parse_mode="Markdown",
     )
 
-async def handle_admin_add_storage_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+async def handle_admin_add_storage_channel(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
     """Prompt admin to set storage channel"""
     from bot.handlers.user import ask_channel_forward
+
     await ask_channel_forward(update, context, "storage_channel")
 
-async def handle_admin_set_force_sub_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+async def handle_admin_set_force_sub_channel(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
     """Show force-sub channel management menu with requested buttons"""
     try:
         from bot.database import get_force_sub_channels
+
         fsub_channels = await get_force_sub_channels()
 
         keyboard = []
         # [Add Channel]
-        keyboard.append([InlineKeyboardButton("➕ Add Channel", callback_data="admin_fsub_add")])
-        
+        keyboard.append(
+            [InlineKeyboardButton("➕ Add Channel", callback_data="admin_fsub_add")]
+        )
+
         # [Configured Channel List]
         if fsub_channels:
             if len(fsub_channels) > 1:
                 for ch in fsub_channels:
                     cid = ch.get("id", "unknown")
                     metadata = ch.get("metadata", {})
-                    title = metadata.get("title") or ch.get("name") or ch.get("title") or str(cid)
+                    title = (
+                        metadata.get("title")
+                        or ch.get("name")
+                        or ch.get("title")
+                        or str(cid)
+                    )
                     enabled = metadata.get("enabled", ch.get("enabled", True))
                     status_icon = "🟢" if enabled else "🔴"
-                    keyboard.append([InlineKeyboardButton(f"{status_icon} {title}", callback_data=f"admin_fsub_manage_{cid}")])
+                    keyboard.append(
+                        [
+                            InlineKeyboardButton(
+                                f"{status_icon} {title}",
+                                callback_data=f"admin_fsub_manage_{cid}",
+                            )
+                        ]
+                    )
             elif len(fsub_channels) == 1:
                 ch = fsub_channels[0]
                 cid = ch.get("id", "unknown")
                 metadata = ch.get("metadata", {})
-                title = metadata.get("title") or ch.get("name") or ch.get("title") or str(cid)
+                title = (
+                    metadata.get("title")
+                    or ch.get("name")
+                    or ch.get("title")
+                    or str(cid)
+                )
                 enabled = metadata.get("enabled", ch.get("enabled", True))
                 status_icon = "🟢" if enabled else "🔴"
-                keyboard.append([
-                    InlineKeyboardButton(f"{status_icon} {title}", callback_data=f"admin_fsub_manage_{cid}"),
-                    InlineKeyboardButton("🗑️ Remove", callback_data=f"admin_fsub_remove_confirm_{cid}")
-                ])
+                keyboard.append(
+                    [
+                        InlineKeyboardButton(
+                            f"{status_icon} {title}",
+                            callback_data=f"admin_fsub_manage_{cid}",
+                        ),
+                        InlineKeyboardButton(
+                            "🗑️ Remove", callback_data=f"admin_fsub_remove_confirm_{cid}"
+                        ),
+                    ]
+                )
         else:
-            keyboard.append([InlineKeyboardButton("ℹ️ No channels configured", callback_data="ignore")])
+            keyboard.append(
+                [
+                    InlineKeyboardButton(
+                        "ℹ️ No channels configured", callback_data="ignore"
+                    )
+                ]
+            )
 
         # [Back]
         keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="admin_config")])
@@ -976,18 +1227,23 @@ async def handle_admin_set_force_sub_channel(update: Update, context: ContextTyp
             f"📢 **Force Subscribe Management**\n\n"
             f"Configure channels that users must join before using the bot.",
             reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="Markdown"
+            parse_mode="Markdown",
         )
     except Exception as e:
         logger.error(f"❌ Error in force sub menu: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
 
+
 async def handle_admin_fsub_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Prompt admin to add a force-sub channel"""
     from bot.handlers.user import ask_channel_forward
+
     await ask_channel_forward(update, context, "force_sub_channel")
 
-async def handle_admin_fsub_manage(update: Update, context: ContextTypes.DEFAULT_TYPE, channel_id: int = None):
+
+async def handle_admin_fsub_manage(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, channel_id: int = None
+):
     """Manage a specific force-sub channel with req_join toggle"""
     try:
         query = update.callback_query
@@ -999,6 +1255,7 @@ async def handle_admin_fsub_manage(update: Update, context: ContextTypes.DEFAULT
             channel_id = int(query.data.replace("admin_fsub_manage_", ""))
 
         from bot.database import get_force_sub_channels
+
         channels = await get_force_sub_channels()
         channel = next((ch for ch in channels if ch.get("id") == channel_id), None)
 
@@ -1007,23 +1264,50 @@ async def handle_admin_fsub_manage(update: Update, context: ContextTypes.DEFAULT
             return
 
         metadata = channel.get("metadata", {})
-        title = metadata.get("title") or channel.get("name") or channel.get("title") or str(channel_id)
+        title = (
+            metadata.get("title")
+            or channel.get("name")
+            or channel.get("title")
+            or str(channel_id)
+        )
         req_join = metadata.get("req_join", False)
         # Check enabled from metadata, or fallback to top-level if legacy
         enabled = metadata.get("enabled", channel.get("enabled", True))
-        
+
         # Icons for better visualization
         req_icon = "✅" if req_join else "❌"
         enabled_status = "ACTIVE ✅" if enabled else "INACTIVE ❌"
 
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"Channel: {title}", callback_data="ignore")],
-            [InlineKeyboardButton(f"Sub Check: {enabled_status}", callback_data=f"admin_fsub_toggle_{channel_id}")],
-            [InlineKeyboardButton(f"[ req to join : {req_icon} ]", callback_data=f"admin_fsub_req_toggle_{channel_id}")],
-            [InlineKeyboardButton("🗑️ Remove This Channel", callback_data=f"admin_fsub_remove_confirm_{channel_id}")],
-            [InlineKeyboardButton("🔙 Back to Channels", callback_data="admin_set_force_sub_channel")]
-        ])
-        
+        keyboard = InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton(f"Channel: {title}", callback_data="ignore")],
+                [
+                    InlineKeyboardButton(
+                        f"Sub Check: {enabled_status}",
+                        callback_data=f"admin_fsub_toggle_{channel_id}",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        f"[ req to join : {req_icon} ]",
+                        callback_data=f"admin_fsub_req_toggle_{channel_id}",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🗑️ Remove This Channel",
+                        callback_data=f"admin_fsub_remove_confirm_{channel_id}",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🔙 Back to Channels",
+                        callback_data="admin_set_force_sub_channel",
+                    )
+                ],
+            ]
+        )
+
         await query.message.edit_text(
             f"📢 **Manage Force Sub Channel**\n\n"
             f"Channel: `{title}`\n"
@@ -1031,36 +1315,48 @@ async def handle_admin_fsub_manage(update: Update, context: ContextTypes.DEFAULT
             f"• **Req to Join**: {req_icon}\n"
             f"If enabled, users will see a 'Request to Join' button. If disabled, they must join directly.",
             reply_markup=keyboard,
-            parse_mode="Markdown"
+            parse_mode="Markdown",
         )
     except Exception as e:
         logger.error(f"❌ Error in fsub manage: {e}", exc_info=True)
         await query.answer("❌ Error", show_alert=True)
 
-async def handle_admin_fsub_req_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+async def handle_admin_fsub_req_toggle(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
     """Toggle the req_join metadata field"""
     try:
         query = update.callback_query
         channel_id = int(query.data.replace("admin_fsub_req_toggle_", ""))
-        
+
         from bot.database import get_force_sub_channels, update_force_sub_metadata
+
         channels = await get_force_sub_channels()
         channel = next((ch for ch in channels if ch.get("id") == channel_id), None)
-        
+
         if channel:
             metadata = channel.get("metadata", {})
             current = metadata.get("req_join", False)
-            success = await update_force_sub_metadata(channel_id, {"req_join": not current}, admin_id=update.effective_user.id)
-            
+            success = await update_force_sub_metadata(
+                channel_id, {"req_join": not current}, admin_id=update.effective_user.id
+            )
+
             if success:
-                await query.answer(f"✅ Req to Join: {'OFF ❌' if current else 'ON ✅'}", show_alert=False)
+                await query.answer(
+                    f"✅ Req to Join: {'OFF ❌' if current else 'ON ✅'}",
+                    show_alert=False,
+                )
                 # Refresh UI immediately
                 await handle_admin_fsub_manage(update, context, channel_id=channel_id)
             else:
-                await query.answer("❌ Failed to update metadata. Please try again.", show_alert=True)
+                await query.answer(
+                    "❌ Failed to update metadata. Please try again.", show_alert=True
+                )
     except Exception as e:
         logger.error(f"❌ Error toggling req_join: {e}")
         await query.answer("❌ Error", show_alert=True)
+
 
 async def handle_admin_fsub_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Toggle force-sub channel enabled/disabled"""
@@ -1069,25 +1365,31 @@ async def handle_admin_fsub_toggle(update: Update, context: ContextTypes.DEFAULT
         channel_id = int(query.data.replace("admin_fsub_toggle_", ""))
 
         from bot.database import get_force_sub_channels, update_force_sub_metadata
+
         channels = await get_force_sub_channels()
         channel = next((ch for ch in channels if ch.get("id") == channel_id), None)
-        
+
         if channel:
             metadata = channel.get("metadata", {})
             # Read from metadata or legacy top-level
             current = metadata.get("enabled", channel.get("enabled", True))
-            success = await update_force_sub_metadata(channel_id, {"enabled": not current}, admin_id=update.effective_user.id)
-            
+            success = await update_force_sub_metadata(
+                channel_id, {"enabled": not current}, admin_id=update.effective_user.id
+            )
+
             if success:
                 new_status = "❌ Disabled" if current else "✅ Enabled"
                 await query.answer(f"Channel {new_status}", show_alert=False)
                 # Refresh UI immediately
                 await handle_admin_fsub_manage(update, context, channel_id=channel_id)
             else:
-                await query.answer("❌ Failed to toggle channel status.", show_alert=True)
+                await query.answer(
+                    "❌ Failed to toggle channel status.", show_alert=True
+                )
     except Exception as e:
         logger.error(f"❌ Error toggling fsub: {e}", exc_info=True)
         await query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
+
 
 async def handle_admin_fsub_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Get invite link for force-sub channel"""
@@ -1099,27 +1401,44 @@ async def handle_admin_fsub_link(update: Update, context: ContextTypes.DEFAULT_T
             link = await context.bot.export_chat_invite_link(int(channel_id))
             await query.message.reply_text(f"🔗 Invite link: {link}")
         except Exception as le:
-            await query.answer(f"❌ Could not get link: {str(le)[:50]}", show_alert=True)
+            await query.answer(
+                f"❌ Could not get link: {str(le)[:50]}", show_alert=True
+            )
     except Exception as e:
         logger.error(f"❌ Error in fsub link: {e}", exc_info=True)
 
-async def handle_admin_fsub_remove_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+async def handle_admin_fsub_remove_confirm(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
     """Ask confirmation to remove force-sub channel"""
     try:
         query = update.callback_query
         await query.answer()
         channel_id = query.data.replace("admin_fsub_remove_confirm_", "")
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Yes, Remove", callback_data=f"admin_fsub_remove_{channel_id}")],
-            [InlineKeyboardButton("❌ Cancel", callback_data=f"admin_fsub_manage_{channel_id}")]
-        ])
+        keyboard = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "✅ Yes, Remove",
+                        callback_data=f"admin_fsub_remove_{channel_id}",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "❌ Cancel", callback_data=f"admin_fsub_manage_{channel_id}"
+                    )
+                ],
+            ]
+        )
         await query.message.edit_text(
             f"⚠️ **Remove Force Sub Channel?**\n\nChannel ID: `{channel_id}`\n\nThis will stop forcing users to join this channel.",
             reply_markup=keyboard,
-            parse_mode="Markdown"
+            parse_mode="Markdown",
         )
     except Exception as e:
         logger.error(f"❌ Error in fsub remove confirm: {e}", exc_info=True)
+
 
 async def handle_admin_fsub_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Remove force-sub channel"""
@@ -1127,9 +1446,12 @@ async def handle_admin_fsub_remove(update: Update, context: ContextTypes.DEFAULT
         query = update.callback_query
         await query.answer()
         channel_id = int(query.data.replace("admin_fsub_remove_", ""))
-        
+
         from bot.database import remove_force_sub_channel
-        success = await remove_force_sub_channel(channel_id, admin_id=update.effective_user.id)
+
+        success = await remove_force_sub_channel(
+            channel_id, admin_id=update.effective_user.id
+        )
 
         if success:
             await query.answer("✅ Channel removed", show_alert=True)
@@ -1139,10 +1461,12 @@ async def handle_admin_fsub_remove(update: Update, context: ContextTypes.DEFAULT
     except Exception as e:
         logger.error(f"❌ Error removing fsub: {e}", exc_info=True)
 
+
 async def handle_admin_remove_log(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Remove log channel from config"""
     try:
         from bot.database import remove_channel_config
+
         await remove_channel_config("log", admin_id=update.effective_user.id)
         await update.callback_query.answer("✅ Log channel removed", show_alert=True)
         await handle_admin_set_log_channel(update, context)
@@ -1150,10 +1474,12 @@ async def handle_admin_remove_log(update: Update, context: ContextTypes.DEFAULT_
         logger.error(f"❌ Error removing log channel: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
 
+
 async def handle_admin_remove_dump(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Remove dump channel from config"""
     try:
         from bot.database import remove_channel_config
+
         await remove_channel_config("dump", admin_id=update.effective_user.id)
         await update.callback_query.answer("✅ Dump channel removed", show_alert=True)
         await handle_admin_set_dump_channel(update, context)
@@ -1161,31 +1487,56 @@ async def handle_admin_remove_dump(update: Update, context: ContextTypes.DEFAULT
         logger.error(f"❌ Error removing dump channel: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
 
-async def handle_admin_remove_storage(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+async def handle_admin_remove_storage(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
     """Remove storage channel from config"""
     try:
         from bot.database import remove_channel_config
+
         await remove_channel_config("storage", admin_id=update.effective_user.id)
-        await update.callback_query.answer("✅ Storage channel removed", show_alert=True)
+        await update.callback_query.answer(
+            "✅ Storage channel removed", show_alert=True
+        )
         await handle_admin_set_storage_channel(update, context)
     except Exception as e:
         logger.error(f"❌ Error removing storage channel: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
 
+
 async def handle_admin_logs_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show admin logs menu with management options"""
     try:
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📋 View Database Logs", callback_data="view_logs_0")],
-            [InlineKeyboardButton("📥 Download bot.log", callback_data="download_logs")],
-            [InlineKeyboardButton("⚠️ View Error Snippets", callback_data="view_error_logs")],
-            [InlineKeyboardButton("🧹 Clear bot.log", callback_data="clear_old_logs")],
-            [InlineKeyboardButton("🔙 Back", callback_data="admin_back")]
-        ])
+        keyboard = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "📋 View Database Logs", callback_data="view_logs_0"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "📥 Download bot.log", callback_data="download_logs"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "⚠️ View Error Snippets", callback_data="view_error_logs"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🧹 Clear bot.log", callback_data="clear_old_logs"
+                    )
+                ],
+                [InlineKeyboardButton("🔙 Back", callback_data="admin_back")],
+            ]
+        )
         await update.callback_query.message.edit_text(
             "📋 **Admin Logs Management**\n\nMonitor and manage bot activity logs.",
             reply_markup=keyboard,
-            parse_mode="Markdown"
+            parse_mode="Markdown",
         )
     except Exception as e:
         logger.error(f"❌ Error in logs menu: {e}", exc_info=True)
@@ -1194,6 +1545,7 @@ async def handle_admin_logs_menu(update: Update, context: ContextTypes.DEFAULT_T
 
 def admin_required(func):
     """Decorator to check if user is admin"""
+
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
         admin_ids = get_admin_ids()
@@ -1201,16 +1553,20 @@ def admin_required(func):
             try:
                 await update.message.reply_text(
                     "🚫 **Access Denied**\n\nThis command requires admin privileges.",
-                    parse_mode="Markdown"
+                    parse_mode="Markdown",
                 )
             except:
                 await update.callback_query.answer("🚫 Access Denied", show_alert=True)
             logger.warning(f"⚠️ Unauthorized admin access attempt: {user_id}")
             return
         return await func(update, context)
+
     return wrapper
 
-async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE, state: str = None):
+
+async def handle_admin_input(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, state: str = None
+):
     """Handle admin text input based on state"""
     text = (update.message.text or "").strip()
     user_id = update.effective_user.id
@@ -1228,10 +1584,20 @@ async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                     )
                     await update.message.reply_text(user_info, parse_mode="Markdown")
                 else:
-                    await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ User not found.", parse_mode="Markdown")
+                    await send_auto_delete_msg(
+                        context.bot,
+                        update.effective_chat.id,
+                        "❌ User not found.",
+                        parse_mode="Markdown",
+                    )
             except Exception as e:
                 logger.error(f"Error finding user: {e}")
-                await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Invalid User ID.", parse_mode="Markdown")
+                await send_auto_delete_msg(
+                    context.bot,
+                    update.effective_chat.id,
+                    "❌ Invalid User ID.",
+                    parse_mode="Markdown",
+                )
             context.user_data.pop("awaiting", None)
             return
 
@@ -1241,13 +1607,29 @@ async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 uid = int(text.split()[0])
                 reason = " ".join(text.split()[1:]) or "No reason"
                 from bot.database import ban_user
+
                 ok = await ban_user(uid, reason=reason, admin_id=user_id)
                 if ok:
-                    await send_auto_delete_msg(context.bot, update.effective_chat.id, f"✅ User `{uid}` has been banned.\nReason: {reason}", parse_mode="Markdown")
+                    await send_auto_delete_msg(
+                        context.bot,
+                        update.effective_chat.id,
+                        f"✅ User `{uid}` has been banned.\nReason: {reason}",
+                        parse_mode="Markdown",
+                    )
                 else:
-                    await send_auto_delete_msg(context.bot, update.effective_chat.id, f"❌ Could not ban user `{uid}`. User may not exist.", parse_mode="Markdown")
+                    await send_auto_delete_msg(
+                        context.bot,
+                        update.effective_chat.id,
+                        f"❌ Could not ban user `{uid}`. User may not exist.",
+                        parse_mode="Markdown",
+                    )
             except Exception as e:
-                await send_auto_delete_msg(context.bot, update.effective_chat.id, f"❌ Invalid input. Send: `<user_id> <reason>`", parse_mode="Markdown")
+                await send_auto_delete_msg(
+                    context.bot,
+                    update.effective_chat.id,
+                    f"❌ Invalid input. Send: `<user_id> <reason>`",
+                    parse_mode="Markdown",
+                )
             context.user_data.pop("awaiting", None)
             return
 
@@ -1255,13 +1637,29 @@ async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
             try:
                 uid = int(text)
                 from bot.database import unban_user
+
                 ok = await unban_user(uid, admin_id=user_id)
                 if ok:
-                    await send_auto_delete_msg(context.bot, update.effective_chat.id, f"✅ User `{uid}` has been unbanned.", parse_mode="Markdown")
+                    await send_auto_delete_msg(
+                        context.bot,
+                        update.effective_chat.id,
+                        f"✅ User `{uid}` has been unbanned.",
+                        parse_mode="Markdown",
+                    )
                 else:
-                    await send_auto_delete_msg(context.bot, update.effective_chat.id, f"❌ Could not unban user `{uid}`. User may not exist.", parse_mode="Markdown")
+                    await send_auto_delete_msg(
+                        context.bot,
+                        update.effective_chat.id,
+                        f"❌ Could not unban user `{uid}`. User may not exist.",
+                        parse_mode="Markdown",
+                    )
             except Exception as e:
-                await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Invalid User ID. Please send a number.", parse_mode="Markdown")
+                await send_auto_delete_msg(
+                    context.bot,
+                    update.effective_chat.id,
+                    "❌ Invalid User ID. Please send a number.",
+                    parse_mode="Markdown",
+                )
             context.user_data.pop("awaiting", None)
             return
 
@@ -1272,30 +1670,63 @@ async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 plan = parts[1].lower() if len(parts) > 1 else "premium"
                 ok = await update_user(uid, {"plan": plan})
                 if ok:
-                    await send_auto_delete_msg(context.bot, update.effective_chat.id, f"✅ User `{uid}` upgraded to `{plan}`.", parse_mode="Markdown")
+                    await send_auto_delete_msg(
+                        context.bot,
+                        update.effective_chat.id,
+                        f"✅ User `{uid}` upgraded to `{plan}`.",
+                        parse_mode="Markdown",
+                    )
                 else:
-                    await send_auto_delete_msg(context.bot, update.effective_chat.id, f"❌ Could not upgrade user `{uid}`.", parse_mode="Markdown")
+                    await send_auto_delete_msg(
+                        context.bot,
+                        update.effective_chat.id,
+                        f"❌ Could not upgrade user `{uid}`.",
+                        parse_mode="Markdown",
+                    )
             except Exception as e:
-                await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Usage: `<user_id> [plan_name]`\nExample: `123456789 premium`", parse_mode="Markdown")
+                await send_auto_delete_msg(
+                    context.bot,
+                    update.effective_chat.id,
+                    "❌ Usage: `<user_id> [plan_name]`\nExample: `123456789 premium`",
+                    parse_mode="Markdown",
+                )
             context.user_data.pop("awaiting", None)
             return
 
         if state.startswith("support_reply_"):
             user_id_to_reply = int(state.split("_")[-1])
-            from infrastructure.database._legacy_bot._channels import add_chatbox_message
-            success = await add_chatbox_message(user_id_to_reply, text, sender_type="admin")
+            from bot.database import add_chatbox_message
+
+            success = await add_chatbox_message(
+                user_id_to_reply, text, sender_type="admin"
+            )
             if success:
                 try:
                     await context.bot.send_message(
                         user_id_to_reply,
                         f"💬 **Message from Support**\n\n{text}",
-                        parse_mode="Markdown"
+                        parse_mode="Markdown",
                     )
-                    await send_auto_delete_msg(context.bot, update.effective_chat.id, f"✅ Message sent to `{user_id_to_reply}`.", parse_mode="Markdown")
+                    await send_auto_delete_msg(
+                        context.bot,
+                        update.effective_chat.id,
+                        f"✅ Message sent to `{user_id_to_reply}`.",
+                        parse_mode="Markdown",
+                    )
                 except Exception as e:
-                    await send_auto_delete_msg(context.bot, update.effective_chat.id, f"❌ Failed to deliver message to user: {e}", parse_mode="Markdown")
+                    await send_auto_delete_msg(
+                        context.bot,
+                        update.effective_chat.id,
+                        f"❌ Failed to deliver message to user: {e}",
+                        parse_mode="Markdown",
+                    )
             else:
-                await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Failed to save message to database.", parse_mode="Markdown")
+                await send_auto_delete_msg(
+                    context.bot,
+                    update.effective_chat.id,
+                    "❌ Failed to save message to database.",
+                    parse_mode="Markdown",
+                )
             # Keep the state so admin can send multiple messages
             return
 
@@ -1303,7 +1734,13 @@ async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
     except Exception as e:
         logger.error(f"Error in handle_admin_input: {e}", exc_info=True)
-        await send_auto_delete_msg(context.bot, update.effective_chat.id, f"❌ Error: {str(e)[:100]}", parse_mode="Markdown")
+        await send_auto_delete_msg(
+            context.bot,
+            update.effective_chat.id,
+            f"❌ Error: {str(e)[:100]}",
+            parse_mode="Markdown",
+        )
+
 
 async def get_broadcast_stats() -> Dict[str, Any]:
     """Get broadcast statistics"""
@@ -1317,6 +1754,7 @@ async def get_broadcast_stats() -> Dict[str, Any]:
         logger.error(f"Error getting broadcast stats: {e}")
         return {"total": 0, "sent": 0, "draft": 0}
 
+
 async def handle_admin_forwards(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle admin channel forward for global channel setup.
     Reads awaiting_channel_type from context.user_data, extracts the
@@ -1328,7 +1766,9 @@ async def handle_admin_forwards(update: Update, context: ContextTypes.DEFAULT_TY
         channel_type = context.user_data.get("awaiting_channel_type", "")
 
         if not channel_type:
-            await msg.reply_text("⚠️ No channel setup in progress. Use /admin → Config first.")
+            await msg.reply_text(
+                "⚠️ No channel setup in progress. Use /admin → Config first."
+            )
             return
 
         # Extract channel from forward_origin or raw text
@@ -1343,7 +1783,10 @@ async def handle_admin_forwards(update: Update, context: ContextTypes.DEFAULT_TY
             # Fallback for older PTB versions
             channel_id = msg.forward_from_chat.id
             channel_title = msg.forward_from_chat.title or str(channel_id)
-        elif msg.text and (msg.text.strip().startswith("-100") or msg.text.strip().lstrip("-").isdigit()):
+        elif msg.text and (
+            msg.text.strip().startswith("-100")
+            or msg.text.strip().lstrip("-").isdigit()
+        ):
             # User typed the ID directly
             try:
                 channel_id = int(msg.text.strip())
@@ -1361,17 +1804,17 @@ async def handle_admin_forwards(update: Update, context: ContextTypes.DEFAULT_TY
                 "❌ **Could Not Read Channel**\n\n"
                 "Please forward a message **directly from the channel** or **send the numeric Channel ID** (e.g., `-100123...`).\n"
                 "Make sure the bot is an admin in that channel first.",
-                parse_mode="Markdown"
+                parse_mode="Markdown",
             )
             return
 
         # Nested DB structure: channels.log / channels.dump / channels.storage
         # (matches ensure_channel_schema nested format in database.py)
         TYPE_TO_NESTED_KEY = {
-            "log_channel":     "channels.log",
-            "dump_channel":    "channels.dump",
+            "log_channel": "channels.log",
+            "dump_channel": "channels.dump",
             "storage_channel": "channels.storage",
-            "force_sub_channel": None,   # handled separately below
+            "force_sub_channel": None,  # handled separately below
         }
 
         admin_id = update.effective_user.id
@@ -1388,46 +1831,66 @@ async def handle_admin_forwards(update: Update, context: ContextTypes.DEFAULT_TY
                 (c.get("id") if isinstance(c, dict) else c) == channel_id
                 for c in fsub_list
             ):
-                fsub_list.append({
-                    "id": channel_id, 
-                    "metadata": {
-                        "title": channel_title,
-                        "enabled": True,
-                        "req_join": False
+                fsub_list.append(
+                    {
+                        "id": channel_id,
+                        "metadata": {
+                            "title": channel_title,
+                            "enabled": True,
+                            "req_join": False,
+                        },
                     }
-                })
+                )
                 await set_config({"channels.force_sub": fsub_list})
             label = "Force Subscribe Channel"
         else:
             nested_key = TYPE_TO_NESTED_KEY.get(channel_type)
             if not nested_key:
-                await send_auto_delete_msg(context.bot, update.effective_chat.id, f"❌ Unknown channel type: `{channel_type}`", parse_mode="Markdown")
+                await send_auto_delete_msg(
+                    context.bot,
+                    update.effective_chat.id,
+                    f"❌ Unknown channel type: `{channel_type}`",
+                    parse_mode="Markdown",
+                )
                 return
             # Save as nested object with id + metadata
-            await set_config({nested_key: {"id": channel_id, "metadata": {"title": channel_title}}})
+            await set_config(
+                {nested_key: {"id": channel_id, "metadata": {"title": channel_title}}}
+            )
             label = channel_type.replace("_", " ").title()
 
-        await log_admin_action(admin_id, f"set_{channel_type}", {
-            "channel_id": channel_id, "title": channel_title
-        })
+        await log_admin_action(
+            admin_id,
+            f"set_{channel_type}",
+            {"channel_id": channel_id, "title": channel_title},
+        )
 
         context.user_data.pop("awaiting_channel_type", None)
         context.user_data.pop("awaiting", None)
 
         await msg.reply_text(
-            f"✅ **{label} Set!**\n\n"
-            f"Channel: `{channel_title}`\n"
-            f"ID: `{channel_id}`",
+            f"✅ **{label} Set!**\n\nChannel: `{channel_title}`\nID: `{channel_id}`",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🔙 Back to Config", callback_data="admin_config")]]
-            )
+                [
+                    [
+                        InlineKeyboardButton(
+                            "🔙 Back to Config", callback_data="admin_config"
+                        )
+                    ]
+                ]
+            ),
         )
         logger.info(f"✅ {channel_type} set to {channel_id} by admin {admin_id}")
 
     except Exception as e:
         logger.error(f"❌ Error in handle_admin_forwards: {e}", exc_info=True)
-        await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Failed to save channel. Please try again.", parse_mode="Markdown")
+        await send_auto_delete_msg(
+            context.bot,
+            update.effective_chat.id,
+            "❌ Failed to save channel. Please try again.",
+            parse_mode="Markdown",
+        )
 
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1449,23 +1912,23 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await send_fn(
                 "⚠️ **No Stats Available**\n\n"
                 "Use /start first to initialize your account.",
-                parse_mode="Markdown"
+                parse_mode="Markdown",
             )
             return  # ← was missing; fell through and crashed on stats_text
 
         # Build stats text from user document
-        plan          = user.get("plan", "free").upper()
-        files_done    = user.get("files_processed", 0)
-        used_bytes    = user.get("used_storage", 0)
-        limit_bytes   = user.get("storage_limit", 5 * 1024 ** 3)
-        daily_used    = user.get("daily_used", 0)
-        daily_limit   = user.get("daily_limit", 5)
-        used_gb       = used_bytes / (1024 ** 3)
-        limit_gb      = limit_bytes / (1024 ** 3)
-        pct           = (used_gb / limit_gb * 100) if limit_gb > 0 else 0
-        bar_filled    = int(pct / 10)
-        bar           = "█" * bar_filled + "░" * (10 - bar_filled)
-        plan_emoji    = "💎" if plan != "FREE" else "⭐"
+        plan = user.get("plan", "free").upper()
+        files_done = user.get("files_processed", 0)
+        used_bytes = user.get("used_storage", 0)
+        limit_bytes = user.get("storage_limit", 5 * 1024**3)
+        daily_used = user.get("daily_used", 0)
+        daily_limit = user.get("daily_limit", 5)
+        used_gb = used_bytes / (1024**3)
+        limit_gb = limit_bytes / (1024**3)
+        pct = (used_gb / limit_gb * 100) if limit_gb > 0 else 0
+        bar_filled = int(pct / 10)
+        bar = "█" * bar_filled + "░" * (10 - bar_filled)
+        plan_emoji = "💎" if plan != "FREE" else "⭐"
 
         stats_text = (
             f"{plan_emoji} **Your Statistics**\n\n"
@@ -1482,7 +1945,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_fn(
             stats_text,
             reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="Markdown"
+            parse_mode="Markdown",
         )
 
         await log_info(f"✅ /stats used by {user_id}")
@@ -1492,21 +1955,22 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await log_error(f"❌ Error in stats command: {str(e)}")
         try:
             (update.message or update.callback_query.message).reply_text(
-                "❌ Unable to fetch stats. Please try again.",
-                parse_mode="Markdown"
+                "❌ Unable to fetch stats. Please try again.", parse_mode="Markdown"
             )
         except Exception:
             pass
+
 
 async def handle_admin_chatbox(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show recent chatbox conversations (grouped by user)"""
     try:
         query = update.callback_query
         await query.answer()
-        
-        from infrastructure.database._legacy_bot._channels import get_unique_chat_users
+
+        from bot.database import get_unique_chat_users
+
         users = await get_unique_chat_users(limit=10)
-        
+
         if not users:
             text = "💬 **Support Chatbox**\n\nNo active conversations yet."
             keyboard = [[InlineKeyboardButton("🔙 Back", callback_data="admin_back")]]
@@ -1518,47 +1982,65 @@ async def handle_admin_chatbox(update: Update, context: ContextTypes.DEFAULT_TYP
                 last_msg = str(u.get("last_message", ""))[:40]
                 unread = u.get("unread_count", 0)
                 label = f"{'🔴 ' if unread > 0 else '⚪ '}{uid}: {last_msg}..."
-                buttons.append([InlineKeyboardButton(label, callback_data=f"support_reply_{uid}")])
-            
-            buttons.append([InlineKeyboardButton("🔙 Back", callback_data="admin_back")])
+                buttons.append(
+                    [InlineKeyboardButton(label, callback_data=f"support_reply_{uid}")]
+                )
+
+            buttons.append(
+                [InlineKeyboardButton("🔙 Back", callback_data="admin_back")]
+            )
             keyboard = buttons
-            
+
         await query.message.edit_text(
-            text,
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(keyboard)
+            text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard)
         )
     except Exception as e:
         logger.error(f"❌ Error in handle_admin_chatbox: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
+
 
 async def handle_support_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """View chat history with a user and enter reply mode"""
     try:
         query = update.callback_query
         await query.answer()
-        
+
         user_id = int(query.data.split("_")[-1])
         messages = await get_chatbox_messages(user_id=user_id, limit=10)
-        
+
         history_lines = [f"💬 **Conversation with `{user_id}`**\n"]
         for m in reversed(messages):
             sender = "User" if m.get("sender_type") == "user" else "Admin"
             history_lines.append(f"**{sender}:** {m.get('message')}")
-        
-        text = "\n".join(history_lines) + "\n\nType a message below to reply to this user."
-        
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Mark as Read", callback_data=f"support_read_{user_id}")],
-            [InlineKeyboardButton("🔙 Back to Inbox", callback_data="admin_chatbox")]
-        ])
-        
-        await query.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+        text = (
+            "\n".join(history_lines) + "\n\nType a message below to reply to this user."
+        )
+
+        keyboard = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "✅ Mark as Read", callback_data=f"support_read_{user_id}"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🔙 Back to Inbox", callback_data="admin_chatbox"
+                    )
+                ],
+            ]
+        )
+
+        await query.message.edit_text(
+            text, reply_markup=keyboard, parse_mode="Markdown"
+        )
         context.user_data["awaiting"] = f"support_reply_{user_id}"
-        
+
     except Exception as e:
         logger.error(f"❌ Error in handle_support_reply: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
+
 
 async def handle_support_read(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Mark all messages from a user as read"""
@@ -1566,11 +2048,14 @@ async def handle_support_read(update: Update, context: ContextTypes.DEFAULT_TYPE
         query = update.callback_query
         user_id = int(query.data.split("_")[-1])
         db = get_db()
-        await db.chatbox.update_many({"user_id": user_id, "read": False}, {"$set": {"read": True}})
+        await db.chatbox.update_many(
+            {"user_id": user_id, "read": False}, {"$set": {"read": True}}
+        )
         await query.answer("✅ Marked as read")
         await handle_admin_chatbox(update, context)
     except Exception as e:
         logger.error(f"❌ Error in handle_support_read: {e}")
+
 
 async def handle_admin_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show recent admin action logs from DB (paginated)"""
@@ -1599,75 +2084,105 @@ async def handle_admin_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 admin = log.get("admin_id", "?")
                 action = log.get("action", "unknown")
                 ts = log.get("timestamp", "")
-                ts_str = ts.strftime("%m/%d %H:%M") if hasattr(ts, "strftime") else str(ts)[:16]
+                ts_str = (
+                    ts.strftime("%m/%d %H:%M")
+                    if hasattr(ts, "strftime")
+                    else str(ts)[:16]
+                )
                 lines.append(f"● [{ts_str}] `{admin}` → {action}")
             text = "\n".join(lines)
 
         nav = []
         if page > 0:
-            nav.append(InlineKeyboardButton("⬅ Prev", callback_data=f"view_logs_{page-1}"))
+            nav.append(
+                InlineKeyboardButton("⬅ Prev", callback_data=f"view_logs_{page - 1}")
+            )
         if (page + 1) * 10 < total:
-            nav.append(InlineKeyboardButton("Next ➡", callback_data=f"view_logs_{page+1}"))
-        
-        keyboard = [nav] if nav else []
-        keyboard.append([InlineKeyboardButton("🔙 Back to Logs Menu", callback_data="view_admin_logs")])
+            nav.append(
+                InlineKeyboardButton("Next ➡", callback_data=f"view_logs_{page + 1}")
+            )
 
-        await query.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+        keyboard = [nav] if nav else []
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    "🔙 Back to Logs Menu", callback_data="view_admin_logs"
+                )
+            ]
+        )
+
+        await query.message.edit_text(
+            text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard)
+        )
     except Exception as e:
         logger.error(f"❌ Error in handle_admin_logs: {e}", exc_info=True)
         await update.callback_query.answer(f"❌ Error", show_alert=True)
 
-async def handle_admin_download_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+async def handle_admin_download_logs(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
     """Send bot.log file to admin"""
     try:
         from config.settings import get_settings
+
         settings = get_settings()
         log_file = settings.LOG_FILE
-        
+
         if not os.path.exists(log_file):
-            await update.callback_query.answer("❌ Log file not found.", show_alert=True)
+            await update.callback_query.answer(
+                "❌ Log file not found.", show_alert=True
+            )
             return
 
         await update.callback_query.answer("📤 Sending logs...")
         await update.effective_chat.send_document(
-            document=open(log_file, 'rb'),
+            document=open(log_file, "rb"),
             filename=f"bot_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
-            caption="📄 **Bot Logs**"
+            caption="📄 **Bot Logs**",
         )
     except Exception as e:
         logger.error(f"Error downloading logs: {e}", exc_info=True)
         await update.callback_query.answer("❌ Error sending file", show_alert=True)
 
+
 async def handle_admin_clear_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Clear the content of bot.log"""
     try:
         from config.settings import get_settings
+
         settings = get_settings()
         log_file = settings.LOG_FILE
 
         if os.path.exists(log_file):
-            with open(log_file, 'w') as f:
+            with open(log_file, "w") as f:
                 f.write(f"--- Log cleared at {datetime.now()} ---\n")
-            await update.callback_query.answer("🧹 Logs cleared successfully!", show_alert=True)
+            await update.callback_query.answer(
+                "🧹 Logs cleared successfully!", show_alert=True
+            )
         else:
             await update.callback_query.answer("❌ Log file not found.")
     except Exception as e:
         logger.error(f"Error clearing logs: {e}", exc_info=True)
         await update.callback_query.answer("❌ Error", show_alert=True)
 
+
 async def handle_view_error_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show last few ERROR lines from the log file"""
     try:
         from config.settings import get_settings
+
         settings = get_settings()
         log_file = settings.LOG_FILE
 
         if not os.path.exists(log_file):
-            await update.callback_query.answer("❌ Log file not found.", show_alert=True)
+            await update.callback_query.answer(
+                "❌ Log file not found.", show_alert=True
+            )
             return
 
         errors = []
-        with open(log_file, 'r', encoding='utf-8') as f:
+        with open(log_file, "r", encoding="utf-8") as f:
             # Simple tail implementation for errors
             for line in f:
                 if "ERROR" in line:
@@ -1678,18 +2193,26 @@ async def handle_view_error_logs(update: Update, context: ContextTypes.DEFAULT_T
         if not errors:
             text = "✅ **No ERRORS found in recent logs.**"
         else:
-            text = "⚠️ **Last 10 Errors Found:**\n\n" + "\n\n".join([f"`{e[:100]}...`" if len(e) > 100 else f"`{e}`" for e in errors])
+            text = "⚠️ **Last 10 Errors Found:**\n\n" + "\n\n".join(
+                [f"`{e[:100]}...`" if len(e) > 100 else f"`{e}`" for e in errors]
+            )
 
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="view_admin_logs")]])
-        await update.callback_query.message.edit_text(text, parse_mode="Markdown", reply_markup=keyboard)
+        keyboard = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("🔙 Back", callback_data="view_admin_logs")]]
+        )
+        await update.callback_query.message.edit_text(
+            text, parse_mode="Markdown", reply_markup=keyboard
+        )
     except Exception as e:
         logger.error(f"Error reading errors: {e}", exc_info=True)
         await update.callback_query.answer("❌ Error", show_alert=True)
+
 
 async def handle_admin_shorteners(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Route Link Shorteners admin request to the main handler."""
     try:
         from bot.handlers.user import show_shorteners_menu
+
         await show_shorteners_menu(update, context)
     except Exception as e:
         logger.error(f"❌ Error in handle_admin_shorteners: {e}")

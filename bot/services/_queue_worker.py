@@ -15,7 +15,7 @@ logger = logging.getLogger("filebot.services.queue")
 
 
 class QueueWorker:
-    _instance: 'QueueWorker' = None
+    _instance: "QueueWorker" = None
 
     def __new__(cls, *args, **kwargs):
         if not cls._instance:
@@ -23,25 +23,33 @@ class QueueWorker:
         return cls._instance
 
     def __init__(self, bot=None):
-        if hasattr(self, '_initialized'): return
+        if hasattr(self, "_initialized"):
+            return
         self.bot = bot
         self.running = False
         from bot.database import get_config_sync
+
         config = get_config_sync() or {}
-        self.limit = int(config.get("parallel_global_limit") or os.getenv("PARALLEL_LIMIT", 5))
+        self.limit = int(
+            config.get("parallel_global_limit") or os.getenv("PARALLEL_LIMIT", 5)
+        )
         self.semaphore = asyncio.Semaphore(self.limit)
         # Pro bypass cap: limits simultaneous semaphore-bypassing Pro tasks.
         # Without this a Pro user can queue unlimited FFmpeg/Aria2c jobs (OOM DoS).
-        pro_bypass_limit = int(config.get("pro_bypass_limit") or os.getenv("PRO_BYPASS_LIMIT", 3))
+        pro_bypass_limit = int(
+            config.get("pro_bypass_limit") or os.getenv("PRO_BYPASS_LIMIT", 3)
+        )
         self.pro_semaphore = asyncio.Semaphore(pro_bypass_limit)
         self.sleep_interval = 2
         self.active_tasks: Set[asyncio.Task] = set()
         self._initialized = True
 
     @classmethod
-    def get_instance(cls) -> 'QueueWorker':
+    def get_instance(cls) -> "QueueWorker":
         if not cls._instance:
-            raise RuntimeError("QueueWorker NOT initialized! Call QueueWorker(bot) first.")
+            raise RuntimeError(
+                "QueueWorker NOT initialized! Call QueueWorker(bot) first."
+            )
         return cls._instance
 
     def update_limit(self, new_limit: int):
@@ -77,7 +85,9 @@ class QueueWorker:
                 {"$set": {"status": "queued", "recovered": True}},
             )
             if result.modified_count > 0:
-                logger.warning(f"🔄 Recovered {result.modified_count} stale/waiting tasks.")
+                logger.warning(
+                    f"🔄 Recovered {result.modified_count} stale/waiting tasks."
+                )
         except Exception as e:
             logger.error(f"❌ Failed to recover stale tasks: {e}")
 
@@ -85,37 +95,54 @@ class QueueWorker:
         while self.running:
             try:
                 db = get_db()
-                
+
                 # 1. Cleanup expired waiting tasks (120s timeout)
                 now = datetime.utcnow()
                 expired_threshold = 120
-                expired_tasks = await db.tasks.find({
-                    "status": "waiting_user_input",
-                    "wait_started_at": {"$lt": datetime.fromtimestamp(time.time() - expired_threshold)}
-                }).to_list(length=None)
-                
+                expired_tasks = await db.tasks.find(
+                    {
+                        "status": "waiting_user_input",
+                        "wait_started_at": {
+                            "$lt": datetime.fromtimestamp(
+                                time.time() - expired_threshold
+                            )
+                        },
+                    }
+                ).to_list(length=None)
+
                 for et in expired_tasks:
                     tid = et.get("task_id")
                     uid = et.get("user_id")
-                    await update_task(tid, {"status": "expired", "error": "User response timeout (120s)"})
+                    await update_task(
+                        tid,
+                        {"status": "expired", "error": "User response timeout (120s)"},
+                    )
                     try:
                         await self.bot.send_message(
                             chat_id=uid,
                             text="⏰ **Wait Window Expired**\n\nYour turn in the queue has expired because you didn't click 'Start' within 120 seconds. Please resend the file if you wish to try again.",
-                            parse_mode="Markdown"
+                            parse_mode="Markdown",
                         )
-                    except: pass
+                    except:
+                        pass
                     logger.info(f"⏰ Task {tid} expired due to timeout.")
 
                 # 2. If queue is full (parallel limit reached), ONLY pull Pro tasks (Priority > 0)
                 if self.semaphore.locked():
                     pro_task = await db.tasks.find_one_and_update(
                         {"status": "queued", "priority": {"$gt": 0}},
-                        {"$set": {"status": "processing", "started_at": datetime.utcnow()}},
+                        {
+                            "$set": {
+                                "status": "processing",
+                                "started_at": datetime.utcnow(),
+                            }
+                        },
                         sort=[("priority", -1), ("created_at", 1)],
                     )
                     if pro_task:
-                        t = asyncio.create_task(self._process_task_safely(pro_task, bypass_semaphore=True))
+                        t = asyncio.create_task(
+                            self._process_task_safely(pro_task, bypass_semaphore=True)
+                        )
                         self.active_tasks.add(t)
                         t.add_done_callback(self.active_tasks.discard)
                         continue
@@ -124,26 +151,31 @@ class QueueWorker:
                     continue
 
                 # 3. Normal pull (respects priority)
-                task = await db.tasks.find({"status": "queued"}).sort([("priority", -1), ("created_at", 1)]).to_list(length=1)
+                task = (
+                    await db.tasks.find({"status": "queued"})
+                    .sort([("priority", -1), ("created_at", 1)])
+                    .to_list(length=1)
+                )
                 if not task:
                     await asyncio.sleep(self.sleep_interval)
                     continue
-                
+
                 task = task[0]
                 user_id = task.get("user_id")
                 from bot.database import get_user, get_config, get_active_task_count
+
                 user = await get_user(user_id)
                 plan_name = user.get("plan", "free").lower()
                 is_pro = plan_name != "free"
-                
+
                 # Check per-user parallel limit from plan
                 plans_config = await get_config("plans") or {}
                 plan_limit = plans_config.get(plan_name, {}).get("parallel", 1)
                 user_active_count = await get_active_task_count(user_id)
-                
+
                 if user_active_count >= plan_limit:
                     # User already at their limit, skip this task for now
-                    # (In a real system we might want to prioritize others, 
+                    # (In a real system we might want to prioritize others,
                     # but for now we'll just sleep a bit to avoid CPU spin)
                     await asyncio.sleep(1)
                     continue
@@ -152,23 +184,43 @@ class QueueWorker:
                     # Pro or User already responded: Immediately process
                     task = await db.tasks.find_one_and_update(
                         {"task_id": task["task_id"], "status": "queued"},
-                        {"$set": {"status": "processing", "started_at": datetime.utcnow()}}
+                        {
+                            "$set": {
+                                "status": "processing",
+                                "started_at": datetime.utcnow(),
+                            }
+                        },
                     )
                     if task:
-                        t = asyncio.create_task(self._process_task_safely(task, bypass_semaphore=False))
+                        t = asyncio.create_task(
+                            self._process_task_safely(task, bypass_semaphore=False)
+                        )
                         self.active_tasks.add(t)
                         t.add_done_callback(self.active_tasks.discard)
                 else:
                     # Free User: Enter wait state
                     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
                     await db.tasks.update_one(
                         {"task_id": task["task_id"]},
-                        {"$set": {"status": "waiting_user_input", "wait_started_at": datetime.utcnow()}}
+                        {
+                            "$set": {
+                                "status": "waiting_user_input",
+                                "wait_started_at": datetime.utcnow(),
+                            }
+                        },
                     )
                     try:
-                        keyboard = InlineKeyboardMarkup([[
-                            InlineKeyboardButton("🚀 Start My Task", callback_data=f"queue_start_{task['task_id']}")
-                        ]])
+                        keyboard = InlineKeyboardMarkup(
+                            [
+                                [
+                                    InlineKeyboardButton(
+                                        "🚀 Start My Task",
+                                        callback_data=f"queue_start_{task['task_id']}",
+                                    )
+                                ]
+                            ]
+                        )
                         await self.bot.send_message(
                             chat_id=user_id,
                             text=(
@@ -178,19 +230,24 @@ class QueueWorker:
                                 "If you don't respond, your turn will be skipped."
                             ),
                             reply_markup=keyboard,
-                            parse_mode="Markdown"
+                            parse_mode="Markdown",
                         )
-                        logger.info(f"📢 User {user_id} notified for task {task['task_id']}. Waiting 120s.")
+                        logger.info(
+                            f"📢 User {user_id} notified for task {task['task_id']}. Waiting 120s."
+                        )
                     except Exception as e:
                         logger.error(f"Failed to notify free user {user_id}: {e}")
                         # If notify fails, just mark it back to queued or fail it?
                         # Let's mark it as queued so it doesn't get stuck in waiting
-                        await db.tasks.update_one({"task_id": task["task_id"]}, {"$set": {"status": "queued"}})
+                        await db.tasks.update_one(
+                            {"task_id": task["task_id"]}, {"$set": {"status": "queued"}}
+                        )
 
                 if not hasattr(self, "_last_cleanup"):
                     self._last_cleanup = 0
                 if time.time() - self._last_cleanup > 3600:
                     from bot.services._download import cleanup_old_downloads
+
                     asyncio.create_task(cleanup_old_downloads(older_than_hours=6))
                     self._last_cleanup = time.time()
 
@@ -212,23 +269,27 @@ class QueueWorker:
             await self.semaphore.acquire()
         else:
             await self.pro_semaphore.acquire()
-            
+
         try:
             try:
-                logger.info(f"▶️ Starting Task {task_id} (Attempt {retry_count + 1}) [Pro Bypass: {bypass_semaphore}]")
+                logger.info(
+                    f"▶️ Starting Task {task_id} (Attempt {retry_count + 1}) [Pro Bypass: {bypass_semaphore}]"
+                )
 
                 try:
                     # If this was a wizard session, check if we already have a message ID to edit
                     msg_id = None
                     if hasattr(self.bot, "progress_data"):
-                        msg_id = self.bot.progress_data.get(task_id, {}).get("user_progress_msg_id")
+                        msg_id = self.bot.progress_data.get(task_id, {}).get(
+                            "user_progress_msg_id"
+                        )
 
                     if msg_id:
                         await self.bot.edit_message_text(
                             chat_id=user_id,
                             message_id=msg_id,
                             text=f"🏗️ **Processing Started!**\n\nTask ID: `{task_id}`\nYour file is now being processed.",
-                            parse_mode="Markdown"
+                            parse_mode="Markdown",
                         )
                     else:
                         await self.bot.send_message(
@@ -240,27 +301,42 @@ class QueueWorker:
                     logger.warning(f"Could not notify user {user_id}: {msg_err}")
 
                 task_type = task.get("type") or task.get("task_type")
-                if task_type in ["file", "upload"]:
+                if task_type in ["file", "upload", "url"]:
                     if "session" in task:
                         from bot.handlers.files import WizardHandler
-                        await WizardHandler.process_session_background(self.bot, user_id, task["session"])
+
+                        await WizardHandler.process_session_background(
+                            self.bot, user_id, task["session"]
+                        )
                     else:
                         from bot.handlers import execute_processing_flow_by_task
+
                         await execute_processing_flow_by_task(self.bot, task)
 
                 from bot.handlers.user import finalize_progress
-                await finalize_progress(self.bot, task_id, success=True, result_text="File processed via queue.")
+
+                await finalize_progress(
+                    self.bot,
+                    task_id,
+                    success=True,
+                    result_text="File processed via queue.",
+                )
 
             except Exception as e:
                 logger.error(f"Task {task_id} Failed: {e}", exc_info=True)
 
                 if retry_count < MAX_RETRIES:
-                    logger.info(f"🔄 Retrying Task {task_id} (Attempt {retry_count + 1}/{MAX_RETRIES})")
-                    await update_task(task_id, {
-                        "status": "queued",
-                        "retry_count": retry_count + 1,
-                        "last_error": str(e),
-                    })
+                    logger.info(
+                        f"🔄 Retrying Task {task_id} (Attempt {retry_count + 1}/{MAX_RETRIES})"
+                    )
+                    await update_task(
+                        task_id,
+                        {
+                            "status": "queued",
+                            "retry_count": retry_count + 1,
+                            "last_error": str(e),
+                        },
+                    )
                 else:
                     await update_task(task_id, {"status": "failed", "error": str(e)})
                     try:
@@ -280,6 +356,7 @@ class QueueWorker:
 # ─────────────────────────────────────────────────────────────────────────────
 # run_broadcast_worker — standalone coroutine (used by web/routes/admin_config)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 async def run_broadcast_worker(broadcast_id: str) -> None:
     """
@@ -316,6 +393,7 @@ async def run_broadcast_worker(broadcast_id: str) -> None:
         # Resolve the bot instance from the running application
         try:
             from main import bot_application
+
             bot = bot_application.bot if bot_application else None
         except Exception:
             bot = None
@@ -324,7 +402,13 @@ async def run_broadcast_worker(broadcast_id: str) -> None:
             logger.error("❌ run_broadcast_worker: bot not available yet")
             await db.broadcasts.update_one(
                 {"broadcast_id": broadcast_id},
-                {"$set": {"status": "failed", "error": "Bot not available", "finished_at": _dt.utcnow()}},
+                {
+                    "$set": {
+                        "status": "failed",
+                        "error": "Bot not available",
+                        "finished_at": _dt.utcnow(),
+                    }
+                },
             )
             return
 
@@ -351,23 +435,33 @@ async def run_broadcast_worker(broadcast_id: str) -> None:
 
         await db.broadcasts.update_one(
             {"broadcast_id": broadcast_id},
-            {"$set": {
-                "status": "completed",
-                "sent": sent,
-                "failed": failed,
-                "finished_at": _dt.utcnow(),
-            }},
+            {
+                "$set": {
+                    "status": "completed",
+                    "sent": sent,
+                    "failed": failed,
+                    "finished_at": _dt.utcnow(),
+                }
+            },
         )
-        logger.info(f"✅ Broadcast {broadcast_id} complete: {sent} sent, {failed} failed")
+        logger.info(
+            f"✅ Broadcast {broadcast_id} complete: {sent} sent, {failed} failed"
+        )
 
     except Exception as e:
         logger.error(f"❌ Broadcast worker error [{broadcast_id}]: {e}", exc_info=True)
         try:
             from datetime import datetime as _dt2
+
             await db.broadcasts.update_one(
                 {"broadcast_id": broadcast_id},
-                {"$set": {"status": "failed", "error": str(e)[:200], "finished_at": _dt2.utcnow()}},
+                {
+                    "$set": {
+                        "status": "failed",
+                        "error": str(e)[:200],
+                        "finished_at": _dt2.utcnow(),
+                    }
+                },
             )
         except Exception:
             pass
-
