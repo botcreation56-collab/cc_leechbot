@@ -1838,25 +1838,39 @@ async def check_force_sub(
 
             # 1. Check if user is already a member
             is_member = False
+            check_failed = False
             try:
                 member = await context.bot.get_chat_member(channel_id, user_id)
                 if member.status in ["member", "administrator", "creator"]:
                     is_member = True
+                    logger.info(
+                        f"✅ FSub: user {user_id} IS member of {channel_id} (status: {member.status})"
+                    )
                 elif member.status in ["left", "kicked"]:
                     # User left or was kicked — remove from requested list to secure bypass
+                    logger.info(
+                        f"❌ FSub: user {user_id} {member.status} channel {channel_id}"
+                    )
                     if int(channel_id) in [int(c) for c in requested]:
                         requested = [c for c in requested if int(c) != int(channel_id)]
                         await update_user(user_id, {"requested_fsub": requested})
                         logger.info(
                             f"🗑️ Removed {user_id} from requested_fsub for {channel_id} (status: {member.status})"
                         )
-            except TelegramError:
-                pass  # Proceed to check requested list
+            except TelegramError as e:
+                logger.warning(f"⚠️ FSub check failed for {channel_id}: {e}")
+                check_failed = True  # Mark that we couldn't verify membership
 
             # 2. Check if user has a pending join request tracked in DB
             req_join = channel.get("metadata", {}).get("req_join", False)
             is_requested = int(channel_id) in [int(c) for c in requested]
-            can_bypass = is_requested and req_join
+            can_bypass = (
+                is_requested and req_join and not check_failed
+            )  # Don't allow bypass if membership check failed
+
+            logger.info(
+                f"FSub check for {user_id} on {channel_id}: member={is_member}, requested={is_requested}, req_join={req_join}, check_failed={check_failed}, can_bypass={can_bypass}"
+            )
 
             if not is_member and not can_bypass:
                 not_joined.append(channel)

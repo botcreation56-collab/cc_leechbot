@@ -1488,12 +1488,18 @@ class WizardHandler:
     ):
         """Core processing logic decoupled from UI callbacks, runnable by QueueWorker."""
         task_id = session.get("task_id")
+        logger.info(
+            f"process_session_background: STARTING task_id={task_id}, user_id={user_id}"
+        )
 
         try:
             # 0. Post early ledger update
             from bot.services import create_or_update_storage_message
 
             custom_name = session.get("custom_name", "Untitled")
+            logger.info(
+                f"process_session_background: Posting storage message for {task_id}"
+            )
             ledger_msg_id = await create_or_update_storage_message(
                 bot,
                 {
@@ -1502,6 +1508,9 @@ class WizardHandler:
                     "size": session.get("file_size", 0),
                 },
                 user_id=user_id,
+            )
+            logger.info(
+                f"process_session_background: Storage message done, ledger_id={ledger_msg_id}"
             )
 
             # --- PROGRESS BAR FIX ---
@@ -1596,6 +1605,10 @@ class WizardHandler:
 
             msg_text = "🎬 **Processing Media...**\n\nThis may take a few minutes depending on size."
 
+            logger.info(
+                f"process_session_background: {task_id} - Sending processing message"
+            )
+
             # ALWAYS edit the message we registered, never send a new one if we have a msg_id
             target_msg_id = task_info.get("user_progress_msg_id")
             if target_msg_id:
@@ -1610,6 +1623,10 @@ class WizardHandler:
                     await bot.send_message(user_id, msg_text, parse_mode="Markdown")
             else:
                 await bot.send_message(user_id, msg_text, parse_mode="Markdown")
+
+            logger.info(
+                f"process_session_background: {task_id} - Calling FFmpegService.process_media"
+            )
 
             # Progress Tracking Setup
             try:
@@ -1662,10 +1679,15 @@ class WizardHandler:
                 all_sub_tracks=session.get("sub_tracks"),
             )
 
+            logger.info(
+                f"process_session_background: {task_id} - FFmpeg completed, success={success}"
+            )
+
             if not success:
                 raise RuntimeError("Media processing failed.")
 
             # 5. Upload and Send
+            logger.info(f"process_session_background: {task_id} - Uploading file")
             if query:
                 await query.edit_message_text("📤 **Uploading File...**")
             else:
@@ -1816,6 +1838,10 @@ class WizardHandler:
             from config.settings import settings
             import uuid
 
+            logger.info(
+                f"execute_processing_flow: task_id={task_id}, user_id={user_id}"
+            )
+
             user = await get_user(user_id)
             if not user:
                 await query.answer("❌ User not found", show_alert=True)
@@ -1835,6 +1861,10 @@ class WizardHandler:
             is_at_plan_limit = user_active_count >= plan_limit
             global_busy = db_position > 0 or FFmpegService._get_semaphore().locked()
 
+            logger.info(
+                f"execute_processing_flow: plan={plan_name}, at_limit={is_at_plan_limit}, busy={global_busy}, pos={db_position}"
+            )
+
             if is_at_plan_limit or (global_busy and plan_name != "pro"):
                 position = db_position + 1
                 verify_token = f"bypass_{uuid.uuid4().hex[:8]}"
@@ -1845,6 +1875,10 @@ class WizardHandler:
                         "session": session,
                         "wizard_bypass_token": verify_token,
                     },
+                )
+
+                logger.info(
+                    f"execute_processing_flow: task {task_id} QUEUED at position {position}"
                 )
 
                 bot_username = context.bot.username
