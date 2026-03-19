@@ -290,42 +290,18 @@ async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE,
             await update.message.reply_text(ERROR_MESSAGES.get("database_error", "Database error"))
             return
         
-        # 6️⃣ ✅ LAUNCH WIZARD (Replaces immediate progress)
-        # We pass file_id. Wizard will handle download if needed.
-        # But wait, Wizard expects file_path for FFmpeg. 
-        # For MVP, let's DOWNLOAD IT NOW so the path is ready for the wizard.
-        # (Optimized approach would be JIT download, but let's keep it simple for stability)
-        
-        progress_msg = await update.message.reply_text("📥 **Downloading for inspection...**")
-        
-        # Download to temp with UUID (S001)
-        import uuid
-        from pathlib import Path
-        from config.constants import DOWNLOADS_DIR # Ensure imported
-        
-        ext = Path(filename).suffix or ".tmp"
-        internal_filename = f"{uuid.uuid4()}{ext}"
-        user_dl_dir = DOWNLOADS_DIR / str(user_id)
-        user_dl_dir.mkdir(parents=True, exist_ok=True)
-        internal_path = user_dl_dir / internal_filename
-        internal_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        file_path = await (await file_obj.get_file()).download_to_drive(custom_path=internal_path)
-        file_path = str(file_path) # Path object to string
-        
-        await progress_msg.delete()
-        
-        # Start Wizard
+        # 6️⃣ ✅ LAUNCH WIZARD (Optimized: No immediate download)
         await WizardHandler.start_wizard(
             update, 
             context, 
-            file_path=file_path, 
+            file_path=None, 
+            file_id=file_obj.file_id,
             file_name=filename, # Pass Safe Display Name
             file_size=file_size,
             task_id=task_id
         )
         
-        # Background job REMOVED - Wizard handles execution now.
+        logger.info(f"✅ Wizard started for task without downloading: {task_id}")
         logger.info(f"✅ Wizard started for task: {task_id}")
 
     except Exception as e:
@@ -906,7 +882,7 @@ async def handle_us_myfiles(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 class WizardHandler:
     
     @staticmethod
-    async def start_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE, file_path: str, file_name: str, file_size: int, task_id: str):
+    async def start_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE, file_path: Optional[str], file_id: Optional[str], file_name: str, file_size: int, task_id: str):
         user_id = update.effective_user.id
         
         from bot.database import get_user
@@ -917,7 +893,8 @@ class WizardHandler:
         # Initialize Session
         context.user_data['wizard'] = {
             "task_id": task_id,
-            "file_path": file_path,
+            "file_path": file_path, # Could be None if deferred
+            "file_id": file_id,     # Store file_id to download later
             "original_name": file_name,
             "file_size": file_size,
             "selected_audio": {}, # {index: True/False}
@@ -967,7 +944,28 @@ class WizardHandler:
                 
                 try:
                     # Probe if not done
-                    if not session['tracks_probed']:
+                    if not session.get('tracks_probed'):
+                        if not session.get('file_path'):
+                            await query.edit_message_text("📥 **Downloading for inspection...**")
+                            import uuid
+                            from pathlib import Path
+                            from config.constants import DOWNLOADS_DIR
+                            
+                            ext = Path(session.get('original_name', 'file')).suffix or ".tmp"
+                            internal_filename = f"{uuid.uuid4()}{ext}"
+                            user_dl_dir = DOWNLOADS_DIR / str(user_id)
+                            user_dl_dir.mkdir(parents=True, exist_ok=True)
+                            internal_path = user_dl_dir / internal_filename
+                            
+                            file_id = session.get('file_id')
+                            if not file_id:
+                                await query.edit_message_text("❌ Missing file reference.")
+                                return
+                            
+                            file_obj = await context.bot.get_file(file_id)
+                            file_path = await file_obj.download_to_drive(custom_path=internal_path)
+                            session['file_path'] = str(file_path)
+
                         await query.edit_message_text("🔄 **Analyzing File Tracks...**")
                         probe_data = await FFmpegService.probe_file(session['file_path'])
                         session['audio_tracks'] = probe_data['audio'] # list of dicts
@@ -1211,6 +1209,32 @@ class WizardHandler:
                 stage="🚀 Initializing...",
                 progress=0
             )
+
+            # --- JIT DOWNLOAD IF DEFERRED ---
+            if not session.get('file_path'):
+                await send_progress_message(
+                    bot, user_id, task_id, 
+                    filesize=session.get("file_size", 0),
+                    stage="📥 Downloading file...",
+                    progress=10
+                )
+                import uuid
+                from pathlib import Path
+                from config.constants import DOWNLOADS_DIR
+                
+                ext = Path(session.get('original_name', 'file')).suffix or ".tmp"
+                internal_filename = f"{uuid.uuid4()}{ext}"
+                user_dl_dir = DOWNLOADS_DIR / str(user_id)
+                user_dl_dir.mkdir(parents=True, exist_ok=True)
+                internal_path = user_dl_dir / internal_filename
+                
+                file_id = session.get('file_id')
+                if not file_id:
+                    raise RuntimeError("Missing file reference. Task failed.")
+                
+                file_obj = await bot.get_file(file_id)
+                file_path = await file_obj.download_to_drive(custom_path=internal_path)
+                session['file_path'] = str(file_path)
             
             # 2. Get Selections
             audio_indices = [idx for idx, selected in session.get('selected_audio', {}).items() if selected]

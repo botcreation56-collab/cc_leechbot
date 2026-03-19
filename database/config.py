@@ -1,5 +1,5 @@
 """
-bot/database/_config.py — Global bot configuration (read/write with TTLCache).
+database/config.py — Global bot configuration (read/write with TTLCache).
 """
 
 import logging
@@ -7,9 +7,9 @@ import traceback
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from infrastructure.database._legacy_bot._cache import _get_cache_lock, _bust_config_cache, _config_cache
-from infrastructure.database._legacy_bot._connection import get_db
-from infrastructure.database._legacy_bot._security_log import log_admin_action
+from database.connection import get_db
+from database.cache import _get_cache_lock, _bust_config_cache, _config_cache
+from database.security_log import log_admin_action
 
 logger = logging.getLogger("filebot.db.config")
 
@@ -18,6 +18,7 @@ def _get_from_settings(key: str) -> Any:
     """Get value from settings.py as fallback for missing DB config keys."""
     try:
         from config.settings import get_settings
+
         settings = get_settings()
         key_mapping = {
             "log_channel": "LOG_CHANNEL_ID",
@@ -35,13 +36,10 @@ def _get_from_settings(key: str) -> Any:
 
 
 async def _initialize_config_from_settings() -> Dict[str, Any]:
-    """
-    Initialize config document in MongoDB from settings.py values.
-    Called when no config exists in database.
-    Uses upsert so safe to call even if ensure_channel_schema() already inserted the doc.
-    """
+    """Initialize config document in MongoDB from settings.py values."""
     try:
         from config.settings import get_settings, get_force_sub_channels
+
         settings = get_settings()
 
         logger.info("🔄 Initializing config from settings.py")
@@ -61,12 +59,14 @@ async def _initialize_config_from_settings() -> Dict[str, Any]:
         db = get_db()
         await db.config.update_one(
             {"type": "global"},
-            {"$setOnInsert": {
-                "type": "global",
-                "created_at": datetime.utcnow(),
-                "initialized_from": "settings.py",
-                **initial_fields,
-            }},
+            {
+                "$setOnInsert": {
+                    "type": "global",
+                    "created_at": datetime.utcnow(),
+                    "initialized_from": "settings.py",
+                    **initial_fields,
+                }
+            },
             upsert=True,
         )
 
@@ -80,12 +80,7 @@ async def _initialize_config_from_settings() -> Dict[str, Any]:
 
 
 async def get_config(key: Optional[str] = None) -> Any:
-    """
-    Fetch global bot configuration from 'config' collection with 30s TTLCache.
-
-    Args:
-        key: Optional specific key to return. If None, returns full config dict.
-    """
+    """Fetch global bot configuration from 'config' collection with 30s TTLCache."""
     async with _get_cache_lock():
         if "global" in _config_cache:
             config_doc = _config_cache["global"]
@@ -120,13 +115,7 @@ async def get_config(key: Optional[str] = None) -> Any:
 
 
 async def set_config(updates: Dict[str, Any], upsert: bool = True) -> bool:
-    """
-    Update or insert global bot configuration in MongoDB.
-
-    Args:
-        updates: Dict of key-value pairs to set (e.g., {"log_channel": -123}).
-        upsert:  If True, create if doesn't exist.
-    """
+    """Update or insert global bot configuration in MongoDB."""
     async with _get_cache_lock():
         _bust_config_cache()
 
@@ -192,7 +181,9 @@ async def update_config(updates: Dict[str, Any], admin_id: int = 0) -> bool:
 
     if success and admin_id:
         try:
-            await log_admin_action(admin_id, "config_updated", {"keys": list(updates.keys())})
+            await log_admin_action(
+                admin_id, "config_updated", {"keys": list(updates.keys())}
+            )
             logger.info(f"✅ Admin action logged for {admin_id}")
         except Exception as e:
             logger.warning(f"⚠️ Failed to log admin action: {e}")
@@ -202,11 +193,7 @@ async def update_config(updates: Dict[str, Any], admin_id: int = 0) -> bool:
 
 
 def get_config_sync(key: Optional[str] = None) -> Any:
-    """
-    Synchronous version of get_config.
-    ONLY checks TTLCache or settings.py fallback.
-    Does NOT trigger a database read.
-    """
+    """Synchronous version of get_config. ONLY checks TTLCache or settings.py fallback."""
     if "global" in _config_cache:
         config_doc = _config_cache["global"]
         if key:

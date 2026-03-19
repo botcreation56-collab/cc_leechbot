@@ -1,22 +1,21 @@
 """
-bot/database/_users.py — User CRUD operations.
-
-All writes bust both the local TTLCache and infrastructure repository caches
-via the shared cache bridge, ensuring bidirectional freshness.
+database/users.py — User CRUD operations.
 """
 
 import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from infrastructure.database._legacy_bot._cache import _get_cache_lock, _bust_user_cache, _user_cache
-from infrastructure.database._legacy_bot._connection import get_db
-from infrastructure.database._legacy_bot._security_log import log_admin_action
+from database.connection import get_db
+from database.cache import _get_cache_lock, _bust_user_cache, _user_cache
+from database.security_log import log_admin_action
 
 logger = logging.getLogger("filebot.db.users")
 
 
-async def create_user(user_id: int, first_name: str, username: str = "") -> Dict[str, Any]:
+async def create_user(
+    user_id: int, first_name: str, username: str = ""
+) -> Dict[str, Any]:
     """Create a new user in MongoDB with complete profile."""
     try:
         logger.info(f"🔄 create_user: user_id={user_id}, first_name={first_name}")
@@ -29,21 +28,24 @@ async def create_user(user_id: int, first_name: str, username: str = "") -> Dict
 
         existing = await db.users.find_one({"telegram_id": user_id})
         if existing:
-            # Sync role if user is admin in settings but not in DB
             try:
                 from config.settings import get_admin_ids
+
                 if user_id in get_admin_ids() and existing.get("role") != "admin":
-                    await db.users.update_one({"telegram_id": user_id}, {"$set": {"role": "admin"}})
+                    await db.users.update_one(
+                        {"telegram_id": user_id}, {"$set": {"role": "admin"}}
+                    )
                     existing["role"] = "admin"
-                    logger.info(f"⬆️ Promoted existing user {user_id} to admin based on settings")
+                    logger.info(
+                        f"⬆️ Promoted existing user {user_id} to admin based on settings"
+                    )
             except Exception:
                 pass
             return existing
 
-        logger.info("   User not found, creating new document...")
-
         try:
             from config.settings import get_admin_ids
+
             is_admin = user_id in get_admin_ids()
         except Exception:
             is_admin = False
@@ -78,7 +80,6 @@ async def create_user(user_id: int, first_name: str, username: str = "") -> Dict
             "last_activity": now,
         }
 
-        logger.info("   Document prepared. Inserting into MongoDB...")
         await db.users.insert_one(user_doc)
         logger.info(f"✅ User created successfully: {user_id}")
         return user_doc
@@ -128,7 +129,13 @@ async def get_all_users(
             query["banned"] = True
 
         skip = page * limit
-        users = await db.users.find(query).sort("created_at", -1).skip(skip).limit(limit).to_list(length=None)
+        users = (
+            await db.users.find(query)
+            .sort("created_at", -1)
+            .skip(skip)
+            .limit(limit)
+            .to_list(length=None)
+        )
         if not isinstance(users, list):
             users = list(users) if users else []
 
@@ -146,7 +153,10 @@ async def get_banned_users(limit: int = 1000) -> List[Dict[str, Any]]:
     try:
         db = get_db()
         users = await (
-            db.users.find({"banned": True}).sort("banned_at", -1).limit(limit).to_list(length=limit)
+            db.users.find({"banned": True})
+            .sort("banned_at", -1)
+            .limit(limit)
+            .to_list(length=limit)
         )
         logger.info(f"✅ Retrieved {len(users) if users else 0} banned users")
         return users if users is not None else []
@@ -158,15 +168,7 @@ async def get_banned_users(limit: int = 1000) -> List[Dict[str, Any]]:
 async def update_user(
     user_id: int, updates: Dict[str, Any], admin_id: Optional[int] = None
 ) -> bool:
-    """
-    Update user document — supports nested field updates with dot notation.
-    Busts the user cache so the next get_user() fetches fresh data.
-
-    Examples:
-        updates = {"plan": "premium"}          # Simple field
-        updates = {"settings.prefix": "test"}  # Nested field with dot notation
-        updates = {"settings.metadata": {...}} # Nested object
-    """
+    """Update user document — supports nested field updates with dot notation."""
     try:
         db = get_db()
 
@@ -180,11 +182,26 @@ async def update_user(
             del updates["_id"]
 
         ALLOWED_USER_KEYS = {
-            "first_name", "username", "plan", "storage_limit", "used_storage",
-            "daily_limit", "daily_used", "parallel_slots", "banned", "ban_reason",
-            "banned_at", "banned_by", "notifications_enabled", "role",
-            "files_processed", "settings", "validity_from", "validity_to",
-            "requested_fsub", "storage_msg_id",
+            "first_name",
+            "username",
+            "plan",
+            "storage_limit",
+            "used_storage",
+            "daily_limit",
+            "daily_used",
+            "parallel_slots",
+            "banned",
+            "ban_reason",
+            "banned_at",
+            "banned_by",
+            "notifications_enabled",
+            "role",
+            "files_processed",
+            "settings",
+            "validity_from",
+            "validity_to",
+            "requested_fsub",
+            "storage_msg_id",
         }
 
         for key in list(updates.keys()):
@@ -198,7 +215,9 @@ async def update_user(
             return True
 
         result = await db.users.update_one({"telegram_id": user_id}, {"$set": updates})
-        logger.info(f"   MongoDB result: matched={result.matched_count}, modified={result.modified_count}")
+        logger.info(
+            f"   MongoDB result: matched={result.matched_count}, modified={result.modified_count}"
+        )
 
         if admin_id is not None:
             try:
@@ -218,21 +237,27 @@ async def update_user(
         return False
 
 
-async def ban_user(user_id: int, reason: str = "", admin_id: Optional[int] = None) -> bool:
+async def ban_user(
+    user_id: int, reason: str = "", admin_id: Optional[int] = None
+) -> bool:
     """Ban a user."""
     try:
         db = get_db()
         result = await db.users.update_one(
             {"telegram_id": user_id},
-            {"$set": {
-                "banned": True,
-                "ban_reason": reason,
-                "banned_at": datetime.utcnow(),
-                "banned_by": admin_id,
-            }},
+            {
+                "$set": {
+                    "banned": True,
+                    "ban_reason": reason,
+                    "banned_at": datetime.utcnow(),
+                    "banned_by": admin_id,
+                }
+            },
         )
         if admin_id:
-            await log_admin_action(admin_id, "user_banned", {"user_id": user_id, "reason": reason})
+            await log_admin_action(
+                admin_id, "user_banned", {"user_id": user_id, "reason": reason}
+            )
         _bust_user_cache(user_id)
         logger.info(f"✅ User banned: {user_id}")
         return result.modified_count > 0
@@ -247,7 +272,14 @@ async def unban_user(user_id: int, admin_id: Optional[int] = None) -> bool:
         db = get_db()
         result = await db.users.update_one(
             {"telegram_id": user_id},
-            {"$set": {"banned": False, "ban_reason": None, "banned_at": None, "banned_by": None}},
+            {
+                "$set": {
+                    "banned": False,
+                    "ban_reason": None,
+                    "banned_at": None,
+                    "banned_by": None,
+                }
+            },
         )
         if admin_id:
             await log_admin_action(admin_id, "user_unbanned", {"user_id": user_id})
@@ -308,14 +340,18 @@ async def store_user_thumbnail(
         if result.matched_count > 0:
             logger.info(f"✅ Thumbnail stored for user {user_id}: {thumbnail_url}")
             if admin_id:
-                await log_admin_action(admin_id, "user_thumbnail_updated", {
-                    "user_id": user_id, "thumbnail_url": thumbnail_url
-                })
+                await log_admin_action(
+                    admin_id,
+                    "user_thumbnail_updated",
+                    {"user_id": user_id, "thumbnail_url": thumbnail_url},
+                )
             return True
         logger.error(f"❌ User {user_id} not found")
         return False
     except Exception as e:
-        logger.error(f"❌ Store thumbnail failed for user {user_id}: {e}", exc_info=True)
+        logger.error(
+            f"❌ Store thumbnail failed for user {user_id}: {e}", exc_info=True
+        )
         return False
 
 
@@ -341,7 +377,9 @@ async def add_user_destination(user_id: int, channel_id: int, title: str) -> boo
         destinations = settings.get("destinations", [])
         if any(d.get("id") == channel_id for d in destinations):
             return True
-        destinations.append({"id": channel_id, "title": title, "added_at": datetime.utcnow()})
+        destinations.append(
+            {"id": channel_id, "title": title, "added_at": datetime.utcnow()}
+        )
         await update_user(user_id, {"settings.destinations": destinations})
         return True
     except Exception as e:

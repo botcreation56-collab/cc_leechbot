@@ -1,17 +1,16 @@
 """
-bot/database/_rclone.py — Rclone remote storage operations (config CRUD + upload/delete).
-
-Note: upload_to_rclone / delete_from_rclone use asyncio subprocesses (non-blocking).
+database/rclone.py — Rclone remote storage operations.
 """
 
 import asyncio
 import logging
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from infrastructure.database._legacy_bot._connection import get_db
-from infrastructure.database._legacy_bot._security_log import log_admin_action
+from database.connection import get_db
+from database.security_log import log_admin_action
 
 logger = logging.getLogger("filebot.db.rclone")
 
@@ -19,9 +18,11 @@ RCLONE_SUPPORTED_SERVICES = ["gdrive", "onedrive", "dropbox", "mega", "s3"]
 
 
 async def add_rclone_config(
+    name: str,
     service: str,
     plan: str,
     max_users: int,
+    concurrency: int,
     credentials: str,
     admin_id: int,
 ) -> Optional[str]:
@@ -35,22 +36,21 @@ async def add_rclone_config(
 
         config_id = f"rclone_{service}_{plan}_{uuid.uuid4().hex[:8]}"
 
-        from bot.utils import encrypt_credentials
-        
-        # Expecting a string but `encrypt_credentials` takes Dict. We can just store a dict.
-        # However, let's keep it simple: encrypt_credentials actually takes string or dict, 
-        # let's write our own quick logic if needed, or see what encrypt_credentials expects.
         try:
+            from bot.utils import encrypt_credentials
+
             encrypted_creds = encrypt_credentials({"config": credentials})
         except Exception as e:
             logger.error(f"Failed to encrypt credentials: {e}")
-            encrypted_creds = {"config": credentials} # Fallback or error? Realistically, return None.
+            encrypted_creds = {"config": credentials}
 
         rclone_config = {
             "config_id": config_id,
+            "name": name,
             "service": service.lower(),
             "plan": plan,
             "max_users": max_users,
+            "concurrency": concurrency,
             "current_users": 0,
             "credentials": encrypted_creds,
             "created_at": datetime.utcnow(),
@@ -115,7 +115,15 @@ async def pick_rclone_config_for_plan(plan: str) -> Optional[Dict[str, Any]]:
     try:
         db = get_db()
         configs = await (
-            db.rclone_configs.find({"is_active": True, "plan": plan})
+            db.rclone_configs.find(
+                {
+                    "is_active": True,
+                    "plan": plan,
+                    "$expr": {
+                        "$lt": ["$current_users", {"$ifNull": ["$concurrency", 4]}]
+                    },
+                }
+            )
             .sort("current_users", 1)
             .limit(1)
             .to_list(length=1)
@@ -151,21 +159,31 @@ async def increment_rclone_usage(config_id: str, delta: int = 1) -> bool:
 async def upload_to_rclone(
     file_path: str, remote_name: str, folder_path: str = "/", task_id: str = None
 ) -> Optional[Dict[str, Any]]:
-    """
-    Upload file to rclone remote and return shareable link.
-    Uses asyncio.create_subprocess_exec (non-blocking).
-    """
+    """Upload file to rclone remote and return shareable link."""
     try:
-        from pathlib import Path as _Path
         remote_path = f"{remote_name}:{folder_path}"
-        
+
         if task_id:
-            ext = _Path(file_path).suffix
+            ext = Path(file_path).suffix
             full_remote = f"{remote_path}/task_{task_id}{ext}"
-            cmd = ["rclone", "copyto", file_path, full_remote, "--progress", "--transfers=1"]
+            cmd = [
+                "rclone",
+                "copyto",
+                file_path,
+                full_remote,
+                "--progress",
+                "--transfers=1",
+            ]
         else:
-            full_remote = f"{remote_path}/{_Path(file_path).name}"
-            cmd = ["rclone", "copy", file_path, full_remote, "--progress", "--transfers=1"]
+            full_remote = f"{remote_path}/{Path(file_path).name}"
+            cmd = [
+                "rclone",
+                "copy",
+                file_path,
+                full_remote,
+                "--progress",
+                "--transfers=1",
+            ]
         process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
@@ -174,13 +192,17 @@ async def upload_to_rclone(
         _, stderr = await asyncio.wait_for(process.communicate(), timeout=1800)
 
         if process.returncode != 0:
-            logger.error(f"Rclone upload failed: {stderr.decode(errors='ignore')[:300]}")
+            logger.error(
+                f"Rclone upload failed: {stderr.decode(errors='ignore')[:300]}"
+            )
             return None
 
         cloud_url = f"{remote_path} (access via rclone)"
         if remote_name == "gdrive":
             link_proc = await asyncio.create_subprocess_exec(
-                "rclone", "link", full_remote,
+                "rclone",
+                "link",
+                full_remote,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -209,13 +231,13 @@ async def update_rclone_config(config_id: str, updates: Dict[str, Any]) -> bool:
     try:
         db = get_db()
         result = await db.rclone_configs.update_one(
-            {"config_id": config_id},
-            {"$set": updates}
+            {"config_id": config_id}, {"$set": updates}
         )
         return result.modified_count > 0
     except Exception as e:
         logger.error(f"❌ update_rclone_config failed: {e}", exc_info=True)
         return False
+
 
 async def delete_rclone_config(config_id: str) -> bool:
     """Delete a specific rclone config by ID."""
@@ -227,11 +249,14 @@ async def delete_rclone_config(config_id: str) -> bool:
         logger.error(f"❌ delete_rclone_config failed: {e}", exc_info=True)
         return False
 
+
 async def delete_from_rclone(remote_name: str, file_id: str) -> bool:
     """Delete expired file from rclone remote (non-blocking)."""
     try:
         process = await asyncio.create_subprocess_exec(
-            "rclone", "delete", file_id,
+            "rclone",
+            "delete",
+            file_id,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )

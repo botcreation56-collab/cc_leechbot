@@ -1096,13 +1096,12 @@ async def handle_us_rclone_service(update: Update, context: ContextTypes.DEFAULT
         query = update.callback_query
         await query.answer()
 
-        context.user_data["awaiting"] = "us_rclone_client_id"
+        context.user_data["awaiting"] = "us_rclone_name"
         
         await query.message.reply_text(
             "📂 **Setup Google Drive (Hybrid Auth)**\n\n"
             "To connect your Google Drive safely, please generate your own Google Cloud app credentials.\n\n"
-            "**Step 1:** Please enter your Google **Client ID**.\n"
-            "*(It usually ends with `apps.googleusercontent.com`)*\n\n"
+            "**Step 1:** Please enter a short **Name** for this drive (e.g. `MyMovies`).\n\n"
             "Use /cancel to abort.",
             parse_mode="Markdown"
         )
@@ -1300,6 +1299,22 @@ async def handle_user_rclone_setup_step(update: Update, context: ContextTypes.DE
         user_id = update.effective_user.id
         awaiting = context.user_data.get("awaiting")
 
+        if awaiting == "us_rclone_name":
+            import re
+            clean_name = re.sub(r'[^a-zA-Z0-9_\-]', '', text)
+            if not clean_name:
+                await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Invalid name. Use letters and numbers.", parse_mode="Markdown")
+                return
+            context.user_data["temp_rclone_name"] = clean_name
+            context.user_data["awaiting"] = "us_rclone_client_id"
+            await update.message.reply_text(
+                "**Step 2:** Please enter your Google **Client ID**.\n"
+                "*(It usually ends with `apps.googleusercontent.com`)*\n\n"
+                "Use /cancel to abort.",
+                parse_mode="Markdown"
+            )
+            return
+
         if awaiting == "us_rclone_client_id":
             if not text or len(text) < 10 or "." not in text:
                 await send_auto_delete_msg(context.bot, update.effective_chat.id, "❌ Invalid Client ID. Please try again or /cancel.", parse_mode="Markdown")
@@ -1307,7 +1322,7 @@ async def handle_user_rclone_setup_step(update: Update, context: ContextTypes.DE
             context.user_data["temp_rclone_client_id"] = text
             context.user_data["awaiting"] = "us_rclone_client_secret"
             await update.message.reply_text(
-                "**Step 2:** Please enter your Google **Client Secret**.\n\n"
+                "**Step 3:** Please enter your Google **Client Secret**.\n\n"
                 "Use /cancel to abort.",
                 parse_mode="Markdown"
             )
@@ -1320,6 +1335,7 @@ async def handle_user_rclone_setup_step(update: Update, context: ContextTypes.DE
 
             client_id = context.user_data.get("temp_rclone_client_id")
             client_secret = text
+            remote_name = context.user_data.get("temp_rclone_name", f"user_{user_id}")
             
             import json
             import base64
@@ -1329,7 +1345,7 @@ async def handle_user_rclone_setup_step(update: Update, context: ContextTypes.DE
 
             config = await get_config() or {}
             
-            state_data = {"u": user_id, "i": client_id, "s": client_secret}
+            state_data = {"u": user_id, "i": client_id, "s": client_secret, "n": remote_name}
             state = base64.urlsafe_b64encode(json.dumps(state_data).encode()).decode()
 
             base_url = (config.get("webhook_url") or "").rstrip("/").replace("/webhook/telegram", "")
@@ -1351,8 +1367,8 @@ async def handle_user_rclone_setup_step(update: Update, context: ContextTypes.DE
 
             keyboard = [[InlineKeyboardButton("🔗 Authorize with Google Drive", url=auth_url)]]
             await update.message.reply_text(
-                "**Step 3:** Connect Google Drive\n\n"
-                "Click the button below to open Chrome and authorize the bot to access your Google Drive using your custom application.\n\n"
+                "**Step 4:** Connect Google Drive\n\n"
+                "Click the button below to open your browser and authorize the bot to access your Google Drive using your custom application.\n\n"
                 "Once authorized, you will see a success page and the bot will notify you.",
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode="Markdown"
@@ -1361,6 +1377,7 @@ async def handle_user_rclone_setup_step(update: Update, context: ContextTypes.DE
             # Clear text wizard state, OAuth server takes over
             context.user_data.pop("awaiting", None)
             context.user_data.pop("temp_rclone_client_id", None)
+            context.user_data.pop("temp_rclone_name", None)
             logger.info(f"✅ User {user_id} generated Hybrid OAuth link with custom credentials")
             return
 

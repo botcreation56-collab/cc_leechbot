@@ -1,8 +1,5 @@
 """
-bot/database/_broadcast.py — Broadcast draft lifecycle (create, update, send, query).
-
-Note: get_broadcasts is the unified canonical version (draft_id-based).
-The older create_broadcast_message function is preserved for compatibility.
+database/broadcast.py — Broadcast draft lifecycle management.
 """
 
 import logging
@@ -10,8 +7,8 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from infrastructure.database._legacy_bot._connection import get_db
-from infrastructure.database._legacy_bot._security_log import log_admin_action
+from database.connection import get_db
+from database.security_log import log_admin_action
 
 logger = logging.getLogger("filebot.db.broadcast")
 
@@ -25,7 +22,9 @@ async def get_broadcasts(status: Optional[str] = None) -> List[Dict[str, Any]]:
             query["status"] = status
         cursor = db.broadcasts.find(query).sort("created_at", -1)
         result = await cursor.to_list(length=100)
-        logger.info(f"✅ Retrieved broadcasts: status={status}, count={len(result) if result else 0}")
+        logger.info(
+            f"✅ Retrieved broadcasts: status={status}, count={len(result) if result else 0}"
+        )
         return result if result is not None else []
     except Exception as e:
         logger.error(f"❌ get_broadcasts error: {e}", exc_info=True)
@@ -83,7 +82,7 @@ async def send_broadcast(draft_id: str) -> bool:
 async def create_broadcast_message(
     message_text: str, target_plan: str, admin_id: int
 ) -> Optional[str]:
-    """Create broadcast message (legacy API, delegates to collection insert)."""
+    """Create broadcast message (legacy API)."""
     try:
         db = get_db()
         broadcast_id = f"bcast_{uuid.uuid4().hex[:12]}"

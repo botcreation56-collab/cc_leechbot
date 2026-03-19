@@ -1,36 +1,21 @@
 """
-bot/database/_channels.py — Channel configuration storage (log, dump, storage, force_sub).
-
-Covers:
-  - get_channel_config / get_channel_id / get_channel_metadata
-  - get_force_sub_channels / add_force_sub_channel / remove_force_sub_channel
-  - update_force_sub_metadata
-  - set_channel_config / set_storage_channel / set_dump_channel
-  - remove_channel_config
-  - get_chatbox_messages / add_chatbox_message
+database/channels.py — Channel configuration storage.
 """
 
 import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from infrastructure.database._legacy_bot._cache import _get_cache_lock, _bust_config_cache
-from infrastructure.database._legacy_bot._config import get_config
-from infrastructure.database._legacy_bot._connection import get_db
-from infrastructure.database._legacy_bot._security_log import log_admin_action
+from database.connection import get_db
+from database.cache import _get_cache_lock, _bust_config_cache
+from database.config import get_config
+from database.security_log import log_admin_action
 
 logger = logging.getLogger("filebot.db.channels")
 
 
 async def get_channel_config(channel_type: str) -> Optional[Any]:
-    """
-    Get channel configuration by type (log, dump, storage, force_sub).
-
-    Returns nested structure with fallback to flat structure:
-      - Single channels: {"id": -100123, "metadata": {...}}
-      - force_sub:       [{"id": -100123, "metadata": {...}}, ...]
-      - None if not configured
-    """
+    """Get channel configuration by type (log, dump, storage, force_sub)."""
     try:
         config = await get_config()
 
@@ -121,19 +106,29 @@ async def set_channel_config(
         db = get_db()
         result = await db.config.update_one(
             {"type": "global"},
-            {"$set": {
-                f"channels.{channel_type}": {"id": channel_id, "metadata": metadata},
-                "updated_at": datetime.utcnow(),
-            }},
+            {
+                "$set": {
+                    f"channels.{channel_type}": {
+                        "id": channel_id,
+                        "metadata": metadata,
+                    },
+                    "updated_at": datetime.utcnow(),
+                }
+            },
             upsert=True,
         )
         if result.acknowledged:
             _bust_config_cache()
             logger.info(f"✅ Channel {channel_type} saved to nested structure")
             if admin_id:
-                await log_admin_action(admin_id, f"set_{channel_type}_channel", {
-                    "channel_id": channel_id, "title": metadata.get("title"),
-                })
+                await log_admin_action(
+                    admin_id,
+                    f"set_{channel_type}_channel",
+                    {
+                        "channel_id": channel_id,
+                        "title": metadata.get("title"),
+                    },
+                )
             return True
         return False
     except Exception as e:
@@ -164,9 +159,14 @@ async def add_force_sub_channel(
             _bust_config_cache()
             logger.info(f"✅ Force sub channel added: {channel_id}")
             if admin_id:
-                await log_admin_action(admin_id, "add_force_sub_channel", {
-                    "channel_id": channel_id, "title": metadata.get("title"),
-                })
+                await log_admin_action(
+                    admin_id,
+                    "add_force_sub_channel",
+                    {
+                        "channel_id": channel_id,
+                        "title": metadata.get("title"),
+                    },
+                )
             return True
         return False
     except Exception as e:
@@ -192,7 +192,9 @@ async def remove_force_sub_channel(channel_id: int, admin_id: int = 0) -> bool:
             _bust_config_cache()
             logger.info(f"✅ Force sub channel removed: {channel_id}")
             if admin_id:
-                await log_admin_action(admin_id, "remove_force_sub_channel", {"channel_id": channel_id})
+                await log_admin_action(
+                    admin_id, "remove_force_sub_channel", {"channel_id": channel_id}
+                )
             return True
         return False
     except Exception as e:
@@ -224,13 +226,17 @@ async def update_force_sub_metadata(
             {"$set": {"channels.force_sub": existing, "updated_at": datetime.utcnow()}},
         )
         if result.acknowledged:
-            # Bust cache so changes take effect immediately
             _bust_config_cache()
             logger.info(f"✅ Force sub metadata updated: {channel_id}")
             if admin_id:
-                await log_admin_action(admin_id, "update_force_sub_metadata", {
-                    "channel_id": channel_id, "updates": updates,
-                })
+                await log_admin_action(
+                    admin_id,
+                    "update_force_sub_metadata",
+                    {
+                        "channel_id": channel_id,
+                        "updates": updates,
+                    },
+                )
             return True
         return False
     except Exception as e:
@@ -244,12 +250,11 @@ async def remove_channel_config(channel_type: str, admin_id: int = 0) -> bool:
         logger.info(f"🗑️ Removing {channel_type} channel")
         db = get_db()
         unset_fields = {f"channels.{channel_type}": ""}
-        
-        # Also unset legacy flat keys
+
         flat_key = f"{channel_type}_channel"
         unset_fields[flat_key] = ""
         unset_fields[f"{flat_key}_metadata"] = ""
-        
+
         result = await db.config.update_one(
             {"type": "global"},
             {"$unset": unset_fields, "$set": {"updated_at": datetime.utcnow()}},
@@ -278,7 +283,10 @@ async def set_dump_channel(
 ) -> bool:
     """Configure dump channel for temporary files."""
     return await set_channel_config(
-        "dump", channel_id, metadata or {"description": "Temporary file storage"}, admin_id
+        "dump",
+        channel_id,
+        metadata or {"description": "Temporary file storage"},
+        admin_id,
     )
 
 
@@ -300,10 +308,6 @@ async def get_dump_channel() -> Optional[Dict[str, Any]]:
         return None
 
 
-# ============================================================
-# CHATBOX
-# ============================================================
-
 async def get_chatbox_messages(
     user_id: Optional[int] = None, limit: int = 50
 ) -> List[Dict[str, Any]]:
@@ -313,7 +317,12 @@ async def get_chatbox_messages(
         filter_dict: Dict[str, Any] = {}
         if user_id is not None:
             filter_dict["user_id"] = user_id
-        messages = await db.chatbox.find(filter_dict).sort("timestamp", -1).limit(limit).to_list(length=limit)
+        messages = (
+            await db.chatbox.find(filter_dict)
+            .sort("timestamp", -1)
+            .limit(limit)
+            .to_list(length=limit)
+        )
         logger.info(f"✅ Retrieved {len(messages) if messages else 0} chatbox messages")
         return messages if messages is not None else []
     except Exception as e:
@@ -327,18 +336,21 @@ async def add_chatbox_message(
     """Add chatbox message."""
     try:
         db = get_db()
-        await db.chatbox.insert_one({
-            "user_id": user_id,
-            "message": message,
-            "sender_type": sender_type,
-            "timestamp": datetime.utcnow(),
-            "read": False,
-        })
+        await db.chatbox.insert_one(
+            {
+                "user_id": user_id,
+                "message": message,
+                "sender_type": sender_type,
+                "timestamp": datetime.utcnow(),
+                "read": False,
+            }
+        )
         logger.info(f"✅ Chatbox message added for user {user_id}")
         return True
     except Exception as e:
         logger.error(f"❌ Add chatbox message failed: {e}", exc_info=True)
         return False
+
 
 async def get_unique_chat_users(limit: int = 20) -> List[Dict[str, Any]]:
     """Get unique users who have messaged the chatbox, sorted by last message."""
@@ -353,11 +365,11 @@ async def get_unique_chat_users(limit: int = 20) -> List[Dict[str, Any]]:
                     "timestamp": {"$first": "$timestamp"},
                     "unread_count": {
                         "$sum": {"$cond": [{"$eq": ["$read", False]}, 1, 0]}
-                    }
+                    },
                 }
             },
             {"$sort": {"timestamp": -1}},
-            {"$limit": limit}
+            {"$limit": limit},
         ]
         results = await db.chatbox.aggregate(pipeline).to_list(length=limit)
         return results

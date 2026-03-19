@@ -241,7 +241,6 @@ async def handle_view_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE)
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🧪 Test", callback_data=f"test_single_rclone_{rid}"),
              InlineKeyboardButton("🗑️ Remove", callback_data=f"rclone_delete_prompt_{rid}")],
-            [InlineKeyboardButton("✏️ Edit Credentials (Config)", callback_data=f"rclone_edit_creds_{rid}")],
             [InlineKeyboardButton("👥 Users", callback_data=f"rclone_users_{rid}"),
              InlineKeyboardButton("🔙 Back", callback_data="list_rclone_remotes")]
         ])
@@ -713,7 +712,26 @@ async def rclone_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
             
             wizard["max_users"] = max_users
+            context.user_data["awaiting"] = "rclone_concurrency_oauth"
+            await update.message.reply_text(
+                "**Step 6 / 6 — Max Concurrency**\n\n"
+                "How many parallel connections (uploads) can this remote handle?\n"
+                "Enter a number (e.g. `4`).\n\n"
+                "Use /cancel to abort.",
+                parse_mode="Markdown"
+            )
+            return
+
+        if awaiting == "rclone_concurrency_oauth":
+            try:
+                concurrency = int(text)
+                if concurrency < 1: raise ValueError
+            except ValueError:
+                await update.message.reply_text("❌ Please enter a valid number (e.g. `4`).")
+                return
             
+            wizard["concurrency"] = concurrency
+            max_users = wizard.get("max_users", 10)
             # Now generate OAUTH URL!
             client_id = wizard.get("client_id")
             client_secret = wizard.get("client_secret")
@@ -731,7 +749,8 @@ async def rclone_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "i": client_id, 
                 "s": client_secret,
                 "p": plan,
-                "m": max_users
+                "m": max_users,
+                "c": concurrency
             }
             state = base64.urlsafe_b64encode(json.dumps(state_data).encode()).decode()
 
@@ -801,7 +820,7 @@ async def rclone_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             wizard["config"] = text
             context.user_data["awaiting"] = "rclone_max_users"
             await update.message.reply_text(
-                "**Step 5 / 5 — Max Simultaneous Users**\n\n"
+                "**Step 5 / 6 — Max Simultaneous Users**\n\n"
                 "How many users can share this remote simultaneously?\n"
                 "Enter a number (e.g. `10`).\n\n"
                 "Use /cancel to abort.",
@@ -823,6 +842,27 @@ async def rclone_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
             wizard["max_users"] = max_users
+            context.user_data["awaiting"] = "rclone_concurrency"
+            await update.message.reply_text(
+                "**Step 6 / 6 — Max Concurrency**\n\n"
+                "How many parallel connections (uploads) can this remote handle?\n"
+                "Enter a number (e.g. `4`).\n\n"
+                "Use /cancel to abort.",
+                parse_mode="Markdown"
+            )
+            return
+
+        # ── Step 5: Concurrency → save ─────────────────────────────────
+        if awaiting == "rclone_concurrency":
+            try:
+                concurrency = int(text)
+                if concurrency < 1: raise ValueError
+            except ValueError:
+                await update.message.reply_text("❌ Please enter a valid number (e.g. `4`).")
+                return
+
+            wizard["concurrency"] = concurrency
+            max_users = wizard.get("max_users", 10)
             service  = wizard.get("service", "unknown")
             name     = wizard.get("name", "remote")
             config   = wizard.get("config", "")
@@ -830,9 +870,11 @@ async def rclone_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             from bot.database import add_rclone_config
             config_id = await add_rclone_config(
+                name=name,
                 service=service,
                 plan=plan,
                 max_users=max_users,
+                concurrency=concurrency,
                 credentials=config,
                 admin_id=user_id,
             )
@@ -846,6 +888,7 @@ async def rclone_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"🔑 Service: `{service}`\n"
                     f"📛 Name: `{name}`\n"
                     f"👥 Max Users: `{max_users}`\n"
+                    f"⚡ Concurrency: `{concurrency}`\n"
                     f"🆔 Config ID: `{config_id}`",
                     parse_mode="Markdown",
                     reply_markup=InlineKeyboardMarkup([

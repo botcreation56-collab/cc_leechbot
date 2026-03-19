@@ -482,6 +482,7 @@ async def rclone_callback(request: Request, code: str = None, state: str = None,
         client_secret = state_data.get("s")
         plan = state_data.get("p", "user")
         max_users = state_data.get("m", 1)
+        concurrency = state_data.get("c", 4)
         
         if not user_id or not client_id or not client_secret:
              raise HTTPException(status_code=400, detail="Malformed state payload")
@@ -529,9 +530,11 @@ async def rclone_callback(request: Request, code: str = None, state: str = None,
         # Save to DB
         from bot.database import add_rclone_config
         config_id = await add_rclone_config(
+            name=remote_name,
             service="gdrive",
             plan=plan,
             max_users=max_users,
+            concurrency=concurrency,
             credentials=config_snippet,
             admin_id=user_id
         )
@@ -586,7 +589,20 @@ async def rclone_callback(request: Request, code: str = None, state: str = None,
                     parse_mode="Markdown"
                 )
 
-            return {"status": "success", "message": "Rclone service created! You can close this window and return to the bot."}
+            try:
+                bot_user = await bot.get_me()
+                bot_username = bot_user.username
+            except Exception:
+                bot_username = ""
+
+            return templates.TemplateResponse("success.html", {
+                "request": request,
+                "icon": "☁️",
+                "heading": "Drive Connected!",
+                "message": "Your Rclone remote has been successfully created.<br>You can now safely close this window.",
+                "bot_username": bot_username,
+                "btn_text": "Return to Telegram"
+            })
 
         else:
             return {"error": "Failed to save rclone config to database."}

@@ -1,27 +1,16 @@
 """
-infrastructure/database/__init__.py
+infrastructure/database/__init__.py — Backward compatibility shim.
 
-Single entry point for the entire database layer.
-
-New DDD-compliant layer (use these going forward):
-  - DatabaseConnection  → infrastructure.database.connection
-  - UserRepository      → infrastructure.database.repositories
-  - TaskRepository      → infrastructure.database.repositories
-  - CloudFileRepository → infrastructure.database.repositories
-  - ConfigRepository    → infrastructure.database.repositories
-  - AuditLogRepository  → infrastructure.database.repositories
-  - RcloneConfigRepository → infrastructure.database.repositories
-
-Legacy layer (preserved for backward compatibility):
-  - infrastructure.database._legacy_bot.*   (was: bot/database/)
-  - infrastructure.database._legacy_core.*  (was: database/)
-
-Cache bridge (cross-layer cache invalidation):
-  - infrastructure.database.cache_bridge
+All database functionality is now in database/. This shim re-exports from there.
 """
 
-from infrastructure.database.connection import DatabaseConnection
-from infrastructure.database.repositories import (
+from database import (
+    connect_db,
+    disconnect_db,
+    get_db,
+    get_db_context,
+    DatabaseConnection,
+    MONGODB_TIMEOUT,
     UserRepository,
     TaskRepository,
     CloudFileRepository,
@@ -30,17 +19,14 @@ from infrastructure.database.repositories import (
     AuditLogRepository,
     RcloneConfigRepository,
 )
-from infrastructure.database.cache_bridge import (
-    bust_user_cache,
-    bust_config_cache,
-    register_user_repo,
-    register_config_repo,
-)
 
 __all__ = [
-    # Connection
+    "connect_db",
+    "disconnect_db",
+    "get_db",
+    "get_db_context",
     "DatabaseConnection",
-    # Repositories
+    "MONGODB_TIMEOUT",
     "UserRepository",
     "TaskRepository",
     "CloudFileRepository",
@@ -48,9 +34,4 @@ __all__ = [
     "ConfigRepository",
     "AuditLogRepository",
     "RcloneConfigRepository",
-    # Cache bridge
-    "bust_user_cache",
-    "bust_config_cache",
-    "register_user_repo",
-    "register_config_repo",
 ]

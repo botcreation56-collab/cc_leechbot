@@ -160,11 +160,14 @@ async def upload_to_rclone(
             ]
             logger.info(f"Running: rclone copy {path.name} {destination}")
 
-        process = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-        )
-
+        from bot.database import increment_rclone_usage
+        await increment_rclone_usage(rclone_config_id, 1)
+        
         try:
+            process = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            )
+
             if progress_callback:
                 async def read_stream(stream):
                     while True:
@@ -197,9 +200,11 @@ async def upload_to_rclone(
         shared_link = await generate_rclone_link(remote_name, remote_filepath, config_file)
 
         return {
+            "success": True,
             "cloud_url": cloud_url,
             "shared_link": shared_link or cloud_url,
-            "config_id": rclone_config_id,
+            "file_id": f"{remote_name}:{remote_filepath}",
+            "uploaded_at": datetime.utcnow()
         }
 
     except asyncio.TimeoutError:
@@ -211,6 +216,8 @@ async def upload_to_rclone(
         logger.error(f"❌ Rclone upload error: {e}")
         raise RcloneError(str(e)[:100])
     finally:
+        from bot.database import increment_rclone_usage
+        await increment_rclone_usage(rclone_config_id, -1)
         if config_file and Path(config_file).exists():
             try:
                 Path(config_file).unlink()
@@ -524,8 +531,34 @@ async def upload_and_send_file(
     files_to_send = [file_path]
     use_rclone = file_size_mb > max_tg_mb
 
+    if use_rclone:
+        # Loop until we get a free config, OR determine no configs exist
+        max_wait = 3600  # 1 hour
+        slept = 0
+        from bot.database import get_db
+        db = get_db()
+        while not rclone_config and slept < max_wait:
+            # Check if any configs actually exist for this plan
+            total_configs = await db.rclone_configs.count_documents({"is_active": True, "plan": user_plan})
+            if total_configs == 0:
+                break # Fallback to splitting
+
+            from bot.handlers.user import send_progress_message
+            if task_id:
+                await send_progress_message(
+                    bot=bot,
+                    user_id=user_id,
+                    task_id=task_id,
+                    filesize=file_size_bytes,
+                    stage="⏳ Waiting for available Cloud Transfer Slot...",
+                    progress=0
+                )
+            await asyncio.sleep(30)
+            slept += 30
+            rclone_config = await pick_rclone_config_for_plan(user_plan)
+
     if use_rclone and not rclone_config:
-        logger.info(f"File > {max_tg_mb}MB but no Rclone config. Falling back to splitting: {filename}")
+        logger.info(f"File > {max_tg_mb}MB but no Rclone config available. Falling back to splitting: {filename}")
         use_rclone = False
         delivery_method = "Bot API Split"
         limit_bytes = int(MAX_BOT_FILE_SIZE_MB * 1024 * 1024 * 0.95)

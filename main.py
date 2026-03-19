@@ -104,39 +104,50 @@ async def build_dependency_graph():
     await db_conn.create_indexes()
     db = db_conn.db
 
-    user_repo   = UserRepository(db)
-    task_repo   = TaskRepository(db)
-    cloud_repo  = CloudFileRepository(db)
-    otk_repo    = OneTimeKeyRepository(db)
+    user_repo = UserRepository(db)
+    task_repo = TaskRepository(db)
+    cloud_repo = CloudFileRepository(db)
+    otk_repo = OneTimeKeyRepository(db)
     config_repo = ConfigRepository(db)
-    audit_repo  = AuditLogRepository(db)
+    audit_repo = AuditLogRepository(db)
     rclone_repo = RcloneConfigRepository(db)
 
     # --- services ---
     base_url = (settings.WEBHOOK_URL or "").replace("/webhook/telegram", "")
-    user_svc    = UserService(user_repo, audit_repo)
-    dl_svc      = DownloadService()
-    media_svc   = MediaProcessingService()
-    upload_svc  = UploadService(cloud_repo, otk_repo, rclone_repo, stream_base_url=base_url)
+    user_svc = UserService(user_repo, audit_repo)
+    dl_svc = DownloadService()
+    media_svc = MediaProcessingService()
+    upload_svc = UploadService(
+        cloud_repo, otk_repo, rclone_repo, stream_base_url=base_url
+    )
 
     # Backward-compat: inject the shared Motor DB handle into the old bot.database layer
     # so existing handlers that still call `get_db()` share the exact same connection pool.
-    from infrastructure.database._legacy_bot._connection import _set_shared_db, init_db as _old_init_db
+    from database.connection import (
+        _set_shared_db,
+        ensure_channel_schema,
+        migrate_flat_to_nested,
+    )
+
     _set_shared_db(db)
-    await _old_init_db()
+    try:
+        await ensure_channel_schema(db)
+        await migrate_flat_to_nested(db)
+    except Exception as e:
+        logger.warning("⚠️ Migration step failed (non-fatal): %s", e)
 
     return {
-        "db_conn":    db_conn,
-        "user_repo":  user_repo,
-        "task_repo":  task_repo,
+        "db_conn": db_conn,
+        "user_repo": user_repo,
+        "task_repo": task_repo,
         "cloud_repo": cloud_repo,
-        "otk_repo":   otk_repo,
+        "otk_repo": otk_repo,
         "config_repo": config_repo,
         "audit_repo": audit_repo,
         "rclone_repo": rclone_repo,
-        "user_svc":   user_svc,
-        "dl_svc":     dl_svc,
-        "media_svc":  media_svc,
+        "user_svc": user_svc,
+        "dl_svc": dl_svc,
+        "media_svc": media_svc,
         "upload_svc": upload_svc,
     }
 
@@ -144,6 +155,7 @@ async def build_dependency_graph():
 # ============================================================
 # ENVIRONMENT HELPERS
 # ============================================================
+
 
 def deduce_webhook_url() -> str:
     """Detect public hostname from common PaaS environment variables."""
@@ -178,7 +190,10 @@ def validate_environment() -> None:
             missing.append(v)
 
     if missing:
-        logger.critical("🚨 Missing required env vars: %s. The bot will not function until these are set in Render.", ", ".join(missing))
+        logger.critical(
+            "🚨 Missing required env vars: %s. The bot will not function until these are set in Render.",
+            ", ".join(missing),
+        )
         # We don't sys.exit(1) here so that uvicorn can bind to the port and Render doesn't mark the deploy as failed.
 
     if settings.ENVIRONMENT.lower() == "production":
@@ -208,29 +223,58 @@ def validate_environment() -> None:
 # HANDLER REGISTRATION
 # ============================================================
 
+
 def setup_handlers(application: Application) -> None:
     """Register ALL bot handlers in correct priority order."""
     from bot.middleware import apply_ban_check, error_handler
 
     # ── User handlers ────────────────────────────────────────
     from bot.handlers import (
-        start_command, help_command, stats_command, myfiles_command,
-        support_command, cancel_command, settings_command, ussettings_command,
-        go_back_to_settings, handle_us_close, handle_us_mode,
-        handle_us_mode_video, handle_us_mode_document,
-        handle_us_prefix, handle_us_suffix, handle_us_metadata,
+        start_command,
+        help_command,
+        stats_command,
+        myfiles_command,
+        support_command,
+        cancel_command,
+        settings_command,
+        ussettings_command,
+        go_back_to_settings,
+        handle_us_close,
+        handle_us_mode,
+        handle_us_mode_video,
+        handle_us_mode_document,
+        handle_us_prefix,
+        handle_us_suffix,
+        handle_us_metadata,
         handle_meta_author,
-        handle_us_thumbnail, handle_us_thumbnail_menu, handle_us_visibility,
-        handle_us_destination_button, handle_us_remove_confirm,
-        handle_us_reset_confirm_yes, handle_us_myfiles, handle_us_plan,
-        handle_subtitle_menu, handle_inject_sub, handle_meta_audio,
-        handle_meta_video, handle_meta_subs, handle_rem_word,
-        handle_rem_meta, handle_rem_inject, handle_callback_help,
-        handle_callback_support, cancel_task_command, unknown_handler,
+        handle_us_thumbnail,
+        handle_us_thumbnail_menu,
+        handle_us_visibility,
+        handle_us_destination_button,
+        handle_us_remove_confirm,
+        handle_us_reset_confirm_yes,
+        handle_us_myfiles,
+        handle_us_plan,
+        handle_subtitle_menu,
+        handle_inject_sub,
+        handle_meta_audio,
+        handle_meta_video,
+        handle_meta_subs,
+        handle_rem_word,
+        handle_rem_meta,
+        handle_rem_inject,
+        handle_callback_help,
+        handle_callback_support,
+        cancel_task_command,
+        unknown_handler,
         handle_start_support_chat,
-        handle_chat_join_request, handle_check_subscription,
-        handle_us_thumbnail_view, handle_us_thumbnail_delete, handle_us_thumbnail_delete_confirm,
-        handle_meta_author, handle_us_rclone_service,
+        handle_chat_join_request,
+        handle_check_subscription,
+        handle_us_thumbnail_view,
+        handle_us_thumbnail_delete,
+        handle_us_thumbnail_delete_confirm,
+        handle_meta_author,
+        handle_us_rclone_service,
         # Rclone feature gating
         handle_toggle_plan_rclone,
         # Rclone post-auth user action
@@ -342,21 +386,27 @@ def setup_handlers(application: Application) -> None:
         application.add_handler(TypeHandler(Update, apply_ban_check), group=-1)
 
         # 1. COMMANDS
-        application.add_handler(CommandHandler("start",      start_command))
-        application.add_handler(CommandHandler("help",       help_command))
-        application.add_handler(CommandHandler("stats",      stats_command))
-        application.add_handler(CommandHandler("myfiles",    myfiles_command))
-        application.add_handler(CommandHandler("support",    support_command))
-        application.add_handler(CommandHandler("cancel",     cancel_command))
-        application.add_handler(CommandHandler("settings",   settings_command))
+        application.add_handler(CommandHandler("start", start_command))
+        application.add_handler(CommandHandler("help", help_command))
+        application.add_handler(CommandHandler("stats", stats_command))
+        application.add_handler(CommandHandler("myfiles", myfiles_command))
+        application.add_handler(CommandHandler("support", support_command))
+        application.add_handler(CommandHandler("cancel", cancel_command))
+        application.add_handler(CommandHandler("settings", settings_command))
         application.add_handler(CommandHandler("ussettings", ussettings_command))
-        application.add_handler(CommandHandler("admin",      admin_command, filters=filters.ChatType.PRIVATE))
-        application.add_handler(CommandHandler("rclone",     rclone_command))
-        application.add_handler(CommandHandler("terabox",    terabox_command))
-        application.add_handler(MessageHandler(
-            filters.Regex(r"^/cancel_\S+") & filters.TEXT & filters.ChatType.PRIVATE,
-            cancel_task_command,
-        ))
+        application.add_handler(
+            CommandHandler("admin", admin_command, filters=filters.ChatType.PRIVATE)
+        )
+        application.add_handler(CommandHandler("rclone", rclone_command))
+        application.add_handler(CommandHandler("terabox", terabox_command))
+        application.add_handler(
+            MessageHandler(
+                filters.Regex(r"^/cancel_\S+")
+                & filters.TEXT
+                & filters.ChatType.PRIVATE,
+                cancel_task_command,
+            )
+        )
 
         # 2. FORWARDED MESSAGES
         async def handle_forward_routing(update: Update, context) -> None:
@@ -378,205 +428,227 @@ def setup_handlers(application: Application) -> None:
                 parse_mode="Markdown",
             )
 
-        application.add_handler(MessageHandler(
-            filters.FORWARDED & filters.ChatType.PRIVATE,
-            handle_forward_routing,
-        ))
+        application.add_handler(
+            MessageHandler(
+                filters.FORWARDED & filters.ChatType.PRIVATE,
+                handle_forward_routing,
+            )
+        )
 
         # 3. FILES & PHOTOS
-        application.add_handler(MessageHandler(
-            (filters.Document.ALL | filters.VIDEO | filters.AUDIO) & filters.ChatType.PRIVATE,
-            handle_file_upload,
-        ))
-        application.add_handler(MessageHandler(
-            filters.PHOTO & filters.ChatType.PRIVATE,
-            handle_us_thumbnail,
-        ))
+        application.add_handler(
+            MessageHandler(
+                (filters.Document.ALL | filters.VIDEO | filters.AUDIO)
+                & filters.ChatType.PRIVATE,
+                handle_file_upload,
+            )
+        )
+        application.add_handler(
+            MessageHandler(
+                filters.PHOTO & filters.ChatType.PRIVATE,
+                handle_us_thumbnail,
+            )
+        )
 
         # 4. USER SETTINGS CALLBACKS
         for pattern, handler in [
-            ("^us_metadata$",       handle_us_metadata),
-            ("^us_thumbnail$",      handle_us_thumbnail_menu),
+            ("^us_metadata$", handle_us_metadata),
+            ("^us_thumbnail$", handle_us_thumbnail_menu),
             ("^us_thumbnail_view$", handle_us_thumbnail_view),
             ("^us_thumbnail_delete$", handle_us_thumbnail_delete),
             ("^us_thumbnail_delete_confirm$", handle_us_thumbnail_delete_confirm),
-            ("^us_mode$",           handle_us_mode),
-            ("^us_mode_video$",     handle_us_mode_video),
-            ("^us_mode_document$",  handle_us_mode_document),
+            ("^us_mode$", handle_us_mode),
+            ("^us_mode_video$", handle_us_mode_video),
+            ("^us_mode_document$", handle_us_mode_document),
             ("^us_remove_confirm$", handle_us_remove_confirm),
             ("^us_reset_confirm_yes$", handle_us_reset_confirm_yes),
-            ("^us_myfiles$",        handle_us_myfiles),
-            ("^us_plan$",           handle_us_plan),
-            ("^us_prefix$",         handle_us_prefix),
-            ("^us_suffix$",         handle_us_suffix),
-            ("^us_visibility$",     handle_us_visibility),
-            ("^us_destination$",    handle_us_destination_button),
+            ("^us_myfiles$", handle_us_myfiles),
+            ("^us_plan$", handle_us_plan),
+            ("^us_prefix$", handle_us_prefix),
+            ("^us_suffix$", handle_us_suffix),
+            ("^us_visibility$", handle_us_visibility),
+            ("^us_destination$", handle_us_destination_button),
             ("^us_rclone_service$", handle_us_rclone_service),
-            ("^us_set_rclone_dest_", handle_us_rclone_dest_activate),  # After-auth 'Use as dest' button
-            ("^us_back$",           go_back_to_settings),
-            ("^us_close$",          handle_us_close),
-            ("^us_help$",           handle_callback_help),
-            ("^us_support$",        handle_callback_support),
-            ("^us_stats$",          stats_command),
-            ("^us_settings$",       ussettings_command),
-            ("^subtitle_menu$",     handle_subtitle_menu),
-            ("^inject_sub$",        handle_inject_sub),
-            ("^meta_audio$",        handle_meta_audio),
-            ("^meta_video$",        handle_meta_video),
-            ("^meta_author$",       handle_meta_author),
-            ("^meta_subs$",         handle_meta_subs), # Updated from meta_subtitle
-            ("^rem_word$",          handle_rem_word),
-            ("^rem_meta$",          handle_rem_meta),
-            ("^rem_inject$",        handle_rem_inject),
+            (
+                "^us_set_rclone_dest_",
+                handle_us_rclone_dest_activate,
+            ),  # After-auth 'Use as dest' button
+            ("^us_back$", go_back_to_settings),
+            ("^us_close$", handle_us_close),
+            ("^us_help$", handle_callback_help),
+            ("^us_support$", handle_callback_support),
+            ("^us_stats$", stats_command),
+            ("^us_settings$", ussettings_command),
+            ("^subtitle_menu$", handle_subtitle_menu),
+            ("^inject_sub$", handle_inject_sub),
+            ("^meta_audio$", handle_meta_audio),
+            ("^meta_video$", handle_meta_video),
+            ("^meta_author$", handle_meta_author),
+            ("^meta_subs$", handle_meta_subs),  # Updated from meta_subtitle
+            ("^rem_word$", handle_rem_word),
+            ("^rem_meta$", handle_rem_meta),
+            ("^rem_inject$", handle_rem_inject),
         ]:
             application.add_handler(CallbackQueryHandler(handler, pattern=pattern))
 
         # Wizard callbacks
-        application.add_handler(CallbackQueryHandler(WizardHandler.handle_callback, pattern="^wiz_"))
-        async def _noop(u, c): await u.callback_query.answer()
+        application.add_handler(
+            CallbackQueryHandler(WizardHandler.handle_callback, pattern="^wiz_")
+        )
+
+        async def _noop(u, c):
+            await u.callback_query.answer()
+
         application.add_handler(CallbackQueryHandler(_noop, pattern="^ignore$"))
 
         # 5. ADMIN MAIN MENU
         for pattern, handler in [
-            ("^admin_back$",      handle_admin_back),
-            ("^admin_users$",     handle_admin_users),
-            ("^admin_stats$",     handle_admin_stats),
-            ("^admin_config$",    show_config_menu),
-            ("^admin_plans$",     show_plans_menu),
+            ("^admin_back$", handle_admin_back),
+            ("^admin_users$", handle_admin_users),
+            ("^admin_stats$", handle_admin_stats),
+            ("^admin_config$", show_config_menu),
+            ("^admin_plans$", show_plans_menu),
             ("^admin_broadcast$", handle_admin_broadcast),
-            ("^admin_rclone$",    handle_admin_rclone),
-            ("^admin_filesize$",  handle_admin_filesize),
-            ("^admin_bans$",      handle_admin_bans),
-            ("^admin_chatbox$",   handle_admin_chatbox),
-            ("^admin_terabox$",   handle_admin_terabox),
-            ("^admin_logs$",      handle_admin_logs),
-            ("^view_logs_",       handle_admin_logs),
-            ("^admin_shorteners$",handle_admin_shorteners),
-            ("^add_shortener$",   handle_admin_shorteners),
+            ("^admin_rclone$", handle_admin_rclone),
+            ("^admin_filesize$", handle_admin_filesize),
+            ("^admin_bans$", handle_admin_bans),
+            ("^admin_chatbox$", handle_admin_chatbox),
+            ("^admin_terabox$", handle_admin_terabox),
+            ("^admin_logs$", handle_admin_logs),
+            ("^view_logs_", handle_admin_logs),
+            ("^admin_shorteners$", handle_admin_shorteners),
+            ("^add_shortener$", handle_admin_shorteners),
         ]:
             application.add_handler(CallbackQueryHandler(handler, pattern=pattern))
 
         # 6. ADMIN CONFIG EDIT
         for pattern, handler in [
-            ("^edit_start_msg$",        handle_edit_start_message),
-            ("^edit_watermark$",        handle_edit_watermark),
-            ("^edit_contact$",          handle_edit_support_contact),
-            ("^edit_help_text$",        handle_edit_help_text),
-            ("^edit_site_name$",        handle_edit_site_name),
-            ("^edit_site_desc$",        handle_edit_site_description),
-            ("^edit_support_channel$",  handle_edit_support_channel),
-            ("^edit_parallel$",         handle_edit_parallel_limit),
-            ("^edit_max_filesize$",     handle_edit_max_filesize),
-            ("^edit_file_expiry$",      handle_edit_file_expiry),
-            ("^edit_plan_free$",        handle_edit_plan),
-            ("^edit_plan_premium$",     handle_edit_plan),
-            ("^toggle_plan_rclone_",    handle_toggle_plan_rclone),  # Admin toggles rclone per plan
+            ("^edit_start_msg$", handle_edit_start_message),
+            ("^edit_watermark$", handle_edit_watermark),
+            ("^edit_contact$", handle_edit_support_contact),
+            ("^edit_help_text$", handle_edit_help_text),
+            ("^edit_site_name$", handle_edit_site_name),
+            ("^edit_site_desc$", handle_edit_site_description),
+            ("^edit_support_channel$", handle_edit_support_channel),
+            ("^edit_parallel$", handle_edit_parallel_limit),
+            ("^edit_max_filesize$", handle_edit_max_filesize),
+            ("^edit_file_expiry$", handle_edit_file_expiry),
+            ("^edit_plan_free$", handle_edit_plan),
+            ("^edit_plan_premium$", handle_edit_plan),
+            (
+                "^toggle_plan_rclone_",
+                handle_toggle_plan_rclone,
+            ),  # Admin toggles rclone per plan
         ]:
             application.add_handler(CallbackQueryHandler(handler, pattern=pattern))
 
         # 7. ADMIN USER MANAGEMENT
         for pattern, handler in [
-            ("^admin_find_user$",    handle_admin_find_user),
-            ("^admin_ban_user$",     handle_admin_ban_user),
-            ("^admin_unban_user$",   handle_admin_unban_user),
+            ("^admin_find_user$", handle_admin_find_user),
+            ("^admin_ban_user$", handle_admin_ban_user),
+            ("^admin_unban_user$", handle_admin_unban_user),
             ("^admin_upgrade_user$", handle_admin_upgrade_user),
-            ("^admin_list_users_",   handle_admin_list_users),
-            ("^view_user_",          handle_view_user),
-            ("^banned_page_",        show_banned_users),
-            ("^unban_user_",         handle_unban_from_list),
+            ("^admin_list_users_", handle_admin_list_users),
+            ("^view_user_", handle_view_user),
+            ("^banned_page_", show_banned_users),
+            ("^unban_user_", handle_unban_from_list),
         ]:
             application.add_handler(CallbackQueryHandler(handler, pattern=pattern))
 
         # 8. ADMIN BROADCAST
         for pattern, handler in [
-            ("^broadcast_compose$",       handle_broadcast_compose),
-            ("^broadcast_stats$",         handle_broadcast_stats),
-            ("^broadcast_cancel_input$",  handle_broadcast_cancel),
-            ("^broadcast_pending$",       handle_admin_broadcast),
+            ("^broadcast_compose$", handle_broadcast_compose),
+            ("^broadcast_stats$", handle_broadcast_stats),
+            ("^broadcast_cancel_input$", handle_broadcast_cancel),
+            ("^broadcast_pending$", handle_admin_broadcast),
         ]:
             application.add_handler(CallbackQueryHandler(handler, pattern=pattern))
 
         # 9. ADMIN RCLONE
         for pattern, handler in [
-            ("^admin_add_rclone$",        handle_admin_add_rclone),
+            ("^admin_add_rclone$", handle_admin_add_rclone),
             ("^admin_add_rclone_wizard$", handle_admin_add_rclone_wizard),
-            ("^list_rclone_remotes$",     handle_list_rclone_remotes),
-            ("^view_rclone_",             handle_view_rclone),
-            ("^test_single_rclone_",      handle_test_single_rclone),
-            ("^toggle_rclone_",           handle_toggle_rclone),
-            ("^test_rclone$",             handle_test_rclone),
-            ("^disable_rclone$",          handle_disable_rclone),
-            ("^rclone_plan_(free|pro)$",  rclone_plan_callback),
-            ("^rclone_users_",            rclone_users_callback),
+            ("^list_rclone_remotes$", handle_list_rclone_remotes),
+            ("^view_rclone_", handle_view_rclone),
+            ("^test_single_rclone_", handle_test_single_rclone),
+            ("^toggle_rclone_", handle_toggle_rclone),
+            ("^test_rclone$", handle_test_rclone),
+            ("^disable_rclone$", handle_disable_rclone),
+            ("^rclone_plan_(free|pro)$", rclone_plan_callback),
+            ("^rclone_users_", rclone_users_callback),
         ]:
             application.add_handler(CallbackQueryHandler(handler, pattern=pattern))
-        application.add_handler(CallbackQueryHandler(
-            rclone_service_callback,
-            pattern="^rclone_(gdrive|onedrive|dropbox|mega|terabox|custom)$",
-        ))
+        application.add_handler(
+            CallbackQueryHandler(
+                rclone_service_callback,
+                pattern="^rclone_(gdrive|onedrive|dropbox|mega|terabox|custom)$",
+            )
+        )
 
         # 10. ADMIN TERABOX
         for pattern, handler in [
             ("^terabox_setup_key$", handle_terabox_setup_key),
-            ("^terabox_test$",      handle_terabox_test),
-            ("^terabox_stats$",     handle_terabox_stats),
-            ("^terabox_disable$",   handle_terabox_disable),
+            ("^terabox_test$", handle_terabox_test),
+            ("^terabox_stats$", handle_terabox_stats),
+            ("^terabox_disable$", handle_terabox_disable),
         ]:
             application.add_handler(CallbackQueryHandler(handler, pattern=pattern))
 
         # 11. ADMIN STORAGE
         for pattern, handler in [
-            ("^set_max_filesize$",  handle_set_max_filesize),
+            ("^set_max_filesize$", handle_set_max_filesize),
             ("^cleanup_old_files$", handle_cleanup_old_files),
-            ("^storage_stats$",     handle_storage_stats),
+            ("^storage_stats$", handle_storage_stats),
         ]:
             application.add_handler(CallbackQueryHandler(handler, pattern=pattern))
 
         # 12. ADMIN CHANNELS
         for pattern, handler in [
-            ("^admin_set_log_channel$",       handle_admin_set_log_channel),
-            ("^admin_set_dump_channel$",      handle_admin_set_dump_channel),
-            ("^admin_set_storage_channel$",   handle_admin_set_storage_channel),
-            ("^admin_add_log_channel$",       handle_admin_add_log_channel),
-            ("^admin_add_dump_channel$",      handle_admin_add_dump_channel),
-            ("^admin_add_storage_channel$",   handle_admin_add_storage_channel),
+            ("^admin_set_log_channel$", handle_admin_set_log_channel),
+            ("^admin_set_dump_channel$", handle_admin_set_dump_channel),
+            ("^admin_set_storage_channel$", handle_admin_set_storage_channel),
+            ("^admin_add_log_channel$", handle_admin_add_log_channel),
+            ("^admin_add_dump_channel$", handle_admin_add_dump_channel),
+            ("^admin_add_storage_channel$", handle_admin_add_storage_channel),
             ("^admin_set_force_sub_channel$", handle_admin_set_force_sub_channel),
-            ("^admin_check_and_open$",        admin_check_and_open),
-            ("^admin_fsub_add$",              handle_admin_fsub_add),
-            ("^admin_fsub_manage_",           handle_admin_fsub_manage),
-            ("^admin_fsub_toggle_",           handle_admin_fsub_toggle),
-            ("^admin_fsub_link_",             handle_admin_fsub_link),
-            ("^admin_fsub_req_toggle_",       handle_admin_fsub_req_toggle),
-            ("^admin_fsub_remove_confirm_",   handle_admin_fsub_remove_confirm),
-            ("^admin_fsub_remove_",           handle_admin_fsub_remove),
-            ("^admin_remove_log$",            handle_admin_remove_log),
-            ("^admin_remove_dump$",           handle_admin_remove_dump),
-            ("^admin_remove_storage$",        handle_admin_remove_storage),
-            ("^check_subscription$",          handle_check_subscription),
+            ("^admin_check_and_open$", admin_check_and_open),
+            ("^admin_fsub_add$", handle_admin_fsub_add),
+            ("^admin_fsub_manage_", handle_admin_fsub_manage),
+            ("^admin_fsub_toggle_", handle_admin_fsub_toggle),
+            ("^admin_fsub_link_", handle_admin_fsub_link),
+            ("^admin_fsub_req_toggle_", handle_admin_fsub_req_toggle),
+            ("^admin_fsub_remove_confirm_", handle_admin_fsub_remove_confirm),
+            ("^admin_fsub_remove_", handle_admin_fsub_remove),
+            ("^admin_remove_log$", handle_admin_remove_log),
+            ("^admin_remove_dump$", handle_admin_remove_dump),
+            ("^admin_remove_storage$", handle_admin_remove_storage),
+            ("^check_subscription$", handle_check_subscription),
         ]:
             application.add_handler(CallbackQueryHandler(handler, pattern=pattern))
 
         # 12.5. JOIN REQUESTS
         from telegram.ext import ChatJoinRequestHandler
+
         application.add_handler(ChatJoinRequestHandler(handle_chat_join_request))
 
-
         # 13. TEXT INPUT (awaiting states)
-        application.add_handler(MessageHandler(
-            filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE,
-            handle_text_input,
-        ))
+        application.add_handler(
+            MessageHandler(
+                filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE,
+                handle_text_input,
+            )
+        )
 
         # 14. ADMIN LOGS & CHAT
         for pattern, handler in [
-            ("^view_admin_logs$",   handle_admin_logs_menu),
-            ("^view_logs_",         handle_admin_logs),
-            ("^download_logs$",     handle_admin_download_logs),
-            ("^clear_old_logs$",    handle_admin_clear_logs),
-            ("^view_error_logs$",   handle_view_error_logs),
-            ("^admin_chatbox$",     handle_admin_chatbox),
-            ("^support_reply_",     handle_support_reply),
-            ("^support_read_",      handle_support_read),
+            ("^view_admin_logs$", handle_admin_logs_menu),
+            ("^view_logs_", handle_admin_logs),
+            ("^download_logs$", handle_admin_download_logs),
+            ("^clear_old_logs$", handle_admin_clear_logs),
+            ("^view_error_logs$", handle_view_error_logs),
+            ("^admin_chatbox$", handle_admin_chatbox),
+            ("^support_reply_", handle_support_reply),
+            ("^support_read_", handle_support_read),
             ("^start_support_chat$", handle_start_support_chat),
         ]:
             application.add_handler(CallbackQueryHandler(handler, pattern=pattern))
@@ -595,6 +667,7 @@ def setup_handlers(application: Application) -> None:
 # ============================================================
 # BOT APPLICATION BUILDER
 # ============================================================
+
 
 async def build_bot_application(deps: dict) -> Application:
     """Create PTB Application and inject shared state."""
@@ -615,20 +688,23 @@ async def build_bot_application(deps: dict) -> Application:
 
     # Initialise Pyrogram clients
     from bot.pyrogram_client import init_pyrogram
+
     pyrogram_ok = await init_pyrogram()
 
     # Share services + repos via bot_data — handlers read from here
-    application.bot_data.update({
-        "admin_ids":    get_admin_ids(),
-        "deps":         deps,               # full DI container
-        # convenience shortcuts
-        "user_svc":     deps["user_svc"],
-        "dl_svc":       deps["dl_svc"],
-        "media_svc":    deps["media_svc"],
-        "upload_svc":   deps["upload_svc"],
-        "config_repo":  deps["config_repo"],
-        "task_repo":    deps["task_repo"],
-    })
+    application.bot_data.update(
+        {
+            "admin_ids": get_admin_ids(),
+            "deps": deps,  # full DI container
+            # convenience shortcuts
+            "user_svc": deps["user_svc"],
+            "dl_svc": deps["dl_svc"],
+            "media_svc": deps["media_svc"],
+            "upload_svc": deps["upload_svc"],
+            "config_repo": deps["config_repo"],
+            "task_repo": deps["task_repo"],
+        }
+    )
 
     setup_handlers(application)
 
@@ -636,16 +712,21 @@ async def build_bot_application(deps: dict) -> Application:
     return application
 
 
-async def configure_webhook(bot_token: str, webhook_url: str, secret: str, user_count: int) -> None:
+async def configure_webhook(
+    bot_token: str, webhook_url: str, secret: str, user_count: int
+) -> None:
     """Auto-scale and (re-)configure Telegram webhook."""
     extra_conns = (user_count // 1000) * 20
     needed_max = min(100, 40 + extra_conns)
 
     try:
         async with httpx.AsyncClient() as client:
-            info = (await client.get(
-                f"https://api.telegram.org/bot{bot_token}/getWebhookInfo", timeout=10
-            )).json()
+            info = (
+                await client.get(
+                    f"https://api.telegram.org/bot{bot_token}/getWebhookInfo",
+                    timeout=10,
+                )
+            ).json()
 
         current_url = info.get("result", {}).get("url", "")
         current_max = info.get("result", {}).get("max_connections", 40)
@@ -660,7 +741,12 @@ async def configure_webhook(bot_token: str, webhook_url: str, secret: str, user_
                 json={
                     "url": webhook_url,
                     "drop_pending_updates": False,
-                    "allowed_updates": ["message", "callback_query", "inline_query", "chat_join_request"],
+                    "allowed_updates": [
+                        "message",
+                        "callback_query",
+                        "inline_query",
+                        "chat_join_request",
+                    ],
                     "max_connections": needed_max,
                     "secret_token": secret,
                 },
@@ -674,6 +760,7 @@ async def configure_webhook(bot_token: str, webhook_url: str, secret: str, user_
 async def cleanup_bot(application: Application, db_conn) -> None:
     """Gracefully stop PTB application and DB connection."""
     from bot.pyrogram_client import stop_pyrogram
+
     await application.stop()
     await application.shutdown()
     await stop_pyrogram()
@@ -684,6 +771,7 @@ async def cleanup_bot(application: Application, db_conn) -> None:
 # ============================================================
 # FASTAPI LIFESPAN
 # ============================================================
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -703,12 +791,16 @@ async def lifespan(app: FastAPI):
         try:
             import asyncio as _asyncio
             from bot.services import QueueWorker
+
             worker = QueueWorker(bot_application.bot)
             _asyncio.create_task(worker.start())
             logger.info("🚀 QueueWorker started in background")
         except Exception as e:
             import traceback
-            logger.error(f"❌ Failed to start QueueWorker: {e}\n{traceback.format_exc()}")
+
+            logger.error(
+                f"❌ Failed to start QueueWorker: {e}\n{traceback.format_exc()}"
+            )
 
         # Fetch bot identity for display
         try:
@@ -775,7 +867,9 @@ from web.routes.public import router as public_router
 from web.routes.user_settings import router as user_settings_router
 
 app.include_router(auth_router, tags=["Auth"], prefix="/api/auth")
-app.include_router(auth_router, tags=["Auth"], prefix="/auth")  # auth.js uses /auth/request-code
+app.include_router(
+    auth_router, tags=["Auth"], prefix="/auth"
+)  # auth.js uses /auth/request-code
 app.include_router(public_router, tags=["Public"])
 app.include_router(dashboard_router, tags=["AdminDashboard"], prefix="/api/admin")
 app.include_router(users_router, tags=["AdminUsers"], prefix="/api/admin")
@@ -784,10 +878,10 @@ app.include_router(user_settings_router, tags=["UserSettings"], prefix="/api/use
 app.include_router(logs_router, tags=["AdminLogs"], prefix="/api/admin")
 
 
-
 # ============================================================
 # HEALTH CHECK
 # ============================================================
+
 
 @app.get("/health", include_in_schema=False)
 @app.head("/health", include_in_schema=False)
@@ -801,16 +895,16 @@ async def health():
         except Exception:
             pass
     status = "healthy" if db_ok else "degraded"
-    
+
     # Debug: Check admin access stats or logs if needed
     admin_ids = get_admin_ids()
-    
+
     return {
         "status": status,
         "bot_ready": bot_application is not None,
         "bot_username": settings.BOT_USERNAME,
         "bot_link": settings.BOT_LINK,
-        "admin_count": len(admin_ids)
+        "admin_count": len(admin_ids),
     }
 
 
@@ -855,6 +949,7 @@ async def stream_file(file_id: str):
         raise HTTPException(status_code=503, detail="Bot not available")
     try:
         from fastapi.responses import RedirectResponse
+
         tg_file = await bot_application.bot.get_file(file_id)
         return RedirectResponse(url=tg_file.file_path)
     except Exception as exc:
@@ -868,8 +963,6 @@ if _static_dir.exists():
     # Mount assets (CSS, JS) under /static
     app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
-
-
     # Mount HTML pages under / so they are accessible as /login.html, /dashboard.html etc.
     _pages_dir = _static_dir / "pages"
     if _pages_dir.exists():
@@ -882,6 +975,7 @@ if _static_dir.exists():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
         "main:app",
         host="0.0.0.0",

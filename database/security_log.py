@@ -1,15 +1,12 @@
 """
-bot/database/_security_log.py — Audit trail and security event logging.
-
-All writes go to dedicated collections and are non-blocking / fail-safe.
-Callers are never disrupted by logging failures.
+database/security_log.py — Audit trail and security event logging.
 """
 
 import logging
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from infrastructure.database._legacy_bot._connection import get_db
+from database.connection import get_db
 
 logger = logging.getLogger("filebot.db.security_log")
 
@@ -20,12 +17,14 @@ async def log_admin_action(
     """Log admin action for audit trail."""
     try:
         db = get_db()
-        await db.admin_logs.insert_one({
-            "admin_id": admin_id,
-            "action": action,
-            "details": details or {},
-            "timestamp": datetime.utcnow(),
-        })
+        await db.admin_logs.insert_one(
+            {
+                "admin_id": admin_id,
+                "action": action,
+                "details": details or {},
+                "timestamp": datetime.utcnow(),
+            }
+        )
         return True
     except Exception as e:
         logger.error(f"❌ Log admin action failed: {e}", exc_info=True)
@@ -38,29 +37,21 @@ async def log_security_event(
     severity: str = "medium",
     details: Optional[Dict[str, Any]] = None,
 ) -> None:
-    """
-    Write a structured security event to the security_logs collection.
-    Non-blocking: silently absorbs all database errors so callers are not disrupted.
-
-    Args:
-        user_id:    Telegram user ID associated with the event.
-        event_type: Short slug describing what happened (e.g. "unauthorized_admin_access").
-        severity:   One of "low", "medium", "high", "critical".
-        details:    Optional extra context to store alongside the event.
-    """
+    """Write a structured security event to the security_logs collection."""
     try:
         db = get_db()
         if db is None:
             return
-        await db.security_logs.insert_one({
-            "user_id": user_id,
-            "event_type": event_type,
-            "severity": severity,
-            "details": details or {},
-            "timestamp": datetime.utcnow(),
-        })
+        await db.security_logs.insert_one(
+            {
+                "user_id": user_id,
+                "event_type": event_type,
+                "severity": severity,
+                "details": details or {},
+                "timestamp": datetime.utcnow(),
+            }
+        )
     except Exception as exc:
-        # Security logging must NEVER crash the caller
         logger.debug("log_security_event failed (non-fatal): %s", exc)
 
 
@@ -70,13 +61,15 @@ async def add_action(
     """Log generic action for audit trail."""
     try:
         db = get_db()
-        await db.actions.insert_one({
-            "admin_id": admin_id,
-            "action_type": action_type,
-            "target_id": target_id,
-            "details": details,
-            "timestamp": datetime.utcnow(),
-        })
+        await db.actions.insert_one(
+            {
+                "admin_id": admin_id,
+                "action_type": action_type,
+                "target_id": target_id,
+                "details": details,
+                "timestamp": datetime.utcnow(),
+            }
+        )
         logger.info(f"✅ Action logged: {action_type} by admin {admin_id}")
         return True
     except Exception as e:

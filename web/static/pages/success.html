@@ -58,10 +58,10 @@
 
 <body>
     <div class="card">
-        <div class="icon">🚀</div>
-        <h1>Priority Activated!</h1>
-        <p>You have successfully skipped the queue.<br>Your priority access is active for <strong>1 Hour</strong>.</p>
-        <a href="https://t.me/{{ bot_username }}?start={{ startid }}" class="btn">Return to Bot</a>
+        <div class="icon">{{ icon | default('🚀') }}</div>
+        <h1>{{ heading | default('Priority Activated!') }}</h1>
+        <p>{{ message | default('You have successfully skipped the queue.<br>Your priority access is active for <strong>1 Hour</strong>.') | safe }}</p>
+        <a href="https://t.me/{{ bot_username }}{% if startid %}?start={{ startid }}{% endif %}" class="btn">{{ btn_text | default('Return to Bot') }}</a>
     </div>
 </body>
 
