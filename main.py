@@ -680,7 +680,7 @@ async def build_bot_application(deps: dict) -> Application:
         .read_timeout(10.0)
         .write_timeout(10.0)
         .pool_timeout(10.0)
-        .job_queue(pyQualifiedName=True)
+        .job_queue()
         .build()
     )
 
