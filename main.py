@@ -673,6 +673,10 @@ async def build_bot_application(deps: dict) -> Application:
     """Create PTB Application and inject shared state."""
     logger.info("🤖 Building Telegram Application (webhook mode)…")
 
+    from telegram.ext import JobQueue
+
+    job_queue = JobQueue()
+
     application = (
         Application.builder()
         .token(get_bot_token())
@@ -680,9 +684,11 @@ async def build_bot_application(deps: dict) -> Application:
         .read_timeout(10.0)
         .write_timeout(10.0)
         .pool_timeout(10.0)
-        .job_queue()
+        .job_queue(job_queue)
         .build()
     )
+
+    job_queue.set_application(application)
 
     await application.initialize()
     await application.start()
