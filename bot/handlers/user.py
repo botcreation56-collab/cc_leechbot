@@ -1822,6 +1822,7 @@ async def check_force_sub(
         force_channels = await get_force_sub_channels()
 
         if not force_channels:
+            logger.info("FSub: No force channels configured, allowing user")
             return True
 
         user_id = update.effective_user.id
@@ -1830,50 +1831,45 @@ async def check_force_sub(
         user = await get_user(user_id)
         requested = user.get("requested_fsub", []) if user else []
 
+        logger.info(f"FSub: Checking {len(force_channels)} channels for user {user_id}")
+
         not_joined = []
+
         for channel in force_channels:
             channel_id = channel.get("id")
             if not channel_id:
                 continue
 
-            # 1. Check if user is already a member
+            # 0. Verify bot is admin in the channel
+            try:
+                bot_member = await context.bot.get_chat_member(
+                    channel_id, context.bot.id
+                )
+                if bot_member.status not in ["administrator", "creator"]:
+                    logger.warning(f"FSub: Bot not admin in {channel_id}, skipping")
+                    continue
+            except TelegramError:
+                logger.warning(f"FSub: Cannot access {channel_id}, skipping")
+                continue
+
+            # 1. Check if user is member
             is_member = False
-            check_failed = False
             try:
                 member = await context.bot.get_chat_member(channel_id, user_id)
                 if member.status in ["member", "administrator", "creator"]:
                     is_member = True
-                    logger.info(
-                        f"✅ FSub: user {user_id} IS member of {channel_id} (status: {member.status})"
-                    )
-                elif member.status in ["left", "kicked"]:
-                    # User left or was kicked — remove from requested list to secure bypass
-                    logger.info(
-                        f"❌ FSub: user {user_id} {member.status} channel {channel_id}"
-                    )
-                    if int(channel_id) in [int(c) for c in requested]:
-                        requested = [c for c in requested if int(c) != int(channel_id)]
-                        await update_user(user_id, {"requested_fsub": requested})
-                        logger.info(
-                            f"🗑️ Removed {user_id} from requested_fsub for {channel_id} (status: {member.status})"
-                        )
-            except TelegramError as e:
-                logger.warning(f"⚠️ FSub check failed for {channel_id}: {e}")
-                check_failed = True  # Mark that we couldn't verify membership
+            except TelegramError:
+                pass
 
-            # 2. Check if user has a pending join request tracked in DB
+            # 2. Check if user requested (for req_join channels)
             req_join = channel.get("metadata", {}).get("req_join", False)
             is_requested = int(channel_id) in [int(c) for c in requested]
-            can_bypass = (
-                is_requested and req_join and not check_failed
-            )  # Don't allow bypass if membership check failed
 
-            logger.info(
-                f"FSub check for {user_id} on {channel_id}: member={is_member}, requested={is_requested}, req_join={req_join}, check_failed={check_failed}, can_bypass={can_bypass}"
-            )
+            # Allow if: member OR (requested for req_join mode)
+            if is_member or (is_requested and req_join):
+                continue
 
-            if not is_member and not can_bypass:
-                not_joined.append(channel)
+            not_joined.append(channel)
 
         if not_joined:
             # SAVE FOR RESUME (List-based queue to prevent overwrite)

@@ -1808,6 +1808,29 @@ async def handle_admin_forwards(update: Update, context: ContextTypes.DEFAULT_TY
             )
             return
 
+        # CRITICAL: Verify bot is admin in the channel before adding it
+        try:
+            bot_member = await context.bot.get_chat_member(channel_id, context.bot.id)
+            if bot_member.status not in ["administrator", "creator"]:
+                await msg.reply_text(
+                    "❌ **Bot Not Admin!**\n\n"
+                    "The bot must be an **administrator** in the channel to use it.\n\n"
+                    "Please make the bot an admin and try again.",
+                    parse_mode="Markdown",
+                )
+                return
+        except TelegramError as e:
+            await msg.reply_text(
+                f"❌ **Cannot Access Channel**\n\n"
+                f"Error: {e.message if hasattr(e, 'message') else str(e)}\n\n"
+                "Make sure:\n"
+                "1. The bot has been added to the channel\n"
+                "2. The bot has admin privileges\n"
+                "3. The channel ID is correct",
+                parse_mode="Markdown",
+            )
+            return
+
         # Nested DB structure: channels.log / channels.dump / channels.storage
         # (matches ensure_channel_schema nested format in database.py)
         TYPE_TO_NESTED_KEY = {
