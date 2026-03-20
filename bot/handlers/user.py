@@ -619,11 +619,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Non-admin callbacks
         else:
+            logger.info(f"🔔 Non-admin callback: {data}")
             if data == "us_destination":
                 await handle_us_destination_button(update, context)
             elif data == "us_dest_add":
                 await handle_us_dest_add(update, context)
             elif data.startswith("us_dest_manage_"):
+                logger.info(f"🔔 Calling handle_us_dest_manage for: {data}")
                 await handle_us_dest_manage(update, context)
             elif data.startswith("us_dest_shortener_"):
                 await handle_us_dest_shortener_toggle(update, context)
@@ -886,9 +888,11 @@ async def handle_us_dest_add(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def handle_us_dest_manage(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Manage a specific user destination"""
     try:
+        logger.info(f"🔔 handle_us_dest_manage called")
         query = update.callback_query
         await query.answer()
         channel_id = int(query.data.replace("us_dest_manage_", ""))
+        logger.info(f"🔔 Managing channel_id: {channel_id}")
         user_id = query.from_user.id
 
         # Clear any pending input state
@@ -1022,7 +1026,7 @@ async def handle_us_dest_manage(update: Update, context: ContextTypes.DEFAULT_TY
             parse_mode="Markdown",
         )
     except Exception as e:
-        logger.error(f"❌ Error in us_dest_manage: {e}")
+        logger.error(f"❌ Error in us_dest_manage: {e}", exc_info=True)
 
 
 async def handle_us_dest_remove_confirm(
