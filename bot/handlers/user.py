@@ -1506,14 +1506,27 @@ async def handle_check_subscription(update: Update, context: ContextTypes.DEFAUL
     # Rerun check_force_sub. This will automatically edit the message
     # since we have fsub_msg_id in user_data.
     if await check_force_sub(update, context):
-        # Verified — edit the force-sub message to a success notice
+        # Verified — show success message
         try:
             await query.edit_message_text(
-                "✅ **Subscription Verified!**\n\nResuming your request...",
+                "✅ **Verified!**\n\nProcessing your request...",
                 parse_mode="Markdown",
             )
         except Exception:
             pass
+
+        # Auto-vanish after 3 seconds
+        async def vanish_message():
+            await asyncio.sleep(3)
+            try:
+                await context.bot.delete_message(
+                    chat_id=update.effective_chat.id,
+                    message_id=query.message.message_id,
+                )
+            except Exception:
+                pass
+
+        asyncio.create_task(vanish_message())
 
         # RESUME LOGIC
         pending_queue = context.user_data.pop("pending_fsub_data", [])
@@ -1540,14 +1553,12 @@ async def handle_check_subscription(update: Update, context: ContextTypes.DEFAUL
                         resumed_file=True,
                         file_id=pending.get("file_id"),
                     )
-                # Small delay to prevent flood
                 await asyncio.sleep(0.5)
         else:
             try:
-                await query.edit_message_text(
-                    "✅ **Subscription Verified!**\n\n"
-                    "You can now continue using the bot.\n"
-                    "Try sending a link or file now!",
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text="✅ **All Set!**\n\nSend me a file or link to get started.",
                     parse_mode="Markdown",
                 )
             except Exception:
@@ -1911,22 +1922,22 @@ async def check_force_sub(
                 # GENERATE INVITE LINK if not exists or needs update
                 if not invite_link or req_join:
                     try:
-                        # creates_join_request=True means "Request to Join"
+                        # For req_join: limit to 1 person (the requester)
+                        # For normal join: unlimited
+                        limit = 1 if req_join else 0
+
                         link = await context.bot.create_chat_invite_link(
                             channel_id,
                             creates_join_request=req_join,
                             name=f"FSub_{user_id}",
-                            member_limit=0,  # 0 = no limit
+                            member_limit=limit,
                         )
                         invite_link = link.invite_link
-                        logger.info(
-                            f"FSub: Created link for {channel_id}: {invite_link}"
-                        )
                     except TelegramError as e:
                         logger.error(
                             f"Error creating invite link for {channel_id}: {e}"
                         )
-                        continue  # Skip this channel if can't create link
+                        continue
 
                 if invite_link:
                     label = (
@@ -1939,16 +1950,25 @@ async def check_force_sub(
             keyboard.append(
                 [
                     InlineKeyboardButton(
-                        "🔍 Check Status", callback_data="check_subscription"
+                        "✅ I'm Joined, Continue...", callback_data="check_subscription"
                     )
                 ]
             )
 
             if keyboard:
+                # Build channel list text
+                channel_list = "\n".join(
+                    [
+                        f"  • {ch.get('metadata', {}).get('title') or 'Channel'}"
+                        for ch in not_joined
+                    ]
+                )
+
                 fsub_text = (
-                    "⚠️ **Subscription Required**\n\n"
-                    "To use this bot, you must join our channels first.\n\n"
-                    "👇 Click the button(s) below to join/request:"
+                    "📢 **Subscription Required**\n\n"
+                    "You must join the following channels first:\n\n"
+                    f"{channel_list}\n\n"
+                    "👇 Tap each button above to join, then click **Check Status**"
                 )
                 reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -1958,7 +1978,6 @@ async def check_force_sub(
 
                 if existing_msg_id:
                     try:
-                        # We use the bot directly to edit to avoid issues with update context
                         await context.bot.edit_message_text(
                             chat_id=user_id,
                             message_id=existing_msg_id,

@@ -949,15 +949,31 @@ async def handle_us_thumbnail(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         if storage_channel:
             try:
-                # Send to storage to make it persistent
+                # Vanish old ledger message first
+                old_msg_id = user.get("storage_msg_id")
+                if old_msg_id:
+                    try:
+                        await context.bot.delete_message(
+                            chat_id=storage_channel, message_id=old_msg_id
+                        )
+                        logger.info(f"Vanished old ledger message {old_msg_id}")
+                    except:
+                        pass
+
+                # Send new thumbnail to storage
                 backup_msg = await context.bot.send_photo(
                     chat_id=storage_channel,
                     photo=photo.file_id,
-                    caption=f"🖼️ #Thumbnail\n👤 User: `{user_id}`\n📅 {datetime.now()}",
+                    caption=f"🖼️ #Thumbnail\n👤 User: `{user_id}`\n📅 {datetime.now().strftime('%Y-%m-%d %H:%M')}",
                     parse_mode="Markdown",
                 )
                 final_file_id = backup_msg.photo[-1].file_id
-                logger.info(f"✅ Thumbnail backed up to channel {storage_channel}")
+
+                # Update DB with new message_id for this thumbnail
+                await update_user(user_id, {"storage_msg_id": backup_msg.message_id})
+                logger.info(
+                    f"✅ Thumbnail backed up, message_id={backup_msg.message_id}"
+                )
             except Exception as e:
                 logger.warning(f"⚠️ Failed to backup thumbnail: {e}")
                 # Fallback to original ID (might expire strictly speaking, but usually works for bots)
@@ -1493,13 +1509,32 @@ class WizardHandler:
         )
 
         try:
-            # 0. Post early ledger update
+            # 0. Vanish old storage message (if any) and post new ledger
             from bot.services import create_or_update_storage_message
+            from bot.database import get_config, get_channel_id, get_user, update_user
 
             custom_name = session.get("custom_name", "Untitled")
             logger.info(
                 f"process_session_background: Posting storage message for {task_id}"
             )
+
+            # Vanish old storage message first
+            user = await get_user(user_id)
+            old_msg_id = user.get("storage_msg_id") if user else None
+            if old_msg_id:
+                storage_channel = await get_channel_id("storage") or (
+                    await get_config()
+                ).get("storage_channel_id")
+                if storage_channel:
+                    try:
+                        await bot.delete_message(
+                            chat_id=storage_channel, message_id=old_msg_id
+                        )
+                        logger.info(f"Vanished old storage message {old_msg_id}")
+                    except:
+                        pass
+
+            # Post new ledger message
             ledger_msg_id = await create_or_update_storage_message(
                 bot,
                 {

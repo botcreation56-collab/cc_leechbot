@@ -29,6 +29,7 @@ MAX_BOT_FILE_SIZE_MB = 50
 # Rclone Service & Binary Management
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def ensure_rclone_binary() -> str:
     """Ensure rclone binary exists in bin/ folder, downloading it if necessary."""
     import platform
@@ -36,40 +37,49 @@ async def ensure_rclone_binary() -> str:
     import tarfile
     import io
     import shutil
-    
-    system = platform.system().lower() # 'windows', 'linux', 'darwin'
-    arch = platform.machine().lower() # 'amd64', 'x86_64', 'arm64'
-    
+
+    system = platform.system().lower()  # 'windows', 'linux', 'darwin'
+    arch = platform.machine().lower()  # 'amd64', 'x86_64', 'arm64'
+
     bin_dir = Path("bin")
     bin_dir.mkdir(exist_ok=True)
-    
+
     binary_name = "rclone.exe" if system == "windows" else "rclone"
     local_path = bin_dir / binary_name
-    
+
     if local_path.exists():
         return str(local_path.absolute())
-    
+
     logger.info(f"📥 Rclone binary missing. Downloading for {system}_{arch}...")
-    
+
     # Map platform/arch to rclone download segments
     rclone_os = "windows" if system == "windows" else "linux"
-    rclone_arch = "amd64" if arch in ["amd64", "x86_64"] else "arm64" if arch == "arm64" else "386"
-    
-    ext = "zip" if system == "windows" else "gz" # it's actually .zip for windows, .tar.gz for linux
+    rclone_arch = (
+        "amd64"
+        if arch in ["amd64", "x86_64"]
+        else "arm64"
+        if arch == "arm64"
+        else "386"
+    )
+
+    ext = (
+        "zip" if system == "windows" else "gz"
+    )  # it's actually .zip for windows, .tar.gz for linux
     filename = f"rclone-current-{rclone_os}-{rclone_arch}.{ext}"
     if system != "windows":
         filename = f"rclone-current-{rclone_os}-{rclone_arch}.tar.gz"
-        
+
     url = f"https://downloads.rclone.org/{filename}"
-    
+
     try:
         import httpx
+
         async with httpx.AsyncClient() as client:
             response = await client.get(url, follow_redirects=True, timeout=60)
             response.raise_for_status()
-            
+
             content = io.BytesIO(response.content)
-            
+
             if system == "windows":
                 with zipfile.ZipFile(content) as z:
                     # Find rclone.exe in the zip (it's usually in a subfolder like rclone-v1.66.0-windows-amd64/)
@@ -88,7 +98,7 @@ async def ensure_rclone_binary() -> str:
                                     shutil.copyfileobj(f, dst)
                                 os.chmod(local_path, 0o755)
                             break
-                            
+
             if local_path.exists():
                 logger.info(f"✅ Rclone binary downloaded to {local_path}")
                 return str(local_path.absolute())
@@ -98,8 +108,10 @@ async def ensure_rclone_binary() -> str:
         logger.error(f"❌ Failed to download rclone: {e}")
         raise RcloneError(f"Rclone binary not found and auto-download failed: {e}")
 
+
 class RcloneError(Exception):
     """Rclone related errors."""
+
     pass
 
 
@@ -121,6 +133,7 @@ async def upload_to_rclone(
         logger.info(f"📤 Uploading to rclone: {path.name}")
 
         from bot.database import get_db
+
         db = get_db()
         config = await db.rclone_configs.find_one({"config_id": rclone_config_id})
         if not config:
@@ -128,14 +141,15 @@ async def upload_to_rclone(
 
         service = config["service"]
         credentials = config.get("credentials", "")
-        
+
         import tempfile
+
         fd, config_file = tempfile.mkstemp(suffix=".conf", prefix="rclone_")
-        with os.fdopen(fd, 'w') as f:
+        with os.fdopen(fd, "w") as f:
             f.write(credentials)
 
         rclone_bin = await ensure_rclone_binary()
-        
+
         remote_name = f"{service}_{rclone_config_id[:8]}"
         destination_dir_only = f"{remote_name}:{remote_path}"
 
@@ -145,42 +159,59 @@ async def upload_to_rclone(
             remote_filepath = f"{remote_path.rstrip('/')}/task_{task_id}{ext}"
             destination = f"{remote_name}:{remote_filepath}"
             cmd = [
-                rclone_bin, "copyto", str(path), destination,
-                f"--config={config_file}", "--progress",
-                "--transfers=4", "--checkers=8", "--retries=3",
+                rclone_bin,
+                "copyto",
+                str(path),
+                destination,
+                f"--config={config_file}",
+                "--progress",
+                "--transfers=4",
+                "--checkers=8",
+                "--retries=3",
             ]
             logger.info(f"Running: rclone copyto {path.name} {destination}")
         else:
             destination = destination_dir_only
             remote_filepath = f"{remote_path.rstrip('/')}/{path.name}"
             cmd = [
-                rclone_bin, "copy", str(path), destination,
-                f"--config={config_file}", "--progress",
-                "--transfers=4", "--checkers=8", "--retries=3",
+                rclone_bin,
+                "copy",
+                str(path),
+                destination,
+                f"--config={config_file}",
+                "--progress",
+                "--transfers=4",
+                "--checkers=8",
+                "--retries=3",
             ]
             logger.info(f"Running: rclone copy {path.name} {destination}")
 
         from bot.database import increment_rclone_usage
+
         await increment_rclone_usage(rclone_config_id, 1)
-        
+
         try:
             process = await asyncio.create_subprocess_exec(
                 *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
 
             if progress_callback:
+
                 async def read_stream(stream):
                     while True:
                         line = await stream.readline()
                         if not line:
                             break
                         progress_callback(line.decode("utf-8", errors="ignore"))
+
                 await asyncio.wait_for(
                     asyncio.gather(read_stream(process.stderr), process.wait()),
                     timeout=3600,
                 )
             else:
-                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=3600)
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(), timeout=3600
+                )
         except asyncio.TimeoutError:
             try:
                 process.kill()
@@ -197,14 +228,16 @@ async def upload_to_rclone(
         logger.info(f"✅ Upload successful: {path.name}")
 
         cloud_url = f"{remote_name}:{remote_filepath}"
-        shared_link = await generate_rclone_link(remote_name, remote_filepath, config_file)
+        shared_link = await generate_rclone_link(
+            remote_name, remote_filepath, config_file
+        )
 
         return {
             "success": True,
             "cloud_url": cloud_url,
             "shared_link": shared_link or cloud_url,
             "file_id": f"{remote_name}:{remote_filepath}",
-            "uploaded_at": datetime.utcnow()
+            "uploaded_at": datetime.utcnow(),
         }
 
     except asyncio.TimeoutError:
@@ -217,6 +250,7 @@ async def upload_to_rclone(
         raise RcloneError(str(e)[:100])
     finally:
         from bot.database import increment_rclone_usage
+
         await increment_rclone_usage(rclone_config_id, -1)
         if config_file and Path(config_file).exists():
             try:
@@ -230,7 +264,12 @@ async def generate_rclone_link(
 ) -> Optional[str]:
     """Generate shareable link for uploaded file (if supported by remote)."""
     try:
-        cmd = ["rclone", "link", f"{remote_name}:{file_path}", f"--config={config_file}"]
+        cmd = [
+            "rclone",
+            "link",
+            f"{remote_name}:{file_path}",
+            f"--config={config_file}",
+        ]
         process = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
@@ -239,22 +278,29 @@ async def generate_rclone_link(
             link = stdout.decode("utf-8").strip()
             logger.info("✅ Generated shareable link")
             return link
-        logger.debug(f"Link generation not supported or failed: {stderr.decode('utf-8')}")
+        logger.debug(
+            f"Link generation not supported or failed: {stderr.decode('utf-8')}"
+        )
         return None
     except Exception as e:
         logger.debug(f"Could not generate link: {e}")
         return None
 
 
-async def get_available_rclone(user_plan: str, user_id: int, db: Any) -> Optional[Dict[str, Any]]:
+async def get_available_rclone(
+    user_plan: str, user_id: int, db: Any
+) -> Optional[Dict[str, Any]]:
     """Get available rclone config for user."""
     try:
         from bot.database import get_rclone_configs
+
         configs = await get_rclone_configs(plan=user_plan)
         if not configs:
             logger.warning(f"No rclone configs available for plan: {user_plan}")
             return None
-        logger.info(f"✅ Found rclone config: {configs[0].get('config_id') if isinstance(configs, list) else configs.get('config_id')}")
+        logger.info(
+            f"✅ Found rclone config: {configs[0].get('config_id') if isinstance(configs, list) else configs.get('config_id')}"
+        )
         return configs[0] if isinstance(configs, list) else configs
     except Exception as e:
         logger.error(f"❌ Get rclone config error: {e}")
@@ -285,6 +331,7 @@ async def list_rclone_files(config_id: str, remote_path: str = "/") -> Optional[
 # ─────────────────────────────────────────────────────────────────────────────
 # StorageChannelManager
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class StorageChannelManager:
     """Manages file storage in Telegram channel."""
@@ -320,7 +367,9 @@ class StorageChannelManager:
     async def delete_file(self, message_id: int) -> bool:
         """Delete file from storage channel."""
         try:
-            await self.bot.delete_message(chat_id=self.channel_id, message_id=message_id)
+            await self.bot.delete_message(
+                chat_id=self.channel_id, message_id=message_id
+            )
             logger.info(f"✅ File deleted from storage: {message_id}")
             return True
         except Exception as e:
@@ -336,40 +385,59 @@ class StorageChannelManager:
             return None
 
 
-async def create_or_update_storage_message(bot, file_info: dict, user_id: int = None, message_id: int = None):
+async def create_or_update_storage_message(
+    bot,
+    file_info: dict,
+    user_id: int = None,
+    message_id: int = None,
+    vanish_old: bool = False,
+):
     """
-    Compatibility function required by many handlers.
     Posts or updates a clean message in the storage channel.
-    If message_id is provided, it edits the existing message.
+    - If message_id is provided, it edits the existing message.
+    - If vanish_old=True, deletes the old message before sending new one.
+    - Always updates user's storage_msg_id in DB for the new message.
     """
     try:
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-        from bot.database import get_config, get_channel_id
+        from bot.database import get_config, get_channel_id, get_user, update_user
 
         config = await get_config()
-        # Try new nested key first
-        storage_channel = await get_channel_id("storage") or config.get("storage_channel_id")
-        
+        storage_channel = await get_channel_id("storage") or config.get(
+            "storage_channel_id"
+        )
+
         if not storage_channel:
             logger.warning("Storage channel not configured")
             return None
 
-        # --- SYNC MODE ---
-        # If no message_id is provided, try to fetch the persistent one for this user
+        # Get old message_id from user if not provided
         if not message_id and user_id:
-            from bot.database import get_user
             user = await get_user(user_id)
             if user:
                 message_id = user.get("storage_msg_id")
 
+        # Delete old message if requested
+        if vanish_old and message_id:
+            try:
+                await bot.delete_message(chat_id=storage_channel, message_id=message_id)
+                logger.info(f"Vanished old storage message {message_id}")
+            except Exception as e:
+                logger.warning(
+                    f"Failed to vanish old storage message {message_id}: {e}"
+                )
+            message_id = None  # Force sending new message
+
         filename = file_info.get("filename", "Unknown File")
         file_id = file_info.get("file_id")
         status = file_info.get("status", "Completed")
-        
+
         size_bytes = file_info.get("size", 0)
-        size_gb = round(size_bytes / (1024 ** 3), 2)
-        
-        cloud_url = f"https://t.me/{bot.username}?start=file_{file_id}" if file_id else None
+        size_gb = round(size_bytes / (1024**3), 2) if size_bytes else "N/A"
+
+        cloud_url = (
+            f"https://t.me/{bot.username}?start=file_{file_id}" if file_id else None
+        )
 
         caption = (
             f"📦 **Storage Ledger**\n\n"
@@ -378,11 +446,11 @@ async def create_or_update_storage_message(bot, file_info: dict, user_id: int = 
             f"**Status:** `{status}`\n"
             f"**User ID:** `{user_id or 'N/A'}`"
         )
-        
+
         keyboard = []
         if cloud_url:
             keyboard.append([InlineKeyboardButton("Watch Online", url=cloud_url)])
-        
+
         reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
 
         if message_id:
@@ -396,9 +464,12 @@ async def create_or_update_storage_message(bot, file_info: dict, user_id: int = 
                 )
                 return message_id
             except Exception as edit_err:
-                logger.warning(f"Failed to edit storage message {message_id}: {edit_err}")
+                logger.warning(
+                    f"Failed to edit storage message {message_id}: {edit_err}"
+                )
                 # Fall through to send new if edit fails
 
+        # Send new message
         message = await bot.send_message(
             chat_id=storage_channel,
             text=caption,
@@ -407,11 +478,15 @@ async def create_or_update_storage_message(bot, file_info: dict, user_id: int = 
             disable_web_page_preview=True,
         )
         logger.info(f"Storage channel message posted: {message.message_id}")
+
+        # Update user's storage_msg_id in DB
+        if user_id:
+            await update_user(user_id, {"storage_msg_id": message.message_id})
+
         return message.message_id
     except Exception as e:
         logger.error(f"Failed to post to storage channel: {e}", exc_info=True)
         return None
-    except Exception as e:
         logger.error(f"Failed to post to storage channel: {e}", exc_info=True)
         return None
 
@@ -420,8 +495,10 @@ async def create_or_update_storage_message(bot, file_info: dict, user_id: int = 
 # Terabox Service
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TeraboxError(Exception):
     """Terabox related errors."""
+
     pass
 
 
@@ -436,7 +513,11 @@ async def upload_to_terabox(
         logger.info(f"📤 Uploading to Terabox: {path.name}")
         terabox_url = f"https://terabox.com/file/{path.stem}"
         terabox_id = f"terabox_{user_id}_{path.stem}"
-        return {"terabox_url": terabox_url, "terabox_id": terabox_id, "uploaded_at": "2024-01-01T00:00:00Z"}
+        return {
+            "terabox_url": terabox_url,
+            "terabox_id": terabox_id,
+            "uploaded_at": "2024-01-01T00:00:00Z",
+        }
     except TeraboxError:
         raise
     except Exception as e:
@@ -448,6 +529,7 @@ async def get_terabox_config(db: Any) -> Optional[Dict[str, Any]]:
     """Get Terabox configuration (encrypted). ADMIN-ONLY."""
     try:
         from bot.database import get_config
+
         config = await get_config()
         if not config:
             return None
@@ -455,6 +537,7 @@ async def get_terabox_config(db: Any) -> Optional[Dict[str, Any]]:
         if not terabox_config:
             return None
         from bot.utils import decrypt_credentials
+
         return decrypt_credentials(terabox_config)
     except Exception as e:
         logger.error(f"❌ Get terabox config error: {e}")
@@ -477,8 +560,10 @@ async def get_terabox_storage_info(bearer_token: str) -> Optional[Dict[str, Any]
 # Upload Engine (main router)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class UploadError(Exception):
     """Upload related errors."""
+
     pass
 
 
@@ -501,9 +586,13 @@ async def upload_and_send_file(
     """
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     from bot.database import (
-        store_cloud_file_metadata, delete_expired_cloud_files,
-        get_config, pick_rclone_config_for_plan, delete_from_rclone,
-        get_user_destinations, get_channel_id
+        store_cloud_file_metadata,
+        delete_expired_cloud_files,
+        get_config,
+        pick_rclone_config_for_plan,
+        delete_from_rclone,
+        get_user_destinations,
+        get_channel_id,
     )
     from bot.services._file_processing import split_file, cleanup_split_files
 
@@ -536,14 +625,18 @@ async def upload_and_send_file(
         max_wait = 3600  # 1 hour
         slept = 0
         from bot.database import get_db
+
         db = get_db()
         while not rclone_config and slept < max_wait:
             # Check if any configs actually exist for this plan
-            total_configs = await db.rclone_configs.count_documents({"is_active": True, "plan": user_plan})
+            total_configs = await db.rclone_configs.count_documents(
+                {"is_active": True, "plan": user_plan}
+            )
             if total_configs == 0:
-                break # Fallback to splitting
+                break  # Fallback to splitting
 
             from bot.handlers.user import send_progress_message
+
             if task_id:
                 await send_progress_message(
                     bot=bot,
@@ -551,14 +644,16 @@ async def upload_and_send_file(
                     task_id=task_id,
                     filesize=file_size_bytes,
                     stage="⏳ Waiting for available Cloud Transfer Slot...",
-                    progress=0
+                    progress=0,
                 )
             await asyncio.sleep(30)
             slept += 30
             rclone_config = await pick_rclone_config_for_plan(user_plan)
 
     if use_rclone and not rclone_config:
-        logger.info(f"File > {max_tg_mb}MB but no Rclone config available. Falling back to splitting: {filename}")
+        logger.info(
+            f"File > {max_tg_mb}MB but no Rclone config available. Falling back to splitting: {filename}"
+        )
         use_rclone = False
         delivery_method = "Bot API Split"
         limit_bytes = int(MAX_BOT_FILE_SIZE_MB * 1024 * 1024 * 0.95)
@@ -584,9 +679,13 @@ async def upload_and_send_file(
                         last_rclone_update[0] = now
                         asyncio.create_task(
                             send_progress_message(
-                                bot=bot, user_id=user_id, task_id=task_id,
-                                filesize=file_size_bytes, stage="📤 **Uploading to Cloud...**",
-                                progress=progress, start_time=start_update_time,
+                                bot=bot,
+                                user_id=user_id,
+                                task_id=task_id,
+                                filesize=file_size_bytes,
+                                stage="📤 **Uploading to Cloud...**",
+                                progress=progress,
+                                start_time=start_update_time,
                             )
                         )
 
@@ -614,15 +713,20 @@ async def upload_and_send_file(
             [InlineKeyboardButton("📥 Download Now", url=cloud_url)],
             [
                 InlineKeyboardButton("📺 VLC Player", url=f"vlc://{cloud_url}"),
-                InlineKeyboardButton("📱 MX Player", url=f"intent:{cloud_url}#Intent;package=com.mxtech.videoplayer.ad;S.title={filename};end")
-            ]
+                InlineKeyboardButton(
+                    "📱 MX Player",
+                    url=f"intent:{cloud_url}#Intent;package=com.mxtech.videoplayer.ad;S.title={filename};end",
+                ),
+            ],
         ]
 
         for attempt in range(3):
             try:
                 await bot.send_message(
-                    chat_id=user_id, text=link_text,
-                    reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown",
+                    chat_id=user_id,
+                    text=link_text,
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode="Markdown",
                 )
                 break
             except Exception as e:
@@ -634,16 +738,22 @@ async def upload_and_send_file(
             if dest.get("id"):
                 try:
                     await bot.send_message(
-                        chat_id=dest.get("id"), text=link_text,
-                        reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown",
+                        chat_id=dest.get("id"),
+                        text=link_text,
+                        reply_markup=InlineKeyboardMarkup(keyboard),
+                        parse_mode="Markdown",
                     )
                 except Exception:
                     pass
 
         return {
-            "success": True, "delivery_method": delivery_method,
-            "file_id": telegram_file_id or cloud_url, "cloud_url": cloud_url,
-            "message_id": None, "expiry_date": expiry_date, "retention_days": retention_days,
+            "success": True,
+            "delivery_method": delivery_method,
+            "file_id": telegram_file_id or cloud_url,
+            "cloud_url": cloud_url,
+            "message_id": None,
+            "expiry_date": expiry_date,
+            "retention_days": retention_days,
         }
 
     # ── ROUTE 2: TELEGRAM UPLOAD ──
@@ -651,6 +761,7 @@ async def upload_and_send_file(
     if dump_channel_id:
         try:
             from bot.pyrogram_client import upload_file_pyrogram
+
             logger.info(f"Uploading to dump: {filename}")
 
             for part_path in files_to_send:
@@ -659,16 +770,25 @@ async def upload_and_send_file(
                 if part_size_mb > MAX_BOT_FILE_SIZE_MB:
                     delivery_method = "Pyrogram MTProto"
                     dump_msg = await upload_file_pyrogram(
-                        file_path=part_path, chat_id=dump_channel_id,
+                        file_path=part_path,
+                        chat_id=dump_channel_id,
                         caption=f"User: {user_id}\nFile: {Path(part_path).name}\nSize: {part_size_mb:.1f} MB",
-                        ptb_bot=bot, user_id=user_id, task_id=task_id,
+                        ptb_bot=bot,
+                        user_id=user_id,
+                        task_id=task_id,
                     )
                     if dump_msg:
                         dump_message = dump_msg
-                        dump_msg_id = getattr(dump_message, "id", getattr(dump_message, "message_id", None))
+                        dump_msg_id = getattr(
+                            dump_message,
+                            "id",
+                            getattr(dump_message, "message_id", None),
+                        )
                         telegram_file_id = getattr(
-                            getattr(dump_message, "document", None) or getattr(dump_message, "video", None),
-                            "file_id", None,
+                            getattr(dump_message, "document", None)
+                            or getattr(dump_message, "video", None),
+                            "file_id",
+                            None,
                         )
                 else:
                     delivery_method = "Bot API Direct"
@@ -676,10 +796,13 @@ async def upload_and_send_file(
                         try:
                             with open(part_path, "rb") as f:
                                 dump_message = await bot.send_document(
-                                    chat_id=dump_channel_id, document=f,
+                                    chat_id=dump_channel_id,
+                                    document=f,
                                     caption=f"User: {user_id}\nFile: {Path(part_path).name}\nSize: {part_size_mb:.1f} MB",
                                     file_name=Path(part_path).name,
-                                    read_timeout=60, write_timeout=60, connect_timeout=60,
+                                    read_timeout=60,
+                                    write_timeout=60,
+                                    connect_timeout=60,
                                 )
                             telegram_file_id = (
                                 dump_message.document.file_id
@@ -697,21 +820,27 @@ async def upload_and_send_file(
 
     if dump_msg_id:
         try:
-            await bot.copy_message(chat_id=user_id, from_chat_id=dump_channel_id, message_id=dump_msg_id)
+            await bot.copy_message(
+                chat_id=user_id, from_chat_id=dump_channel_id, message_id=dump_msg_id
+            )
         except Exception as e:
             logger.warning(f"Failed to copy to user: {e}")
     else:
         for part_path in files_to_send:
             try:
                 with open(part_path, "rb") as f:
-                    await bot.send_document(chat_id=user_id, document=f, caption=custom_caption[:1000])
+                    await bot.send_document(
+                        chat_id=user_id, document=f, caption=custom_caption[:1000]
+                    )
             except Exception:
                 pass
 
     if dump_msg_id:
         destinations = await get_user_destinations(user_id)
         if selected_destinations:
-            destinations = [d for d in destinations if d.get("id") in selected_destinations]
+            destinations = [
+                d for d in destinations if d.get("id") in selected_destinations
+            ]
         elif selected_destinations is not None:
             destinations = []
 
@@ -719,8 +848,11 @@ async def upload_and_send_file(
             if dest.get("id"):
                 try:
                     await bot.copy_message(
-                        chat_id=dest.get("id"), from_chat_id=dump_channel_id, message_id=dump_msg_id,
-                        caption=f"📁 **Forwarded File**\n\nName: `{filename}`", parse_mode="Markdown",
+                        chat_id=dest.get("id"),
+                        from_chat_id=dump_channel_id,
+                        message_id=dump_msg_id,
+                        caption=f"📁 **Forwarded File**\n\nName: `{filename}`",
+                        parse_mode="Markdown",
                     )
                 except Exception:
                     pass
@@ -730,12 +862,19 @@ async def upload_and_send_file(
 
     cloud_url = (
         f"https://t.me/c/{str(dump_channel_id)[4:]}/{dump_msg_id}"
-        if dump_channel_id and dump_msg_id else None
+        if dump_channel_id and dump_msg_id
+        else None
     )
 
-    logger.info(f"Upload + delivery complete for {user_id} ({file_size_mb:.1f}MB) | Via: {delivery_method}")
+    logger.info(
+        f"Upload + delivery complete for {user_id} ({file_size_mb:.1f}MB) | Via: {delivery_method}"
+    )
     return {
-        "success": True, "delivery_method": delivery_method,
-        "file_id": telegram_file_id or cloud_url, "cloud_url": cloud_url,
-        "message_id": dump_msg_id, "expiry_date": expiry_date, "retention_days": retention_days,
+        "success": True,
+        "delivery_method": delivery_method,
+        "file_id": telegram_file_id or cloud_url,
+        "cloud_url": cloud_url,
+        "message_id": dump_msg_id,
+        "expiry_date": expiry_date,
+        "retention_days": retention_days,
     }
