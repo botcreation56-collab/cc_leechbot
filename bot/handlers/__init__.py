@@ -128,6 +128,8 @@ from .settings import (
     go_back_to_settings,
     # Rclone admin feature gating
     handle_toggle_plan_rclone,
+    # Shortener admin feature gating
+    handle_toggle_plan_shortener,
     # Rclone user wizard setup
     handle_user_rclone_setup_step,
     handle_us_rclone_dest_activate,
