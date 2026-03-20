@@ -419,7 +419,7 @@ def setup_handlers(application: Application) -> None:
             if user_id in admin_ids and channel_type:
                 await handle_admin_forwards(update, context)
                 return
-            if awaiting == "us_destination":
+            if awaiting in ("us_destination", "us_dest_forward"):
                 await handle_user_destination_forward(update, context)
                 return
             await update.message.reply_text(

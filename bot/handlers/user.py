@@ -816,6 +816,10 @@ async def handle_us_destination_button(
         user_id = update.effective_user.id
         await query.answer()
 
+        # Clear any pending input state
+        context.user_data.pop("awaiting", None)
+        context.user_data.pop("awaiting_set_at", None)
+
         from bot.database import get_user_destinations
 
         destinations = await get_user_destinations(user_id)
@@ -906,6 +910,10 @@ async def handle_us_dest_manage(update: Update, context: ContextTypes.DEFAULT_TY
         await query.answer()
         channel_id = int(query.data.replace("us_dest_manage_", ""))
         user_id = query.from_user.id
+
+        # Clear any pending input state
+        context.user_data.pop("awaiting", None)
+        context.user_data.pop("awaiting_set_at", None)
 
         from bot.database import get_user_destinations, get_user, get_config
 
@@ -3928,26 +3936,6 @@ async def handle_us_rclone_service(update: Update, context: ContextTypes.DEFAULT
     except Exception as e:
         logger.error(f"❌ Error in handle_us_rclone_service: {e}")
         await query.answer("❌ Error", show_alert=True)
-
-
-async def handle_us_destination_button(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-):
-    """Callback: prompt user to forward a message from their destination channel"""
-    try:
-        query = update.callback_query
-        await query.answer()
-        await query.message.reply_text(
-            "📡 **Set Destination Channel**\n\n"
-            "Forward any message from your **destination channel** here.\n\n"
-            "Make sure the bot is an **admin** in that channel first.",
-            parse_mode="Markdown",
-        )
-        context.user_data["awaiting"] = "us_destination"
-        logger.info(f"✅ Destination prompt sent to {update.effective_user.id}")
-    except Exception as e:
-        logger.error(f"❌ Error in handle_us_destination_button: {e}")
-        await update.callback_query.answer("❌ Error", show_alert=True)
 
 
 async def handle_us_reset_confirm_yes(
