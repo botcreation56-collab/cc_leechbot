@@ -1844,13 +1844,16 @@ async def check_force_sub(
         user = await get_user(user_id)
         requested = user.get("requested_fsub", []) if user else []
 
-        logger.info(f"FSub: Checking {len(force_channels)} channels for user {user_id}")
+        logger.info(
+            f"FSub: Checking {len(force_channels)} channels for user {user_id}: {force_channels}"
+        )
 
         not_joined = []
 
         for channel in force_channels:
             channel_id = channel.get("id")
             if not channel_id:
+                logger.warning("FSub: Channel missing ID, skipping")
                 continue
 
             # 0. Verify bot is admin in the channel
@@ -1860,10 +1863,12 @@ async def check_force_sub(
                 )
                 if bot_member.status not in ["administrator", "creator"]:
                     logger.warning(f"FSub: Bot not admin in {channel_id}, skipping")
-                    continue
-            except TelegramError:
-                logger.warning(f"FSub: Cannot access {channel_id}, skipping")
-                continue
+                    # DON'T SKIP - still show button
+                else:
+                    logger.info(f"FSub: Bot IS admin in {channel_id}")
+            except TelegramError as e:
+                logger.warning(f"FSub: Cannot check bot admin for {channel_id}: {e}")
+                # DON'T SKIP - still show button
 
             # 1. Check if user is member
             is_member = False
@@ -1871,8 +1876,15 @@ async def check_force_sub(
                 member = await context.bot.get_chat_member(channel_id, user_id)
                 if member.status in ["member", "administrator", "creator"]:
                     is_member = True
-            except TelegramError:
-                pass
+                    logger.info(f"FSub: User {user_id} IS member of {channel_id}")
+                else:
+                    logger.info(
+                        f"FSub: User {user_id} status in {channel_id}: {member.status}"
+                    )
+            except TelegramError as e:
+                logger.warning(
+                    f"FSub: Cannot check user membership for {channel_id}: {e}"
+                )
 
             # 2. Check if user requested (for req_join channels)
             req_join = channel.get("metadata", {}).get("req_join", False)
@@ -1919,13 +1931,9 @@ async def check_force_sub(
                     req_join = False
                     invite_link = ""
 
-                # GENERATE INVITE LINK if not exists or needs update
-                if not invite_link or req_join:
+                if not invite_link:
                     try:
-                        # For req_join: limit to 1 person (the requester)
-                        # For normal join: unlimited
                         limit = 1 if req_join else 0
-
                         link = await context.bot.create_chat_invite_link(
                             channel_id,
                             creates_join_request=req_join,
@@ -1934,10 +1942,8 @@ async def check_force_sub(
                         )
                         invite_link = link.invite_link
                     except TelegramError as e:
-                        logger.error(
-                            f"Error creating invite link for {channel_id}: {e}"
-                        )
-                        continue
+                        logger.warning(f"Cannot create link for {channel_id}: {e}")
+                        invite_link = None
 
                 if invite_link:
                     label = (
@@ -1946,6 +1952,16 @@ async def check_force_sub(
                         else f"✨ Join {channel_name}"
                     )
                     keyboard.append([InlineKeyboardButton(label, url=invite_link)])
+                else:
+                    # Show button anyway with join chat link
+                    keyboard.append(
+                        [
+                            InlineKeyboardButton(
+                                f"✨ {channel_name}",
+                                url=f"https://t.me/c/{str(channel_id).replace('-100', '')}/1",
+                            )
+                        ]
+                    )
 
             keyboard.append(
                 [
