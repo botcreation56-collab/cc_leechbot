@@ -916,14 +916,11 @@ async def handle_us_dest_manage(update: Update, context: ContextTypes.DEFAULT_TY
         download_link_text = dest_metadata.get("download_link_text", "Stream URL")
         caption_footer = dest_metadata.get("caption_footer", "")
 
-        # Caption builder settings
         cap_filename_label = dest_metadata.get("cap_filename_label", "File name")
         cap_filesize_label = dest_metadata.get("cap_filesize_label", "File size")
         cap_url_label = dest_metadata.get("cap_url_label", "Stream URL")
         cap_style = dest_metadata.get("cap_style", "none")
-        cap_buttons = dest_metadata.get("cap_buttons", "")
 
-        # Check if shortener is enabled for this plan
         user_plan = user.get("plan", "free")
         plans_config = await get_config("plans") or {}
         plan_data = plans_config.get(user_plan, {})
@@ -932,7 +929,6 @@ async def handle_us_dest_manage(update: Update, context: ContextTypes.DEFAULT_TY
 
         title = dest.get("title") or str(channel_id)
 
-        # Download link status
         if not can_use_shortener:
             download_status = "⏸️ URL Shortener: Not Available"
         elif use_shortener:
@@ -940,7 +936,6 @@ async def handle_us_dest_manage(update: Update, context: ContextTypes.DEFAULT_TY
         else:
             download_status = "❌ URL Shortener: OFF"
 
-        # Caption preview
         cap_preview_lines = []
         if cap_style == "bold":
             cap_preview_lines.append(f"<b>{cap_filename_label}: Test Video.mp4</b>")
@@ -962,7 +957,6 @@ async def handle_us_dest_manage(update: Update, context: ContextTypes.DEFAULT_TY
 
         cap_preview = "\n".join(cap_preview_lines)
 
-        # Caption footer status
         caption_status = (
             f"📋 Footer: {caption_footer[:15]}..."
             if caption_footer
@@ -974,13 +968,13 @@ async def handle_us_dest_manage(update: Update, context: ContextTypes.DEFAULT_TY
                 [InlineKeyboardButton(f"📁 {title}", callback_data="ignore")],
                 [
                     InlineKeyboardButton(
-                        f"📝 Name: {meta_title[:18]}",
+                        f"📝 Name: {meta_title[:20]}",
                         callback_data=f"us_dest_meta_name_{channel_id}",
                     )
                 ],
                 [
                     InlineKeyboardButton(
-                        f"👤 Author: {meta_author[:18]}",
+                        f"👤 Author: {meta_author[:20]}",
                         callback_data=f"us_dest_meta_auth_{channel_id}",
                     )
                 ],
@@ -1023,52 +1017,6 @@ async def handle_us_dest_manage(update: Update, context: ContextTypes.DEFAULT_TY
             f"Channel: `{title}`\n"
             f"ID: `{channel_id}`\n\n"
             f"Preview:\n```{cap_preview}```\n\n"
-            f"Configure how files are sent to this channel:",
-            reply_markup=keyboard,
-            parse_mode="Markdown",
-        )
-
-        keyboard = InlineKeyboardMarkup(
-            [
-                [InlineKeyboardButton(f"📁 {title}", callback_data="ignore")],
-                [
-                    InlineKeyboardButton(
-                        f"📝 Name: {meta_title[:20]}",
-                        callback_data=f"us_dest_meta_name_{channel_id}",
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        f"👤 Author: {meta_author[:20]}",
-                        callback_data=f"us_dest_meta_auth_{channel_id}",
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        download_status,
-                        callback_data=f"us_dest_shortener_{channel_id}",
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        caption_status,
-                        callback_data=f"us_dest_caption_{channel_id}",
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        "🗑️ Remove",
-                        callback_data=f"us_dest_remove_confirm_{channel_id}",
-                    )
-                ],
-                [InlineKeyboardButton("🔙 Back", callback_data="us_destination")],
-            ]
-        )
-
-        await query.message.edit_text(
-            f"🎯 **Destination Settings**\n\n"
-            f"Channel: `{title}`\n"
-            f"ID: `{channel_id}`\n\n"
             f"Configure how files are sent to this channel:",
             reply_markup=keyboard,
             parse_mode="Markdown",
