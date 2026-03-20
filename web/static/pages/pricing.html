@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Pricing - FileBot</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <link rel="stylesheet" href="/static/css/responsive.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: linear-gradient(135deg, #0d1117 0%, #161b22 50%, #1a1f2e 100%);
+            min-height: 100vh;
+            color: #e6edf3;
+            overflow-x: hidden;
+        }
+
+        /* Animated Background */
+        .bg-animation {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            overflow: hidden;
+        }
+
+        .bg-animation::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(ellipse at center, rgba(0, 150, 255, 0.03) 0%, transparent 50%);
+            animation: pulse 8s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 0.5; }
+            50% { transform: scale(1.1); opacity: 1; }
+        }
+
+        /* Header */
+        .header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 100;
+            background: rgba(13, 17, 23, 0.8);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 24px;
+            font-weight: 700;
+            color: white;
+            text-decoration: none;
+        }
+
+        .logo-icon {
+            width: 45px;
+            height: 45px;
+            background: linear-gradient(135deg, #0096FF, #00D4FF);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+        }
+
+        .nav-buttons {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn-login {
+            padding: 10px 24px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-decoration: none;
+        }
+
+        .btn-login:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        /* Main Content */
+        .main-content {
+            position: relative;
+            z-index: 1;
+            padding-top: 120px;
+            padding-bottom: 60px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* Hero Section */
+        .hero {
+            text-align: center;
+            margin-bottom: 60px;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: rgba(0, 150, 255, 0.1);
+            border: 1px solid rgba(0, 150, 255, 0.3);
+            border-radius: 100px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #0096FF;
+            margin-bottom: 24px;
+            animation: fadeInUp 0.6s ease-out;
+        }
+
+        .hero-badge i {
+            font-size: 10px;
+        }
+
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .hero h1 {
+            font-size: 52px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            background: linear-gradient(135deg, #fff 0%, #a0aec0 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: fadeInUp 0.6s ease-out 0.1s both;
+        }
+
+        .hero p {
+            font-size: 18px;
+            color: #8b949e;
+            max-width: 600px;
+            margin: 0 auto;
+            line-height: 1.6;
+            animation: fadeInUp 0.6s ease-out 0.2s both;
+        }
+
+        /* Pricing Toggle */
+        .pricing-toggle {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 48px;
+            animation: fadeInUp 0.6s ease-out 0.3s both;
+        }
+
+        .pricing-toggle span {
+            font-size: 14px;
+            color: #8b949e;
+            font-weight: 500;
+        }
+
+        .pricing-toggle span.active {
+            color: white;
+        }
+
+        .toggle-switch {
+            width: 56px;
+            height: 30px;
+            background: rgba(0, 150, 255, 0.2);
+            border-radius: 15px;
+            position: relative;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .toggle-switch.active {
+            background: rgba(0, 150, 255, 0.4);
+        }
+
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            background: #0096FF;
+            border-radius: 50%;
+            top: 3px;
+            left: 3px;
+            transition: all 0.3s;
+        }
+
+        .toggle-switch.active::after {
+            left: 29px;
+        }
+
+        /* Pricing Cards */
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+            gap: 32px;
+            align-items: stretch;
+        }
+
+        .pricing-card {
+            background: rgba(33, 38, 45, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 24px;
+            padding: 40px;
+            position: relative;
+            transition: all 0.4s ease;
+            animation: fadeInUp 0.6s ease-out 0.4s both;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .pricing-card:hover {
+            transform: translateY(-8px);
+            border-color: rgba(0, 150, 255, 0.3);
+            box-shadow: 0 20px 60px rgba(0, 150, 255, 0.1);
+        }
+
+        .pricing-card.popular {
+            background: linear-gradient(180deg, rgba(0, 150, 255, 0.1) 0%, rgba(33, 38, 45, 0.8) 100%);
+            border-color: rgba(0, 150, 255, 0.4);
+            transform: scale(1.02);
+        }
+
+        .pricing-card.popular:hover {
+            transform: scale(1.02) translateY(-8px);
+        }
+
+        .popular-badge {
+            position: absolute;
+            top: -14px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: linear-gradient(135deg, #0096FF, #00D4FF);
+            padding: 8px 24px;
+            border-radius: 100px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            white-space: nowrap;
+        }
+
+        .plan-icon {
+            width: 64px;
+            height: 64px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            margin-bottom: 20px;
+        }
+
+        .pricing-card.popular .plan-icon {
+            background: rgba(0, 150, 255, 0.15);
+        }
+
+        .plan-name {
+            font-size: 24px;
+            font-weight: 700;
+            color: white;
+            margin-bottom: 8px;
+        }
+
+        .plan-desc {
+            font-size: 14px;
+            color: #8b949e;
+            margin-bottom: 24px;
+            line-height: 1.5;
+        }
+
+        .plan-price {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            margin-bottom: 32px;
+        }
+
+        .price-amount {
+            font-size: 48px;
+            font-weight: 700;
+            color: white;
+        }
+
+        .price-period {
+            font-size: 16px;
+            color: #8b949e;
+        }
+
+        .plan-features {
+            list-style: none;
+            padding: 0;
+            margin: 0 0 32px 0;
+            flex: 1;
+        }
+
+        .plan-features li {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            font-size: 14px;
+            color: #c9d1d9;
+        }
+
+        .plan-features li:last-child {
+            border-bottom: none;
+        }
+
+        .plan-features li i {
+            color: #3fb950;
+            font-size: 16px;
+            margin-top: 2px;
+            flex-shrink: 0;
+        }
+
+        .plan-features li.disabled {
+            color: #6e7681;
+        }
+
+        .plan-features li.disabled i {
+            color: #6e7681;
+        }
+
+        .btn-plan {
+            width: 100%;
+            padding: 16px 24px;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            text-decoration: none;
+        }
+
+        .btn-free {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: white;
+        }
+
+        .btn-free:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .btn-pro {
+            background: linear-gradient(135deg, #0096FF, #00D4FF);
+            border: none;
+            color: white;
+            box-shadow: 0 8px 24px rgba(0, 150, 255, 0.3);
+        }
+
+        .btn-pro:hover {
+            box-shadow: 0 12px 32px rgba(0, 150, 255, 0.4);
+            transform: translateY(-2px);
+        }
+
+        /* Stats Section */
+        .stats-section {
+            margin-top: 80px;
+            padding: 60px 0;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 40px;
+            text-align: center;
+        }
+
+        .stat-item h3 {
+            font-size: 42px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #0096FF, #00D4FF);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 8px;
+        }
+
+        .stat-item p {
+            font-size: 14px;
+            color: #8b949e;
+        }
+
+        /* FAQ Section */
+        .faq-section {
+            margin-top: 80px;
+        }
+
+        .faq-title {
+            font-size: 32px;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 40px;
+            color: white;
+        }
+
+        .faq-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+            gap: 20px;
+        }
+
+        .faq-item {
+            background: rgba(33, 38, 45, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 24px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .faq-item:hover {
+            border-color: rgba(0, 150, 255, 0.3);
+        }
+
+        .faq-question {
+            font-size: 16px;
+            font-weight: 600;
+            color: white;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .faq-question i {
+            color: #0096FF;
+            font-size: 18px;
+        }
+
+        .faq-answer {
+            font-size: 14px;
+            color: #8b949e;
+            line-height: 1.6;
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 40px 0;
+            margin-top: 60px;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .footer p {
+            font-size: 14px;
+            color: #6e7681;
+        }
+
+        .footer a {
+            color: #0096FF;
+            text-decoration: none;
+        }
+
+        /* Loading State */
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 60vh;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top-color: #0096FF;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* User Badge */
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 8px 16px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 100px;
+        }
+
+        .user-avatar {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, #0096FF, #00D4FF);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .user-plan {
+            font-size: 12px;
+            padding: 4px 10px;
+            background: rgba(0, 150, 255, 0.2);
+            border-radius: 100px;
+            color: #0096FF;
+            font-weight: 600;
+        }
+
+        .user-plan.free {
+            background: rgba(255, 255, 255, 0.1);
+            color: #8b949e;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header {
+                padding: 16px 20px;
+            }
+
+            .hero h1 {
+                font-size: 36px;
+            }
+
+            .hero p {
+                font-size: 16px;
+            }
+
+            .pricing-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .pricing-card.popular {
+                transform: none;
+            }
+
+            .pricing-card.popular:hover {
+                transform: translateY(-8px);
+            }
+        }
+
+        /* Toast Notification */
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            padding: 16px 24px;
+            background: rgba(33, 38, 45, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            color: white;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            z-index: 1000;
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.3s;
+        }
+
+        .toast.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        .toast.success {
+            border-color: rgba(63, 185, 80, 0.5);
+        }
+
+        .toast.success i {
+            color: #3fb950;
+        }
+
+        .toast.error {
+            border-color: rgba(248, 81, 73, 0.5);
+        }
+
+        .toast.error i {
+            color: #f85149;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="bg-animation"></div>
+
+    <!-- Header -->
+    <header class="header">
+        <a href="/" class="logo">
+            <div class="logo-icon">⚡</div>
+            <span>FileBot</span>
+        </a>
+        <div class="nav-buttons" id="nav-buttons">
+            <a href="/login.html" class="btn-login">Login</a>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="container">
+            <!-- Hero Section -->
+            <section class="hero">
+                <div class="hero-badge">
+                    <i class="fas fa-circle"></i>
+                    Simple, transparent pricing
+                </div>
+                <h1>Choose Your Plan</h1>
+                <p>Start free and upgrade when you need more power. No hidden fees, no surprises.</p>
+            </section>
+
+            <!-- Pricing Cards -->
+            <div class="pricing-grid" id="pricing-grid">
+                <div class="loading">
+                    <div class="spinner"></div>
+                </div>
+            </div>
+
+            <!-- Stats Section -->
+            <section class="stats-section">
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <h3>50K+</h3>
+                        <p>Active Users</p>
+                    </div>
+                    <div class="stat-item">
+                        <h3>99.9%</h3>
+                        <p>Uptime</p>
+                    </div>
+                    <div class="stat-item">
+                        <h3>24/7</h3>
+                        <p>Support</p>
+                    </div>
+                    <div class="stat-item">
+                        <h3>1M+</h3>
+                        <p>Files Processed</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- FAQ Section -->
+            <section class="faq-section">
+                <h2 class="faq-title">Frequently Asked Questions</h2>
+                <div class="faq-grid">
+                    <div class="faq-item">
+                        <div class="faq-question">
+                            <i class="fas fa-bolt"></i>
+                            How do I upgrade to Pro?
+                        </div>
+                        <div class="faq-answer">
+                            Click the "Upgrade to Pro" button and follow the instructions. You'll be guided through a simple payment process.
+                        </div>
+                    </div>
+                    <div class="faq-item">
+                        <div class="faq-question">
+                            <i class="fas fa-credit-card"></i>
+                            What payment methods are accepted?
+                        </div>
+                        <div class="faq-answer">
+                            We accept all major credit/debit cards, UPI, and various payment gateways depending on your region.
+                        </div>
+                    </div>
+                    <div class="faq-item">
+                        <div class="faq-question">
+                            <i class="fas fa-ban"></i>
+                            Can I cancel anytime?
+                        </div>
+                        <div class="faq-answer">
+                            Yes, you can cancel your subscription at any time. Your pro features will remain active until the end of your billing period.
+                        </div>
+                    </div>
+                    <div class="faq-item">
+                        <div class="faq-question">
+                            <i class="fas fa-sync"></i>
+                            What happens to my files when I downgrade?
+                        </div>
+                        <div class="faq-answer">
+                            All your files remain safe. You can still access them, but new uploads will be subject to free plan limits.
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2026 FileBot. All rights reserved. | <a href="/static/pages/rclone-help.html">Help Center</a></p>
+        </div>
+    </footer>
+
+    <!-- Toast Notification -->
+    <div class="toast" id="toast">
+        <i class="fas fa-check-circle"></i>
+        <span id="toast-message">Success!</span>
+    </div>
+
+    <script>
+        let botUsername = 'cc_leechbot';
+        let currentPlan = 'free';
+        let isLoggedIn = false;
+
+        // Check if user is logged in
+        async function checkAuth() {
+            const token = localStorage.getItem('filebot_token');
+            if (token) {
+                try {
+                    const res = await fetch('/api/user/settings', {
+                        headers: { 'Authorization': 'Bearer ' + token }
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        isLoggedIn = true;
+                        currentPlan = data.plan || 'free';
+                        updateNavForLoggedInUser();
+                    }
+                } catch (e) {
+                    console.log('Not logged in');
+                }
+            }
+        }
+
+        function updateNavForLoggedInUser() {
+            document.getElementById('nav-buttons').innerHTML = `
+                <div class="user-info">
+                    <div class="user-avatar">U</div>
+                    <span class="user-plan ${currentPlan}">${currentPlan.toUpperCase()}</span>
+                </div>
+                <a href="/static/pages/settings.html" class="btn-login" style="background: rgba(0, 150, 255, 0.1); border-color: rgba(0, 150, 255, 0.3);">
+                    Dashboard
+                </a>
+            `;
+        }
+
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            const toastMessage = document.getElementById('toast-message');
+            toast.className = 'toast ' + type;
+            toast.querySelector('i').className = type === 'success' ? 'fas fa-check-circle' : 'fas fa-exclamation-circle';
+            toastMessage.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 4000);
+        }
+
+        async function loadPricing() {
+            try {
+                const res = await fetch('/api/public/plans');
+                const data = await res.json();
+                botUsername = data.bot_username || 'cc_leechbot';
+                renderPricing(data.plans || { free: {}, pro: {} });
+            } catch (e) {
+                console.error('Failed to load pricing:', e);
+                renderPricing({
+                    free: {
+                        price: 0,
+                        parallel: 1,
+                        storage_per_day: 5,
+                        features: ['Basic file processing', 'Single file uploads', 'Standard speed']
+                    },
+                    pro: {
+                        price: 5,
+                        parallel: 3,
+                        storage_per_day: 50,
+                        features: ['Priority processing', 'Batch uploads', 'High speed', 'Cloud upload', 'Custom metadata', 'Extended storage']
+                    }
+                });
+            }
+        }
+
+        function formatFeatures(features, plan) {
+            if (!features || features.length === 0) {
+                if (plan === 'free') {
+                    return [
+                        'Basic file processing',
+                        'Up to 50MB per file',
+                        'Standard processing speed',
+                        'Community support'
+                    ];
+                } else {
+                    return [
+                        'Priority processing queue',
+                        'Up to 2GB per file',
+                        'High-speed processing',
+                        'Cloud storage upload',
+                        'Custom metadata injection',
+                        'Batch file processing',
+                        'Extended storage retention',
+                        '24/7 Priority support'
+                    ];
+                }
+            }
+            return features;
+        }
+
+        function renderPricing(plans) {
+            const grid = document.getElementById('pricing-grid');
+            const freePlan = plans.free || {};
+            const proPlan = plans.pro || plans.premium || {};
+
+            const freeFeatures = formatFeatures(freePlan.features, 'free');
+            const proFeatures = formatFeatures(proPlan.features, 'pro');
+
+            grid.innerHTML = `
+                <!-- Free Plan -->
+                <div class="pricing-card">
+                    <div class="plan-icon">📁</div>
+                    <div class="plan-name">Free</div>
+                    <div class="plan-desc">Perfect for getting started with basic file processing</div>
+                    <div class="plan-price">
+                        <span class="price-amount">${freePlan.price || 0}</span>
+                        <span class="price-period">${freePlan.price ? '/month' : 'Forever'}</span>
+                    </div>
+                    <ul class="plan-features">
+                        ${freeFeatures.map(f => `
+                            <li>
+                                <i class="fas fa-check"></i>
+                                <span>${f}</span>
+                            </li>
+                        `).join('')}
+                        <li class="disabled">
+                            <i class="fas fa-times"></i>
+                            <span>Priority queue</span>
+                        </li>
+                        <li class="disabled">
+                            <i class="fas fa-times"></i>
+                            <span>Cloud upload</span>
+                        </li>
+                    </ul>
+                    ${isLoggedIn && currentPlan !== 'free' ? `
+                        <button class="btn-plan btn-free" disabled>
+                            <i class="fas fa-check"></i>
+                            Current Plan
+                        </button>
+                    ` : `
+                        <a href="https://t.me/${botUsername}?start=upgrade_free" class="btn-plan btn-free">
+                            <i class="fas fa-rocket"></i>
+                            Get Started Free
+                        </a>
+                    `}
+                </div>
+
+                <!-- Pro Plan -->
+                <div class="pricing-card popular">
+                    <div class="popular-badge">Most Popular</div>
+                    <div class="plan-icon">⚡</div>
+                    <div class="plan-name">Pro</div>
+                    <div class="plan-desc">For power users who need more speed, storage and features</div>
+                    <div class="plan-price">
+                        <span class="price-amount">$${proPlan.price || 5}</span>
+                        <span class="price-period">/month</span>
+                    </div>
+                    <ul class="plan-features">
+                        ${proFeatures.map(f => `
+                            <li>
+                                <i class="fas fa-check"></i>
+                                <span>${f}</span>
+                            </li>
+                        `).join('')}
+                    </ul>
+                    ${isLoggedIn && currentPlan === 'pro' ? `
+                        <button class="btn-plan btn-pro" disabled>
+                            <i class="fas fa-crown"></i>
+                            You're a Pro!
+                        </button>
+                    ` : `
+                        <button class="btn-plan btn-pro" onclick="upgradeToPro()">
+                            <i class="fas fa-crown"></i>
+                            Upgrade to Pro
+                        </button>
+                    `}
+                </div>
+            `;
+        }
+
+        function upgradeToPro() {
+            if (!isLoggedIn) {
+                showToast('Please login first to upgrade', 'error');
+                setTimeout(() => {
+                    window.location.href = '/login.html';
+                }, 1500);
+                return;
+            }
+            // Open Telegram bot with upgrade command
+            window.open(`https://t.me/${botUsername}?start=upgrade_pro`, '_blank');
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async () => {
+            await checkAuth();
+            loadPricing();
+        });
+    </script>
+</body>
+
+</html>

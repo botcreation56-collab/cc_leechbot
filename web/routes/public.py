@@ -535,6 +535,76 @@ async def queue_bypassed_endpoint(request: Request, token: str, bot: str):
         raise HTTPException(status_code=500, detail="Failed to load bypass page")
 
 
+@router.get("/api/public/plans")
+async def get_public_plans():
+    """
+    Get pricing plans for public display (no auth required).
+    """
+    try:
+        from bot.database import get_config
+        from config.settings import get_settings
+
+        config = await get_config() or {}
+        plans = config.get(
+            "plans",
+            {
+                "free": {
+                    "price": 0,
+                    "parallel": 1,
+                    "storage_per_day": 5,
+                    "dump_expiry_days": 0,
+                    "max_file_size_mb": 50,
+                    "features": [
+                        "Basic file processing",
+                        "Single file uploads",
+                        "Standard speed",
+                    ],
+                },
+                "pro": {
+                    "price": 5,
+                    "parallel": 3,
+                    "storage_per_day": 50,
+                    "dump_expiry_days": 30,
+                    "max_file_size_mb": 2000,
+                    "features": [
+                        "Priority processing",
+                        "Batch uploads",
+                        "High speed",
+                        "Cloud upload",
+                        "Custom metadata",
+                        "Extended storage",
+                        "No ads",
+                    ],
+                },
+            },
+        )
+
+        settings = get_settings()
+        bot_username = settings.BOT_USERNAME or "cc_leechbot"
+
+        return {"plans": plans, "bot_username": bot_username, "currency": "USD"}
+    except Exception as e:
+        logger.error(f"❌ Get public plans error: {e}", exc_info=True)
+        return {
+            "plans": {
+                "free": {
+                    "price": 0,
+                    "parallel": 1,
+                    "storage_per_day": 5,
+                    "features": ["Basic processing"],
+                },
+                "pro": {
+                    "price": 5,
+                    "parallel": 3,
+                    "storage_per_day": 50,
+                    "features": ["Priority", "Cloud upload", "Batch"],
+                },
+            },
+            "bot_username": "cc_leechbot",
+            "currency": "USD",
+        }
+
+
 @router.get("/api/rclone/auth")
 async def rclone_auth_redirect(user_id: int, client_id: str, client_secret: str):
     """

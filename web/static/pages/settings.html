@@ -285,6 +285,43 @@
                     destinations.</p>
             </div>
 
+            <!-- Plan Status Panel -->
+            <div class="settings-panel" id="plan-panel" style="border: 1px solid rgba(0, 150, 255, 0.3); background: linear-gradient(135deg, rgba(0, 150, 255, 0.05), rgba(0, 212, 255, 0.02));">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+                    <div style="display: flex; align-items: center; gap: 16px;">
+                        <div style="width: 56px; height: 56px; background: rgba(0, 150, 255, 0.15); border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 24px;" id="plan-icon">⚡</div>
+                        <div>
+                            <div style="font-size: 13px; color: #8b949e; margin-bottom: 4px;">Current Plan</div>
+                            <div style="font-size: 24px; font-weight: 700; text-transform: uppercase;" id="plan-name">Loading...</div>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 12px;">
+                        <a href="./pricing.html" class="btn-primary" style="background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.15);">
+                            <i class="fas fa-crown" style="margin-right: 8px;"></i> View Plans
+                        </a>
+                        <button class="btn-primary" id="upgrade-btn" onclick="upgradePlan()" style="background: linear-gradient(135deg, #0096FF, #00D4FF); border: none;">
+                            <i class="fas fa-rocket" style="margin-right: 8px;"></i> Upgrade Now
+                        </button>
+                    </div>
+                </div>
+                <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255, 255, 255, 0.05);">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px;" id="plan-features">
+                        <div>
+                            <div style="font-size: 12px; color: #6e7681;">Parallel Uploads</div>
+                            <div style="font-size: 18px; font-weight: 600; color: white;" id="plan-parallel">-</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 12px; color: #6e7681;">Storage/Day</div>
+                            <div style="font-size: 18px; font-weight: 600; color: white;" id="plan-storage">-</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 12px; color: #6e7681;">Dump Expiry</div>
+                            <div style="font-size: 18px; font-weight: 600; color: white;" id="plan-expiry">-</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div class="settings-panel">
                 <div class="panel-title"><span>📝</span> Metadata Preferences</div>
                 <div class="form-group">
@@ -350,6 +387,9 @@
             });
         });
 
+        let botUsername = 'cc_leechbot';
+        let userPlan = 'free';
+
         async function fetchSettings() {
             try {
                 const res = await fetch('/api/user/settings', {
@@ -361,6 +401,10 @@
 
                 document.getElementById('meta-title').value = data.metadata_title || "";
                 document.getElementById('meta-author').value = data.metadata_author || "";
+
+                // Update user plan
+                userPlan = data.plan || 'free';
+                updatePlanPanel(userPlan);
 
                 if (data.default_mode) {
                     currentMode = data.default_mode;
@@ -374,6 +418,49 @@
             } catch (err) {
                 console.error(err);
             }
+        }
+
+        async function loadPlanInfo() {
+            try {
+                // Load plan details from public API
+                const res = await fetch('/api/public/plans');
+                if (res.ok) {
+                    const data = await res.json();
+                    botUsername = data.bot_username || 'cc_leechbot';
+                    const planData = userPlan === 'pro' ? (data.plans.pro || data.plans.premium) : data.plans.free;
+                    if (planData) {
+                        document.getElementById('plan-parallel').textContent = planData.parallel || '-';
+                        document.getElementById('plan-storage').textContent = (planData.storage_per_day || '0') + ' GB';
+                        document.getElementById('plan-expiry').textContent = (planData.dump_expiry_days || '0') + ' days';
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to load plan info:', e);
+            }
+        }
+
+        function updatePlanPanel(plan) {
+            const planIcon = document.getElementById('plan-icon');
+            const planName = document.getElementById('plan-name');
+            const upgradeBtn = document.getElementById('upgrade-btn');
+
+            if (plan === 'pro' || plan === 'premium') {
+                planIcon.textContent = '👑';
+                planIcon.style.background = 'rgba(255, 215, 0, 0.15)';
+                planName.textContent = 'PRO';
+                planName.style.color = '#ffd700';
+                upgradeBtn.style.display = 'none';
+            } else {
+                planIcon.textContent = '📁';
+                planIcon.style.background = 'rgba(0, 150, 255, 0.15)';
+                planName.textContent = 'FREE';
+                planName.style.color = '#0096FF';
+                upgradeBtn.style.display = 'flex';
+            }
+        }
+
+        function upgradePlan() {
+            window.open(`https://t.me/${botUsername}?start=upgrade_pro`, '_blank');
         }
 
         async function saveSettings() {
@@ -497,7 +584,10 @@
             if (btn) btn.classList.toggle('open');
         }
 
-        document.addEventListener('DOMContentLoaded', fetchSettings);
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchSettings();
+            loadPlanInfo();
+        });
     </script>
 </body>
 
