@@ -57,6 +57,7 @@ from .admin import (
     get_broadcast_stats,
     handle_admin_forwards,
     handle_admin_shorteners,
+    handle_add_shortener,
     stats_command,
     get_queue_stats,
 )
@@ -161,7 +162,6 @@ from .user import (
     show_plans_menu,
     ask_channel_forward,
     show_shorteners_menu,
-    handle_add_shortener,
     callback_handler,
     generate_cloud_link,
     copy_link_callback,

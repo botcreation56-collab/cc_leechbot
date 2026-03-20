@@ -260,26 +260,6 @@ async def show_shorteners_menu(update: Update, context: ContextTypes.DEFAULT_TYP
             pass
 
 
-async def handle_add_shortener(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Add new link shortener"""
-    try:
-        await update.callback_query.answer()
-        await update.callback_query.message.reply_text(
-            "🔗 **Add Link Shortener**\n\n"
-            "Step 1: **Send your API key** for the shortener.\n\n"
-            "Use /cancel to abort.",
-            parse_mode="Markdown",
-        )
-        context.user_data["awaiting"] = "add_shortener_api"
-        logger.info("✅ Add shortener API prompt shown")
-    except Exception as e:
-        logger.error(f"❌ Error: {e}", exc_info=True)
-        try:
-            await update.callback_query.answer(f"❌ Error", show_alert=True)
-        except:
-            pass
-
-
 @rate_limit
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -349,8 +329,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             handle_edit_tos,
             handle_edit_upgrade_text,
             handle_edit_plan,
-            handle_add_shortener,
             handle_edit_force_subs,
+        )
+        from bot.handlers.admin import handle_add_shortener
+        from bot.handlers import (
             handle_broadcast_compose,
             handle_broadcast_stats,
             handle_broadcast_cancel,
@@ -563,8 +545,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ("edit_plan_", "edit_price_", "edit_daily_", "edit_expiry_")
             ):
                 await handle_edit_plan(update, context)
-            elif data == "add_shortener":
-                await handle_add_shortener(update, context)
             elif data.startswith("edit_shortener_"):
                 await handle_add_shortener(update, context)
             elif data == "edit_force_subs":

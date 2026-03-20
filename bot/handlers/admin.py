@@ -2240,3 +2240,23 @@ async def handle_admin_shorteners(update: Update, context: ContextTypes.DEFAULT_
     except Exception as e:
         logger.error(f"❌ Error in handle_admin_shorteners: {e}")
         await update.callback_query.answer("❌ Error", show_alert=True)
+
+
+async def handle_add_shortener(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Add new link shortener - Step 1: Get API key"""
+    try:
+        await update.callback_query.answer()
+        await update.callback_query.message.reply_text(
+            "🔗 **Add Link Shortener**\n\n"
+            "Step 1: **Send your API key** for the shortener.\n\n"
+            "Use /cancel to abort.",
+            parse_mode="Markdown",
+        )
+        context.user_data["awaiting"] = "add_shortener_api"
+        logger.info("✅ Add shortener API prompt shown")
+    except Exception as e:
+        logger.error(f"❌ Error in handle_add_shortener: {e}", exc_info=True)
+        try:
+            await update.callback_query.answer(f"❌ Error", show_alert=True)
+        except:
+            pass

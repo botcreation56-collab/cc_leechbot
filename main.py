@@ -338,6 +338,7 @@ def setup_handlers(application: Application) -> None:
         handle_admin_add_log_channel,
         handle_admin_add_storage_channel,
         handle_admin_shorteners,
+        handle_add_shortener,
         handle_admin_stats,
         handle_admin_terabox,
         handle_admin_unban_user,
@@ -556,6 +557,7 @@ def setup_handlers(application: Application) -> None:
             ("^admin_logs$", handle_admin_logs),
             ("^view_logs_", handle_admin_logs),
             ("^admin_shorteners$", handle_admin_shorteners),
+            ("^add_shortener$", handle_add_shortener),
         ]:
             application.add_handler(CallbackQueryHandler(handler, pattern=pattern))
 
