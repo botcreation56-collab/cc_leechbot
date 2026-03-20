@@ -1815,9 +1815,18 @@ class WizardHandler:
             logger.error(f"❌ Error in wizard processing: {e}", exc_info=True)
             err_msg = f"❌ **Processing Failed**\n\nError: {str(e)[:100]}"
             if query:
-                await query.edit_message_text(err_msg, parse_mode="Markdown")
+                try:
+                    await query.edit_message_text(err_msg, parse_mode="Markdown")
+                except Exception:
+                    try:
+                        await bot.send_message(user_id, text=err_msg, parse_mode="Markdown")
+                    except Exception:
+                        pass
             else:
-                await bot.send_message(user_id, text=err_msg, parse_mode="Markdown")
+                try:
+                    await bot.send_message(user_id, text=err_msg, parse_mode="Markdown")
+                except Exception:
+                    pass
 
     @staticmethod
     async def execute_processing_flow(
@@ -1915,18 +1924,30 @@ class WizardHandler:
                 return
 
             await update_task(task_id, {"status": "processing"})
-            await WizardHandler.process_session_background(
-                context.bot, user_id, session, query
+            
+            import asyncio
+            asyncio.create_task(
+                WizardHandler.process_session_background(
+                    context.bot, user_id, session, query
+                )
             )
 
         except Exception as e:
             logger.error(f"❌ execute_processing_flow error: {e}", exc_info=True)
             try:
-                await query.answer(
-                    "❌ Processing failed: " + str(e)[:50], show_alert=True
+                await query.edit_message_text(
+                    f"❌ **Processing Failed**\n\nError: `{str(e)[:150]}`",
+                    parse_mode="Markdown"
                 )
-            except:
-                pass
+            except Exception:
+                try:
+                    await context.bot.send_message(
+                        chat_id=user_id,
+                        text=f"❌ **Processing Failed**\n\nError: `{str(e)[:150]}`",
+                        parse_mode="Markdown"
+                    )
+                except Exception:
+                    pass
 
 
 async def execute_processing_flow_by_task(bot, task: dict) -> None:
