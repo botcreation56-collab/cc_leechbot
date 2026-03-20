@@ -268,6 +268,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user_id = update.effective_user.id
 
+    logger.info(f"🔔 CALLBACK RECEIVED: '{data}' from user {user_id}")
+
     try:
         admin_ids = get_admin_ids()
 
@@ -710,7 +712,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     parse_mode="Markdown",
                 )
             else:
-                logger.debug(f"Non-admin callback not handled by fallback: {data}")
+                logger.warning(f"⚠️ UNHANDLED callback: {data}")
 
     except Exception as e:
         logger.error(f"❌ Error in callback_handler: {e}", exc_info=True)
@@ -1016,17 +1018,30 @@ async def handle_us_dest_manage(update: Update, context: ContextTypes.DEFAULT_TY
             ]
         )
 
-        await query.message.edit_text(
-            f"🎯 **Destination Settings**\n\n"
-            f"Channel: `{title}`\n"
-            f"ID: `{channel_id}`\n\n"
-            f"Preview:\n```{cap_preview}```\n\n"
-            f"Configure how files are sent to this channel:",
-            reply_markup=keyboard,
-            parse_mode="Markdown",
-        )
+        try:
+            await query.message.edit_text(
+                f"🎯 **Destination Settings**\n\n"
+                f"Channel: `{title}`\n"
+                f"ID: `{channel_id}`\n\n"
+                f"Preview:\n```{cap_preview}```\n\n"
+                f"Configure how files are sent to this channel:",
+                reply_markup=keyboard,
+                parse_mode="Markdown",
+            )
+        except Exception as edit_err:
+            logger.warning(f"Edit failed, sending new message: {edit_err}")
+            await query.message.reply_text(
+                f"🎯 **Destination Settings**\n\n"
+                f"Channel: `{title}`\n"
+                f"ID: `{channel_id}`\n\n"
+                f"Preview:\n```{cap_preview}```\n\n"
+                f"Configure how files are sent to this channel:",
+                reply_markup=keyboard,
+                parse_mode="Markdown",
+            )
     except Exception as e:
         logger.error(f"❌ Error in us_dest_manage: {e}", exc_info=True)
+        await query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
 
 
 async def handle_us_dest_remove_confirm(
@@ -2826,11 +2841,16 @@ async def check_force_sub(
 
             # 1. Check if user is member
             is_member = False
+            is_requested = False
             try:
                 member = await context.bot.get_chat_member(channel_id, user_id)
                 if member.status in ["member", "administrator", "creator"]:
                     is_member = True
                     logger.info(f"FSub: User {user_id} IS member of {channel_id}")
+                elif member.status == "left":
+                    logger.info(f"FSub: User {user_id} has LEFT {channel_id}")
+                elif member.status == "kicked":
+                    logger.info(f"FSub: User {user_id} is BANNED in {channel_id}")
                 else:
                     logger.info(
                         f"FSub: User {user_id} status in {channel_id}: {member.status}"
@@ -2842,10 +2862,31 @@ async def check_force_sub(
 
             # 2. Check if user requested (for req_join channels)
             req_join = channel.get("metadata", {}).get("req_join", False)
+
+            # Check both DB record and Telegram API for pending requests
             is_requested = int(channel_id) in [int(c) for c in requested]
+
+            # Also check via Telegram API for pending join requests
+            if req_join and not is_member:
+                try:
+                    from telegram.error import BadRequest
+
+                    # Try to get chat and check for pending requests
+                    chat = await context.bot.get_chat(channel_id)
+                    # If we can get chat info, the bot has access
+                    logger.info(
+                        f"FSub: Bot has access to {channel_id} for req_join check"
+                    )
+                except TelegramError as e:
+                    logger.warning(
+                        f"FSub: Cannot access {channel_id} for req_join: {e}"
+                    )
 
             # Allow if: member OR (requested for req_join mode)
             if is_member or (is_requested and req_join):
+                logger.info(
+                    f"FSub: User {user_id} allowed via member={is_member} or requested={is_requested}"
+                )
                 continue
 
             not_joined.append(channel)
@@ -2887,14 +2928,27 @@ async def check_force_sub(
 
                 if not invite_link:
                     try:
-                        limit = 1 if req_join else 0
-                        link = await context.bot.create_chat_invite_link(
-                            channel_id,
-                            creates_join_request=req_join,
-                            name=f"FSub_{user_id}",
-                            member_limit=limit,
-                        )
-                        invite_link = link.invite_link
+                        # First try to export existing link
+                        try:
+                            link = await context.bot.export_chat_invite_link(channel_id)
+                            invite_link = link
+                        except Exception:
+                            # If export fails, create new link
+                            if req_join:
+                                # For req_join: create link that creates join request
+                                link = await context.bot.create_chat_invite_link(
+                                    channel_id,
+                                    creates_join_request=True,
+                                    name=f"FSub_{user_id}",
+                                )
+                            else:
+                                # For normal join: create unlimited link
+                                link = await context.bot.create_chat_invite_link(
+                                    channel_id,
+                                    name=f"FSub_{user_id}",
+                                    member_limit=0,
+                                )
+                            invite_link = link.invite_link
                     except TelegramError as e:
                         logger.warning(f"Cannot create link for {channel_id}: {e}")
                         invite_link = None
