@@ -31,13 +31,15 @@ settings = get_settings()
 # MARKDOWN ESCAPE HELPER
 # ============================================================
 
-_MD_SPECIAL = re.compile(r'([_*`\[\]])')
+_MD_SPECIAL = re.compile(r"([_*`\[\]])")
+
 
 def escape_md(text: str) -> str:
     """Escape Markdown v1 special characters to prevent parse errors."""
     if not text:
         return ""
-    return _MD_SPECIAL.sub(r'\\\1', str(text))
+    return _MD_SPECIAL.sub(r"\\\1", str(text))
+
 
 # ============================================================
 # BUTTON & ACTION RATE LIMITING
@@ -46,11 +48,13 @@ def escape_md(text: str) -> str:
 # TTLCache: auto-evicts entries after 120 s — zero memory leak
 _ACTIVE_USERS: TTLCache = TTLCache(maxsize=10_000, ttl=120)
 
+
 def rate_limit(func: Callable) -> Callable:
     """
     Decorator to prevent users from spam-clicking buttons or sending rapid requests.
     Locks the user for max 120s while the current request is processing.
     """
+
     @wraps(func)
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Any:
         if not update.effective_user:
@@ -66,7 +70,9 @@ def rate_limit(func: Callable) -> Callable:
                 logger.warning(f"⏳ Rate limit hit for {user_id}. Ignoring request.")
                 if update.callback_query:
                     try:
-                        await update.callback_query.answer("⏳ Please wait a moment...", show_alert=False)
+                        await update.callback_query.answer(
+                            "⏳ Please wait a moment...", show_alert=False
+                        )
                     except Exception as e:
                         logger.debug(f"Rate-limit answer skipped: {e}")
                 return
@@ -82,11 +88,13 @@ def rate_limit(func: Callable) -> Callable:
 
     return wrapper
 
+
 # ============================================================
 # ADMIN DECORATOR
 # ============================================================
 
 # (wraps already imported at top)
+
 
 def admin_only(func: Callable) -> Callable:
     """
@@ -95,6 +103,7 @@ def admin_only(func: Callable) -> Callable:
         @admin_only
         async def admin_command(update, context): ...
     """
+
     @wraps(func)
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Any:
         try:
@@ -107,14 +116,18 @@ def admin_only(func: Callable) -> Callable:
             logger.info(f"🕵️ Admin check: user={user_id} | admins={admin_ids}")
 
             if not await is_admin(user_id):
-                logger.warning(f"🚫 Unauthorized admin access: {user_id} (not in admin list or DB role)")
+                logger.warning(
+                    f"🚫 Unauthorized admin access: {user_id} (not in admin list or DB role)"
+                )
                 if update.message:
                     await update.message.reply_text(
                         "⛔ You don't have permission to use this command."
                     )
                 # Fire-and-forget security log (non-blocking)
                 try:
-                    await log_security_event(user_id, "unauthorized_admin_access", "high")
+                    await log_security_event(
+                        user_id, "unauthorized_admin_access", "high"
+                    )
                 except Exception as e:
                     logger.debug(f"Security event log skipped: {e}")
                 return
@@ -176,6 +189,7 @@ async def require_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> b
 # ============================================================
 # BAN CHECK MIDDLEWARE
 # ============================================================
+
 
 async def ban_check_middleware(
     update: Update,
@@ -256,6 +270,7 @@ async def apply_ban_check(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 # CUSTOM EXCEPTION
 # ============================================================
 
+
 class FileBotException(Exception):
     """Custom exception for FileBot-specific errors."""
 
@@ -270,7 +285,10 @@ class FileBotException(Exception):
 # GLOBAL ERROR HANDLER
 # ============================================================
 
-async def error_handler(update: Optional[Update], context: ContextTypes.DEFAULT_TYPE) -> None:
+
+async def error_handler(
+    update: Optional[Update], context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """
     Global uncaught-exception handler registered with PTB.
     Logs to log channel and notifies the first admin via DM.
@@ -292,12 +310,12 @@ async def error_handler(update: Optional[Update], context: ContextTypes.DEFAULT_
             f"{traceback.format_exc()}"
         )
 
-        # Notify user
+        # Notify user (generic message only - don't reveal error details)
         if user_id and update and update.effective_message:
             try:
                 await update.effective_message.reply_text(
-                    f"❌ Something went wrong. Please try again.\n\n"
-                    f"Error: `{escape_md(error_msg[:100])}`",
+                    "❌ **Something went wrong**\n\n"
+                    "Please try again. If the problem persists, contact support.",
                     parse_mode="Markdown",
                 )
             except Exception as e:
@@ -306,8 +324,11 @@ async def error_handler(update: Optional[Update], context: ContextTypes.DEFAULT_
         # Log to channel
         try:
             from bot.database import get_channel_id
+
             db_log_channel = await get_channel_id("log")
-            log_channel_id = db_log_channel if db_log_channel else settings.LOG_CHANNEL_ID
+            log_channel_id = (
+                db_log_channel if db_log_channel else settings.LOG_CHANNEL_ID
+            )
             if log_channel_id and context.bot:
                 report = (
                     f"🔴 **ERROR REPORT**\n\n"
@@ -329,7 +350,9 @@ async def error_handler(update: Optional[Update], context: ContextTypes.DEFAULT_
         try:
             admin_ids = get_admin_ids()
             if admin_ids and context.bot:
-                user_link = f"[{user_id}](tg://user?id={user_id})" if user_id else "`System`"
+                user_link = (
+                    f"[{user_id}](tg://user?id={user_id})" if user_id else "`System`"
+                )
                 alert = (
                     f"⚠️ **Bot Error Alert**\n\n"
                     f"Type: `{escape_md(error_type)}`\n"
@@ -358,11 +381,13 @@ async def error_handler(update: Optional[Update], context: ContextTypes.DEFAULT_
 # UTILITY WRAPPER
 # ============================================================
 
+
 def safe_async_wrapper(func: Callable) -> Callable:
     """
     Decorator — safely runs async functions and re-raises errors after logging.
     Usage: @safe_async_wrapper
     """
+
     async def wrapper(*args, **kwargs):
         try:
             return await func(*args, **kwargs)

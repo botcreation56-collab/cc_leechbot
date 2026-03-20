@@ -1695,7 +1695,6 @@ class WizardHandler:
 
             from bot.database import get_user, get_config
             from bot.services import upload_and_send_file
-            from config.settings import settings
 
             user = await get_user(user_id)
             user_plan = user.get("plan", "free")
@@ -1819,7 +1818,9 @@ class WizardHandler:
                     await query.edit_message_text(err_msg, parse_mode="Markdown")
                 except Exception:
                     try:
-                        await bot.send_message(user_id, text=err_msg, parse_mode="Markdown")
+                        await bot.send_message(
+                            user_id, text=err_msg, parse_mode="Markdown"
+                        )
                     except Exception:
                         pass
             else:
@@ -1844,7 +1845,7 @@ class WizardHandler:
             from bot.database import get_user, update_task, get_user_position
             from bot.services._queue_worker import QueueWorker
             from bot.services._ffmpeg import FFmpegService
-            from config.settings import settings
+            from config.settings import get_settings
             import uuid
 
             logger.info(
@@ -1924,8 +1925,9 @@ class WizardHandler:
                 return
 
             await update_task(task_id, {"status": "processing"})
-            
+
             import asyncio
+
             asyncio.create_task(
                 WizardHandler.process_session_background(
                     context.bot, user_id, session, query
@@ -1937,14 +1939,14 @@ class WizardHandler:
             try:
                 await query.edit_message_text(
                     f"❌ **Processing Failed**\n\nError: `{str(e)[:150]}`",
-                    parse_mode="Markdown"
+                    parse_mode="Markdown",
                 )
             except Exception:
                 try:
                     await context.bot.send_message(
                         chat_id=user_id,
                         text=f"❌ **Processing Failed**\n\nError: `{str(e)[:150]}`",
-                        parse_mode="Markdown"
+                        parse_mode="Markdown",
                     )
                 except Exception:
                     pass

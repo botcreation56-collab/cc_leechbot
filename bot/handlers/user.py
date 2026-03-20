@@ -1908,21 +1908,25 @@ async def check_force_sub(
                     req_join = False
                     invite_link = ""
 
-                # GENERATE UNIQUE INVITE LINK if req_join is enabled or no link exists
+                # GENERATE INVITE LINK if not exists or needs update
                 if not invite_link or req_join:
                     try:
                         # creates_join_request=True means "Request to Join"
                         link = await context.bot.create_chat_invite_link(
                             channel_id,
                             creates_join_request=req_join,
-                            name=f"FSub_{user_id}_{int(time.time())}",
-                            member_limit=1,  # One-time use link
+                            name=f"FSub_{user_id}",
+                            member_limit=0,  # 0 = no limit
                         )
                         invite_link = link.invite_link
+                        logger.info(
+                            f"FSub: Created link for {channel_id}: {invite_link}"
+                        )
                     except TelegramError as e:
                         logger.error(
                             f"Error creating invite link for {channel_id}: {e}"
                         )
+                        continue  # Skip this channel if can't create link
 
                 if invite_link:
                     label = (
