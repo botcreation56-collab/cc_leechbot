@@ -21,6 +21,13 @@ CLOUD_FILE_INDICES = [
 
 ONE_TIME_KEY_INDICES = [("user_id", {}), ("expires_at", {}), ("used", {})]
 
+DEST_LINK_INDICES = [
+    ("token", {"unique": True}),
+    ("user_id", {}),
+    ("dest_chat_id", {}),
+    ("expires_at", {}),
+]
+
 RCLONE_CONFIG_INDICES = [("service", {}), ("plan", {}), ("created_by", {})]
 
 BROADCAST_INDICES = [("created_by", {}), ("created_at", {}), ("status", {})]
@@ -40,6 +47,7 @@ def get_all_indices():
         "tasks": TASK_INDICES,
         "cloud_files": CLOUD_FILE_INDICES,
         "one_time_keys": ONE_TIME_KEY_INDICES,
+        "dest_links": DEST_LINK_INDICES,
         "rclone_configs": RCLONE_CONFIG_INDICES,
         "broadcasts": BROADCAST_INDICES,
         "security_logs": SECURITY_LOG_INDICES,

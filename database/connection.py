@@ -231,6 +231,7 @@ async def init_db() -> None:
         "cloud_files",
         "config",
         "one_time_keys",
+        "dest_links",
         "rclone_configs",
         "broadcasts",
         "chatbox",
@@ -267,6 +268,10 @@ async def create_indexes(db: AsyncIOMotorDatabase) -> None:
 
         await db.one_time_keys.create_index("user_id")
         await db.one_time_keys.create_index("expires_at")
+
+        await db.dest_links.create_index("token", unique=True)
+        await db.dest_links.create_index("user_id")
+        await db.dest_links.create_index("dest_chat_id")
 
         await db.admin_logs.create_index("admin_id")
         await db.admin_logs.create_index("user_id")

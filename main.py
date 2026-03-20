@@ -277,6 +277,8 @@ def setup_handlers(application: Application) -> None:
         handle_us_rclone_service,
         # Rclone feature gating
         handle_toggle_plan_rclone,
+        # Shortener feature gating
+        handle_toggle_plan_shortener,
         # Rclone post-auth user action
         handle_us_rclone_dest_activate,
     )
@@ -539,6 +541,10 @@ def setup_handlers(application: Application) -> None:
                 "^toggle_plan_rclone_",
                 handle_toggle_plan_rclone,
             ),  # Admin toggles rclone per plan
+            (
+                "^toggle_shortener_",
+                handle_toggle_plan_shortener,
+            ),  # Admin toggles shortener per plan
         ]:
             application.add_handler(CallbackQueryHandler(handler, pattern=pattern))
 

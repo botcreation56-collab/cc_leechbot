@@ -508,6 +508,9 @@ async def handle_edit_plan(update: Update, context: ContextTypes.DEFAULT_TYPE):
         rclone_allowed = plan_data.get("rclone_allowed", False)
         rclone_icon = "✅" if rclone_allowed else "❌"
 
+        shortener_allowed = plan_data.get("shortener_allowed", False)
+        shortener_icon = "✅" if shortener_allowed else "❌"
+
         keyboard = InlineKeyboardMarkup(
             [
                 [
@@ -535,6 +538,12 @@ async def handle_edit_plan(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     InlineKeyboardButton(
                         f"{rclone_icon} Rclone {'Allowed' if rclone_allowed else 'Denied'} — Toggle",
                         callback_data=f"toggle_rclone_{plan_name}",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        f"{shortener_icon} Shortener {'Allowed' if shortener_allowed else 'Denied'} — Toggle",
+                        callback_data=f"toggle_shortener_{plan_name}",
                     )
                 ],
                 [InlineKeyboardButton("🔙 Back", callback_data="admin_plans")],
@@ -1600,6 +1609,45 @@ async def handle_toggle_plan_rclone(update: Update, context: ContextTypes.DEFAUL
 
     except Exception as e:
         logger.error(f"❌ Error in handle_toggle_plan_rclone: {e}", exc_info=True)
+        await update.callback_query.answer("❌ Error", show_alert=True)
+
+
+async def handle_toggle_plan_shortener(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+    """Toggle shortener_allowed on/off for a plan. Callback: toggle_shortener_<PLAN>"""
+    try:
+        query = update.callback_query
+        await query.answer()
+
+        plan_name = query.data.replace("toggle_shortener_", "")
+        plans_config = await get_config("plans") or {}
+        plan_data = plans_config.get(plan_name, {})
+
+        current = plan_data.get("shortener_allowed", False)
+        plan_data["shortener_allowed"] = not current
+        plans_config[plan_name] = plan_data
+
+        ok = await set_config({"plans": plans_config})
+
+        icon = "✅" if plan_data["shortener_allowed"] else "❌"
+        await query.answer(
+            f"{icon} Shortener {'enabled' if plan_data['shortener_allowed'] else 'disabled'} for {plan_name.upper()}",
+            show_alert=True,
+        )
+        await log_admin_action(
+            update.effective_user.id,
+            "toggled_plan_shortener",
+            {"plan": plan_name, "enabled": plan_data["shortener_allowed"]},
+        )
+
+        await handle_edit_plan(update, context)
+        logger.info(
+            f"✅ Admin toggled shortener for plan {plan_name}: {plan_data['shortener_allowed']}"
+        )
+
+    except Exception as e:
+        logger.error(f"❌ Error in handle_toggle_plan_shortener: {e}", exc_info=True)
         await update.callback_query.answer("❌ Error", show_alert=True)
 
 

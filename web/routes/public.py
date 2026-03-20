@@ -112,6 +112,43 @@ async def verify_and_set_cookie(
         raise HTTPException(status_code=500, detail="Server Error")
 
 
+@router.get("/dest/{token}")
+async def dest_link_redirect(token: str):
+    """
+    Redirect destination link to the actual Telegram message.
+    """
+    try:
+        db = get_db()
+
+        # Find the destination link
+        dest_doc = await db.dest_links.find_one(
+            {
+                "token": token,
+                "expires_at": {"$gt": datetime.utcnow()},
+            }
+        )
+
+        if not dest_doc:
+            raise HTTPException(status_code=404, detail="Link not found or expired")
+
+        dest_chat_id = dest_doc.get("dest_chat_id")
+        dest_msg_id = dest_doc.get("dest_msg_id")
+
+        if not dest_chat_id or not dest_msg_id:
+            raise HTTPException(status_code=404, detail="Invalid destination link")
+
+        # Redirect to Telegram message
+        from fastapi.responses import RedirectResponse
+
+        return RedirectResponse(url=f"https://t.me/c/{dest_chat_id}/{dest_msg_id}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Dest link error: {e}")
+        raise HTTPException(status_code=500, detail="Server Error")
+
+
 @router.get("/api/watch/{file_id}")
 async def watch_file_endpoint(
     file_id: str, stream_auth_token: str | None = Cookie(None)

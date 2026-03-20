@@ -614,6 +614,31 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await handle_us_dest_add(update, context)
             elif data.startswith("us_dest_manage_"):
                 await handle_us_dest_manage(update, context)
+            elif data.startswith("us_dest_shortener_"):
+                await handle_us_dest_shortener_toggle(update, context)
+            elif data.startswith("us_dest_dl_text_"):
+                await handle_us_dest_download_link_choice(update, context)
+            elif data.startswith("us_dest_caption_builder_"):
+                await handle_us_dest_caption_builder(update, context)
+            elif data.startswith("us_dest_cap_filename_"):
+                await handle_us_dest_cap_filename(update, context)
+            elif data.startswith("us_dest_cap_filesize_"):
+                await handle_us_dest_cap_filesize(update, context)
+            elif data.startswith("us_dest_cap_url_label_"):
+                await handle_us_dest_cap_url_label(update, context)
+            elif data.startswith("us_dest_cap_style_"):
+                await handle_us_dest_cap_style(update, context)
+            elif data.startswith("us_dest_cap_reset_"):
+                await handle_us_dest_cap_reset(update, context)
+            elif data.startswith("us_dest_buttons_"):
+                if "_edit_" in data:
+                    await handle_us_dest_buttons_edit(update, context)
+                elif "_clear_" in data:
+                    await handle_us_dest_buttons_clear(update, context)
+                else:
+                    await handle_us_dest_buttons(update, context)
+            elif data.startswith("us_dest_caption_"):
+                await handle_us_dest_caption_prompt(update, context)
             elif data.startswith("us_dest_remove_confirm_"):
                 await handle_us_dest_remove_confirm(update, context)
             elif data.startswith("us_dest_remove_do_"):
@@ -871,7 +896,7 @@ async def handle_us_dest_manage(update: Update, context: ContextTypes.DEFAULT_TY
         channel_id = int(query.data.replace("us_dest_manage_", ""))
         user_id = query.from_user.id
 
-        from bot.database import get_user_destinations, get_user
+        from bot.database import get_user_destinations, get_user, get_config
 
         destinations = await get_user_destinations(user_id)
         dest = next((d for d in destinations if d.get("id") == channel_id), None)
@@ -888,27 +913,105 @@ async def handle_us_dest_manage(update: Update, context: ContextTypes.DEFAULT_TY
         )
         meta_title = dest_metadata.get("title", "Default name")
         meta_author = dest_metadata.get("author", "Default author")
+        use_shortener = dest_metadata.get("use_shortener", False)
+        download_link_text = dest_metadata.get("download_link_text", "Stream URL")
+        caption_footer = dest_metadata.get("caption_footer", "")
+
+        # Caption builder settings
+        cap_filename_label = dest_metadata.get("cap_filename_label", "File name")
+        cap_filesize_label = dest_metadata.get("cap_filesize_label", "File size")
+        cap_url_label = dest_metadata.get("cap_url_label", "Stream URL")
+        cap_style = dest_metadata.get("cap_style", "none")
+        cap_buttons = dest_metadata.get("cap_buttons", "")
+
+        # Check if shortener is enabled for this plan
+        user_plan = user.get("plan", "free")
+        plans_config = await get_config("plans") or {}
+        plan_data = plans_config.get(user_plan, {})
+        shortener_enabled_for_plan = plan_data.get("shortener_allowed", False)
+        can_use_shortener = shortener_enabled_for_plan and user_plan != "free"
 
         title = dest.get("title") or str(channel_id)
 
+        # Download link status
+        if not can_use_shortener:
+            download_status = "⏸️ URL Shortener: Not Available"
+        elif use_shortener:
+            download_status = f"🔗 URL: {download_link_text}"
+        else:
+            download_status = "❌ URL Shortener: OFF"
+
+        # Caption preview
+        cap_preview_lines = []
+        if cap_style == "bold":
+            cap_preview_lines.append(f"<b>{cap_filename_label}: Test Video.mp4</b>")
+        elif cap_style == "italic":
+            cap_preview_lines.append(f"<i>{cap_filename_label}: Test Video.mp4</i>")
+        elif cap_style == "bolditalic":
+            cap_preview_lines.append(
+                f"<b><i>{cap_filename_label}: Test Video.mp4</i></b>"
+            )
+        else:
+            cap_preview_lines.append(f"{cap_filename_label}: Test Video.mp4")
+
+        cap_preview_lines.append(f"{cap_filesize_label}: 1.2 GB")
+        if use_shortener:
+            cap_preview_lines.append(f"{cap_url_label}: https://link.com/abc")
+
+        if caption_footer:
+            cap_preview_lines.append(f"\n{caption_footer}")
+
+        cap_preview = "\n".join(cap_preview_lines)
+
+        # Caption footer status
+        caption_status = (
+            f"📋 Footer: {caption_footer[:15]}..."
+            if caption_footer
+            else "📋 Footer: None"
+        )
+
         keyboard = InlineKeyboardMarkup(
             [
-                [InlineKeyboardButton(f"Channel: {title}", callback_data="ignore")],
+                [InlineKeyboardButton(f"📁 {title}", callback_data="ignore")],
                 [
                     InlineKeyboardButton(
-                        f"📝 Custom Name: {meta_title[:15]}",
+                        f"📝 Name: {meta_title[:18]}",
                         callback_data=f"us_dest_meta_name_{channel_id}",
                     )
                 ],
                 [
                     InlineKeyboardButton(
-                        f"👤 Custom Author: {meta_author[:15]}",
+                        f"👤 Author: {meta_author[:18]}",
                         callback_data=f"us_dest_meta_auth_{channel_id}",
                     )
                 ],
                 [
                     InlineKeyboardButton(
-                        "🗑️ Remove Destination",
+                        download_status,
+                        callback_data=f"us_dest_shortener_{channel_id}",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "📝 Caption Builder",
+                        callback_data=f"us_dest_caption_builder_{channel_id}",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🔘 Buttons",
+                        callback_data=f"us_dest_buttons_{channel_id}",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        caption_status,
+                        callback_data=f"us_dest_caption_{channel_id}",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🗑️ Remove",
                         callback_data=f"us_dest_remove_confirm_{channel_id}",
                     )
                 ],
@@ -917,10 +1020,57 @@ async def handle_us_dest_manage(update: Update, context: ContextTypes.DEFAULT_TY
         )
 
         await query.message.edit_text(
-            f"🎯 **Manage Destination**\n\n"
+            f"🎯 **Destination Settings**\n\n"
             f"Channel: `{title}`\n"
             f"ID: `{channel_id}`\n\n"
-            f"You can configure specific metadata for files forwarded to this channel.",
+            f"Preview:\n```{cap_preview}```\n\n"
+            f"Configure how files are sent to this channel:",
+            reply_markup=keyboard,
+            parse_mode="Markdown",
+        )
+
+        keyboard = InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton(f"📁 {title}", callback_data="ignore")],
+                [
+                    InlineKeyboardButton(
+                        f"📝 Name: {meta_title[:20]}",
+                        callback_data=f"us_dest_meta_name_{channel_id}",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        f"👤 Author: {meta_author[:20]}",
+                        callback_data=f"us_dest_meta_auth_{channel_id}",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        download_status,
+                        callback_data=f"us_dest_shortener_{channel_id}",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        caption_status,
+                        callback_data=f"us_dest_caption_{channel_id}",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🗑️ Remove",
+                        callback_data=f"us_dest_remove_confirm_{channel_id}",
+                    )
+                ],
+                [InlineKeyboardButton("🔙 Back", callback_data="us_destination")],
+            ]
+        )
+
+        await query.message.edit_text(
+            f"🎯 **Destination Settings**\n\n"
+            f"Channel: `{title}`\n"
+            f"ID: `{channel_id}`\n\n"
+            f"Configure how files are sent to this channel:",
             reply_markup=keyboard,
             parse_mode="Markdown",
         )
@@ -1069,6 +1219,79 @@ async def handle_us_dest_meta_input(update: Update, context: ContextTypes.DEFAUL
                 parse_mode="Markdown",
             )
 
+        elif awaiting.startswith("us_dest_caption_"):
+            channel_id = awaiting.replace("us_dest_caption_", "")
+            if channel_id not in dest_metadata:
+                dest_metadata[channel_id] = {}
+            dest_metadata[channel_id]["caption_footer"] = text
+            await send_auto_delete_msg(
+                context.bot,
+                update.effective_chat.id,
+                f"✅ Caption footer updated:\n`{text}`",
+                parse_mode="Markdown",
+            )
+
+        elif awaiting.startswith("us_dest_dl_custom_"):
+            channel_id = awaiting.replace("us_dest_dl_custom_", "")
+            if channel_id not in dest_metadata:
+                dest_metadata[channel_id] = {}
+            dest_metadata[channel_id]["use_shortener"] = True
+            dest_metadata[channel_id]["download_link_text"] = text
+            await send_auto_delete_msg(
+                context.bot,
+                update.effective_chat.id,
+                f"✅ Download link text set to:\n`{text}`",
+                parse_mode="Markdown",
+            )
+
+        elif awaiting.startswith("us_dest_cap_filename_"):
+            channel_id = awaiting.replace("us_dest_cap_filename_", "")
+            if channel_id not in dest_metadata:
+                dest_metadata[channel_id] = {}
+            dest_metadata[channel_id]["cap_filename_label"] = text
+            await send_auto_delete_msg(
+                context.bot,
+                update.effective_chat.id,
+                f"✅ Filename label set to:\n`{text}`",
+                parse_mode="Markdown",
+            )
+
+        elif awaiting.startswith("us_dest_cap_filesize_"):
+            channel_id = awaiting.replace("us_dest_cap_filesize_", "")
+            if channel_id not in dest_metadata:
+                dest_metadata[channel_id] = {}
+            dest_metadata[channel_id]["cap_filesize_label"] = text
+            await send_auto_delete_msg(
+                context.bot,
+                update.effective_chat.id,
+                f"✅ Filesize label set to:\n`{text}`",
+                parse_mode="Markdown",
+            )
+
+        elif awaiting.startswith("us_dest_cap_url_label_"):
+            channel_id = awaiting.replace("us_dest_cap_url_label_", "")
+            if channel_id not in dest_metadata:
+                dest_metadata[channel_id] = {}
+            dest_metadata[channel_id]["cap_url_label"] = text
+            await send_auto_delete_msg(
+                context.bot,
+                update.effective_chat.id,
+                f"✅ URL label set to:\n`{text}`",
+                parse_mode="Markdown",
+            )
+
+        elif awaiting.startswith("us_dest_buttons_"):
+            channel_id = awaiting.replace("us_dest_buttons_", "")
+            if channel_id not in dest_metadata:
+                dest_metadata[channel_id] = {}
+            dest_metadata[channel_id]["cap_buttons"] = text
+            await send_auto_delete_msg(
+                context.bot,
+                update.effective_chat.id,
+                "✅ Buttons updated!",
+                parse_mode="Markdown",
+            )
+
         settings["destination_metadata"] = dest_metadata
         await update_user(user_id, {"settings": settings})
 
@@ -1077,6 +1300,548 @@ async def handle_us_dest_meta_input(update: Update, context: ContextTypes.DEFAUL
 
     except Exception as e:
         logger.error(f"❌ Error in handle_us_dest_meta_input: {e}")
+
+
+async def handle_us_dest_shortener_toggle(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+    """Show download link options for a destination"""
+    try:
+        query = update.callback_query
+        channel_id = query.data.replace("us_dest_shortener_", "")
+        user_id = query.from_user.id
+
+        from bot.database import get_user, get_config
+
+        user = await get_user(user_id)
+        settings = user.get("settings", {})
+        dest_metadata = settings.get("destination_metadata", {}).get(channel_id, {})
+        current = dest_metadata.get("use_shortener", False)
+
+        user_plan = user.get("plan", "free")
+        plans_config = await get_config("plans") or {}
+        plan_data = plans_config.get(user_plan, {})
+        shortener_enabled_for_plan = plan_data.get("shortener_allowed", False)
+
+        if not shortener_enabled_for_plan or user_plan == "free":
+            await query.answer(
+                "❌ Download links not available for your plan", show_alert=True
+            )
+            return
+
+        if current:
+            dest_metadata["use_shortener"] = False
+            if "destination_metadata" not in settings:
+                settings["destination_metadata"] = {}
+            settings["destination_metadata"][channel_id] = dest_metadata
+            from bot.database import update_user
+
+            await update_user(user_id, {"settings": settings})
+            await query.answer("❌ Download link disabled", show_alert=True)
+            await handle_us_dest_manage(update, context)
+            return
+
+        keyboard = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "🔗 Download Link",
+                        callback_data=f"us_dest_dl_text_{channel_id}_🔗 Download Link",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "📥 Click to Download",
+                        callback_data=f"us_dest_dl_text_{channel_id}_📥 Click to Download",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "⬇️ Download",
+                        callback_data=f"us_dest_dl_text_{channel_id}_⬇️ Download",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🔽 Get Link",
+                        callback_data=f"us_dest_dl_text_{channel_id}_🔽 Get Link",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "💬 Custom Text...",
+                        callback_data=f"us_dest_dl_text_{channel_id}_CUSTOM",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🔙 Back", callback_data=f"us_dest_manage_{channel_id}"
+                    )
+                ],
+            ]
+        )
+
+        await query.message.edit_text(
+            "🔗 **How to Download Link?**\n\n"
+            "Choose how the download URL appears in your caption.\n\n"
+            "**📋 Options:**\n\n"
+            "🔗 **Download Link** - Simple and clear\n"
+            "📥 **Click to Download** - Action-oriented\n"
+            "⬇️ **Download** - Short and direct\n"
+            "🔽 **Get Link** - Minimal text\n"
+            "💬 **Custom Text...** - Write your own\n\n"
+            "**💡 Tip:** The URL label in Caption Builder sets\n"
+            "the text BEFORE this link text (e.g., 'Stream URL: 🔗 Download Link')\n\n"
+            "Tap an option to select:",
+            reply_markup=keyboard,
+            parse_mode="Markdown",
+        )
+
+    except Exception as e:
+        logger.error(f"❌ Error in handle_us_dest_shortener_toggle: {e}")
+
+
+async def handle_us_dest_download_link_choice(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+    """Handle download link text selection"""
+    try:
+        query = update.callback_query
+        data = query.data.replace("us_dest_dl_text_", "")
+        parts = data.split("_", 1)
+        channel_id = parts[0]
+        link_text = parts[1] if len(parts) > 1 else ""
+
+        if link_text == "CUSTOM":
+            context.user_data["awaiting"] = f"us_dest_dl_custom_{channel_id}"
+            await query.message.reply_text(
+                "✏️ **Custom Download Link Text**\n\n"
+                "Send the text you want to use for the download link.\n"
+                "Example: `📥 Download File Here`\n\n"
+                "Send your custom text or /cancel to abort.",
+                parse_mode="Markdown",
+            )
+            return
+
+        from bot.database import get_user, update_user
+
+        user = await get_user(query.from_user.id)
+        settings = user.get("settings", {})
+        dest_metadata = settings.get("destination_metadata", {}).get(channel_id, {})
+        dest_metadata["use_shortener"] = True
+        dest_metadata["download_link_text"] = link_text
+
+        if "destination_metadata" not in settings:
+            settings["destination_metadata"] = {}
+        settings["destination_metadata"][channel_id] = dest_metadata
+        await update_user(query.from_user.id, {"settings": settings})
+
+        await query.answer(f"✅ Download link text set!", show_alert=True)
+        await handle_us_dest_manage(update, context)
+
+    except Exception as e:
+        logger.error(f"❌ Error in handle_us_dest_download_link_choice: {e}")
+
+
+async def handle_us_dest_caption_builder(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+    """Show caption builder menu"""
+    try:
+        query = update.callback_query
+        channel_id = query.data.replace("us_dest_caption_builder_", "")
+        user_id = query.from_user.id
+
+        from bot.database import get_user
+
+        user = await get_user(user_id)
+        settings = user.get("settings", {})
+        dest_metadata = settings.get("destination_metadata", {}).get(channel_id, {})
+
+        cap_filename_label = dest_metadata.get("cap_filename_label", "File name")
+        cap_filesize_label = dest_metadata.get("cap_filesize_label", "File size")
+        cap_url_label = dest_metadata.get("cap_url_label", "Stream URL")
+        cap_style = dest_metadata.get("cap_style", "none")
+
+        style_names = {
+            "none": "Normal",
+            "bold": "Bold",
+            "italic": "Italic",
+            "bolditalic": "Bold+Italic",
+        }
+        current_style = style_names.get(cap_style, "Normal")
+
+        keyboard = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        f"📄 Filename: {cap_filename_label}",
+                        callback_data=f"us_dest_cap_filename_{channel_id}",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        f"📦 Filesize: {cap_filesize_label}",
+                        callback_data=f"us_dest_cap_filesize_{channel_id}",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        f"🔗 URL Label: {cap_url_label}",
+                        callback_data=f"us_dest_cap_url_label_{channel_id}",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        f"✨ Style: {current_style}",
+                        callback_data=f"us_dest_cap_style_{channel_id}",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🔄 Reset to Default",
+                        callback_data=f"us_dest_cap_reset_{channel_id}",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🔙 Back", callback_data=f"us_dest_manage_{channel_id}"
+                    )
+                ],
+            ]
+        )
+
+        help_text = (
+            "📝 **Caption Builder**\n\n"
+            "Customize how your file caption looks:\n\n"
+            "**How to use each option:**\n\n"
+            "📄 **Filename Label**\n"
+            "• Set the text shown before the file name\n"
+            "• Examples: `Title`, `Movie`, `Episode`, `File`\n"
+            "• Tap to change\n\n"
+            "📦 **Filesize Label**\n"
+            "• Set the text shown before the file size\n"
+            "• Examples: `Size`, `GB`, `Duration`, `Length`\n"
+            "• Tap to change\n\n"
+            "🔗 **URL Label**\n"
+            "• Set the text shown before the download link\n"
+            "• Examples: `Download`, `Watch`, `Stream`, `Link`\n"
+            "• Tap to change\n\n"
+            "✨ **Style**\n"
+            "• Cycles through: Normal → Bold → Italic → Bold+Italic\n"
+            "• Applies HTML formatting to caption lines\n"
+            "• HTML tags: `<b>bold</b>`, `<i>italic</i>`\n\n"
+            "🔄 **Reset to Default**\n"
+            "• Resets all labels to defaults"
+        )
+
+        await query.message.edit_text(
+            help_text,
+            reply_markup=keyboard,
+            parse_mode="Markdown",
+        )
+
+    except Exception as e:
+        logger.error(f"❌ Error in handle_us_dest_caption_builder: {e}")
+
+
+async def handle_us_dest_cap_filename(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+    """Prompt for filename label"""
+    try:
+        query = update.callback_query
+        channel_id = query.data.replace("us_dest_cap_filename_", "")
+        context.user_data["awaiting"] = f"us_dest_cap_filename_{channel_id}"
+        await query.message.reply_text(
+            "📄 **Filename Label**\n\n"
+            "Set the label shown before the filename.\n"
+            "Examples: `File name`, `Title`, `Movie`, `Video`\n\n"
+            "Send your label or /cancel to abort.",
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        logger.error(f"❌ Error in handle_us_dest_cap_filename: {e}")
+
+
+async def handle_us_dest_cap_filesize(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+    """Prompt for filesize label"""
+    try:
+        query = update.callback_query
+        channel_id = query.data.replace("us_dest_cap_filesize_", "")
+        context.user_data["awaiting"] = f"us_dest_cap_filesize_{channel_id}"
+        await query.message.reply_text(
+            "📦 **Filesize Label**\n\n"
+            "Set the label shown before the file size.\n"
+            "Examples: `Size`, `File size`, `GB`, `Duration`\n\n"
+            "Send your label or /cancel to abort.",
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        logger.error(f"❌ Error in handle_us_dest_cap_filesize: {e}")
+
+
+async def handle_us_dest_cap_url_label(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+    """Prompt for URL label"""
+    try:
+        query = update.callback_query
+        channel_id = query.data.replace("us_dest_cap_url_label_", "")
+        context.user_data["awaiting"] = f"us_dest_cap_url_label_{channel_id}"
+        await query.message.reply_text(
+            "🔗 **URL Label**\n\n"
+            "Set the label shown before the stream/download URL.\n"
+            "Examples: `Stream URL`, `Watch`, `Download Link`, `URL`\n\n"
+            "Send your label or /cancel to abort.",
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        logger.error(f"❌ Error in handle_us_dest_cap_url_label: {e}")
+
+
+async def handle_us_dest_cap_style(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Cycle through caption styles"""
+    try:
+        query = update.callback_query
+        channel_id = query.data.replace("us_dest_cap_style_", "")
+        user_id = query.from_user.id
+
+        from bot.database import get_user, update_user
+
+        user = await get_user(user_id)
+        settings = user.get("settings", {})
+        dest_metadata = settings.get("destination_metadata", {}).get(channel_id, {})
+
+        current = dest_metadata.get("cap_style", "none")
+        styles = ["none", "bold", "italic", "bolditalic"]
+        next_idx = (styles.index(current) + 1) % len(styles)
+        dest_metadata["cap_style"] = styles[next_idx]
+
+        if "destination_metadata" not in settings:
+            settings["destination_metadata"] = {}
+        settings["destination_metadata"][channel_id] = dest_metadata
+        await update_user(user_id, {"settings": settings})
+
+        await handle_us_dest_caption_builder(update, context)
+
+    except Exception as e:
+        logger.error(f"❌ Error in handle_us_dest_cap_style: {e}")
+
+
+async def handle_us_dest_cap_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Reset caption settings to defaults"""
+    try:
+        query = update.callback_query
+        channel_id = query.data.replace("us_dest_cap_reset_", "")
+        user_id = query.from_user.id
+
+        from bot.database import get_user, update_user
+
+        user = await get_user(user_id)
+        settings = user.get("settings", {})
+        dest_metadata = settings.get("destination_metadata", {}).get(channel_id, {})
+
+        dest_metadata["cap_filename_label"] = "File name"
+        dest_metadata["cap_filesize_label"] = "File size"
+        dest_metadata["cap_url_label"] = "Stream URL"
+        dest_metadata["cap_style"] = "none"
+
+        settings["destination_metadata"][channel_id] = dest_metadata
+        await update_user(user_id, {"settings": settings})
+
+        await query.answer("✅ Caption reset to defaults", show_alert=True)
+        await handle_us_dest_caption_builder(update, context)
+
+    except Exception as e:
+        logger.error(f"❌ Error in handle_us_dest_cap_reset: {e}")
+
+
+async def handle_us_dest_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show buttons configuration menu"""
+    try:
+        query = update.callback_query
+        channel_id = query.data.replace("us_dest_buttons_", "")
+        user_id = query.from_user.id
+
+        from bot.database import get_user
+
+        user = await get_user(user_id)
+        settings = user.get("settings", {})
+        dest_metadata = settings.get("destination_metadata", {}).get(channel_id, {})
+        cap_buttons = dest_metadata.get("cap_buttons", "")
+
+        if cap_buttons:
+            preview = cap_buttons[:100] + ("..." if len(cap_buttons) > 100 else "")
+        else:
+            preview = "No buttons set"
+
+        keyboard = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "✏️ Edit Buttons",
+                        callback_data=f"us_dest_buttons_edit_{channel_id}",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🗑️ Clear Buttons",
+                        callback_data=f"us_dest_buttons_clear_{channel_id}",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🔙 Back", callback_data=f"us_dest_manage_{channel_id}"
+                    )
+                ],
+            ]
+        )
+
+        help_text = (
+            "🔘 **Button Configuration**\n\n"
+            "Add clickable buttons below your file caption.\n\n"
+            "**📋 Format Rules:**\n\n"
+            "**Basic Button:**\n"
+            "`[Button Text - https://example.com]`\n"
+            "Creates one button on its own row.\n\n"
+            "**Multiple Buttons (Same Row):**\n"
+            "`[Btn1 - url1] | [Btn2 - url2]`\n"
+            "Creates two buttons side by side.\n\n"
+            "**Multiple Rows:**\n"
+            "Each new line = new row of buttons.\n\n"
+            "**📝 Example Configuration:**\n"
+            "```\n"
+            "[Watch Online - https://site.com/watch]\n"
+            "[Download - https://site.com/dl] | [Mirror - https://site.com/mirror]\n"
+            "[Join Channel - https://t.me/channel]\n"
+            "[Subtitles - https://site.com/subs]\n"
+            "```\n"
+            "This creates 4 buttons in 3 rows.\n\n"
+            "**⚠️ Tips:**\n"
+            "• Use full URLs starting with `https://`\n"
+            "• Keep button text short (max 30 chars)\n"
+            "• URLs must be valid and accessible\n\n"
+            f"**Current:**\n`{preview}`"
+        )
+
+        await query.message.edit_text(
+            help_text,
+            reply_markup=keyboard,
+            parse_mode="Markdown",
+        )
+
+    except Exception as e:
+        logger.error(f"❌ Error in handle_us_dest_buttons: {e}")
+
+
+async def handle_us_dest_buttons_edit(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+    """Prompt for buttons configuration"""
+    try:
+        query = update.callback_query
+        channel_id = query.data.replace("us_dest_buttons_edit_", "")
+        context.user_data["awaiting"] = f"us_dest_buttons_{channel_id}"
+
+        from bot.database import get_user
+
+        user = await get_user(query.from_user.id)
+        settings = user.get("settings", {})
+        dest_metadata = settings.get("destination_metadata", {}).get(channel_id, {})
+        current = dest_metadata.get("cap_buttons", "")
+
+        current_text = f"\n\n**Current:**\n`{current}`" if current else ""
+
+        await query.message.reply_text(
+            "🔘 **Edit Buttons**\n\n"
+            "**📋 How to Create Buttons:**\n\n"
+            "**Single Button (one per row):**\n"
+            "`[Watch - https://site.com/watch]`\n\n"
+            "**Two Buttons Side by Side:**\n"
+            "`[Download - https://dl.com] | [Mirror - https://mirror.com]`\n\n"
+            "**Three Buttons Side by Side:**\n"
+            "`[720p - url] | [1080p - url] | [4K - url]`\n\n"
+            "**📝 Example (Copy & Modify):**\n"
+            "```\n"
+            "[Watch Online - https://stream.com/play]\n"
+            "[Download HD - https://dl.com/file] | [Mirror - https://mirror.com]\n"
+            "[Subtitles - https://subs.com/eng]\n"
+            "```\n\n"
+            "**⚠️ Rules:**\n"
+            "• URL must start with `https://`\n"
+            "• Button text: max 30 characters\n"
+            "• Use `|` to put buttons on same row\n"
+            "• Each new line = new button row\n\n"
+            f"{current_text}\n\n"
+            "Send your button configuration or /cancel to abort.",
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        logger.error(f"❌ Error in handle_us_dest_buttons_edit: {e}")
+
+
+async def handle_us_dest_buttons_clear(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+    """Clear buttons configuration"""
+    try:
+        query = update.callback_query
+        channel_id = query.data.replace("us_dest_buttons_clear_", "")
+        user_id = query.from_user.id
+
+        from bot.database import get_user, update_user
+
+        user = await get_user(user_id)
+        settings = user.get("settings", {})
+        dest_metadata = settings.get("destination_metadata", {}).get(channel_id, {})
+        dest_metadata["cap_buttons"] = ""
+
+        settings["destination_metadata"][channel_id] = dest_metadata
+        await update_user(user_id, {"settings": settings})
+
+        await query.answer("✅ Buttons cleared", show_alert=True)
+        await handle_us_dest_manage(update, context)
+
+    except Exception as e:
+        logger.error(f"❌ Error in handle_us_dest_buttons_clear: {e}")
+
+
+async def handle_us_dest_caption_prompt(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+    """Prompt user for caption footer text"""
+    try:
+        query = update.callback_query
+        channel_id = query.data.replace("us_dest_caption_", "")
+        context.user_data["awaiting"] = f"us_dest_caption_{channel_id}"
+
+        user = await get_user(query.from_user.id)
+        settings = user.get("settings", {})
+        dest_metadata = settings.get("destination_metadata", {}).get(channel_id, {})
+        current = dest_metadata.get("caption_footer", "")
+
+        current_text = f"\n\nCurrent: `{current}`" if current else ""
+
+        await query.message.reply_text(
+            f"📋 **Set Caption Footer**\n\n"
+            f"Add custom text below your file caption.{current_text}\n\n"
+            f"**📝 Examples:**\n"
+            f"• `Join our channel: @channelname`\n"
+            f"• `Support: @admin_handle`\n"
+            f"• `Powered by @YourBot`\n"
+            f"• `Follow us on Instagram`\n\n"
+            f"**💡 Tips:**\n"
+            f"• Supports emoji and Telegram formatting\n"
+            f"• Max 200 characters\n"
+            f"• Will appear on a new line after the URL\n\n"
+            f"Send your footer text or /cancel to abort.",
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        logger.error(f"❌ Error in handle_us_dest_caption_prompt: {e}")
 
 
 async def handle_user_destination_forward(
@@ -1201,7 +1966,7 @@ async def handle_send_to_destination(
 async def handle_forward_to_destination(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
-    """Forward file to selected destination"""
+    """Forward file to selected destination with permanent link (token-based)"""
     query = update.callback_query
     await query.answer()
 
@@ -1217,41 +1982,203 @@ async def handle_forward_to_destination(
         await query.answer("❌ File reference expired.", show_alert=True)
         return
 
+    user_id = query.from_user.id
     meta = context.user_data.get(f"fwd_meta_{short_id}", {})
     filename = meta.get("filename", "")
     size = meta.get("size", 0)
 
+    # Get destination-specific settings
+    from bot.database import get_user, get_config
+    from datetime import datetime, timedelta
+    import secrets
+    import re
+
+    user = await get_user(user_id)
+    settings = user.get("settings", {})
+    dest_metadata = settings.get("destination_metadata", {}).get(str(cid), {})
+
+    # Check if user can generate links (only paid plans)
+    user_plan = user.get("plan", "free")
+    plans_config = await get_config("plans") or {}
+    plan_data = plans_config.get(user_plan, {})
+    can_generate_link = (
+        plan_data.get("shortener_allowed", False) and user_plan != "free"
+    )
+
+    # Caption builder settings
+    custom_title = dest_metadata.get("title", filename) if filename else "File"
+    caption_footer = dest_metadata.get("caption_footer", "")
+    cap_filename_label = dest_metadata.get("cap_filename_label", "File name")
+    cap_filesize_label = dest_metadata.get("cap_filesize_label", "File size")
+    cap_url_label = dest_metadata.get("cap_url_label", "Stream URL")
+    cap_style = dest_metadata.get("cap_style", "none")
+    cap_buttons = dest_metadata.get("cap_buttons", "")
+
+    use_shortener = dest_metadata.get("use_shortener", False) and can_generate_link
+    download_link_text = dest_metadata.get("download_link_text", "Stream URL")
+
+    # Build caption with HTML style
+    def apply_style(text):
+        if cap_style == "bold":
+            return f"<b>{text}</b>"
+        elif cap_style == "italic":
+            return f"<i>{text}</i>"
+        elif cap_style == "bolditalic":
+            return f"<b><i>{text}</i></b>"
+        return text
+
     caption_lines = []
-    if filename:
-        caption_lines.append(f"📁 **{filename}**")
+    caption_lines.append(apply_style(f"{cap_filename_label}: {custom_title}"))
     if size > 0:
         from bot.utils import format_bytes
 
-        caption_lines.append(f"📦 Size: {format_bytes(size)}")
+        caption_lines.append(apply_style(f"{cap_filesize_label}: {format_bytes(size)}"))
 
-    caption = "\n\n".join(caption_lines) if caption_lines else None
+    # Parse buttons from cap_buttons
+    keyboard_rows = []
+    if cap_buttons:
+        lines = cap_buttons.strip().split("\n")
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            # Check for same-line buttons with |
+            if "|" in line:
+                parts_btns = line.split("|")
+                row = []
+                for btn in parts_btns:
+                    btn = btn.strip()
+                    match = re.match(r"\[(.+?)\s*-\s*(https?://[^\]]+)\]", btn)
+                    if match:
+                        row.append(
+                            InlineKeyboardButton(match.group(1), url=match.group(2))
+                        )
+                if row:
+                    keyboard_rows.append(row)
+            else:
+                match = re.match(r"\[(.+?)\s*-\s*(https?://[^\]]+)\]", line)
+                if match:
+                    keyboard_rows.append(
+                        [InlineKeyboardButton(match.group(1), url=match.group(2))]
+                    )
 
     try:
+        # Build initial caption for sending
+        initial_caption = "\n\n".join(caption_lines)
+
+        # STEP 1: Send file to destination
+        sent_msg = None
+        reply_markup = InlineKeyboardMarkup(keyboard_rows) if keyboard_rows else None
+
         try:
-            msg = await context.bot.send_document(
+            sent_msg = await context.bot.send_document(
                 chat_id=cid,
                 document=full_file_id,
-                caption=caption,
-                parse_mode="Markdown",
+                caption=initial_caption,
+                parse_mode="HTML",
+                reply_markup=reply_markup,
             )
         except Exception:
             try:
-                msg = await context.bot.send_video(
+                sent_msg = await context.bot.send_video(
                     chat_id=cid,
                     video=full_file_id,
-                    caption=caption,
-                    parse_mode="Markdown",
+                    caption=initial_caption,
+                    parse_mode="HTML",
+                    reply_markup=reply_markup,
                 )
             except Exception as e:
                 await query.message.edit_text(f"❌ Failed to reach destination: {e}")
                 return
 
+        # If free user or no shortener enabled, we're done
+        if not can_generate_link or not use_shortener:
+            if caption_footer:
+                caption_lines.append(f"\n{caption_footer}")
+                try:
+                    await context.bot.edit_message_caption(
+                        chat_id=cid,
+                        message_id=sent_msg.message_id,
+                        caption="\n\n".join(caption_lines),
+                        parse_mode="HTML",
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not add caption footer: {e}")
+            await query.message.edit_text(f"✅ Sent to destination successfully!")
+            return
+
+        # STEP 2: Get message_id and create token-based link (paid users only)
+        msg_id = sent_msg.message_id if sent_msg else None
+        if not msg_id:
+            await query.message.edit_text("❌ Failed to get message info")
+            return
+
+        dest_token = secrets.token_urlsafe(32)
+
+        from bot.database import get_db
+
+        db = get_db()
+
+        dest_link_doc = {
+            "token": dest_token,
+            "user_id": user_id,
+            "dest_chat_id": str(cid),
+            "dest_msg_id": msg_id,
+            "file_id": full_file_id,
+            "filename": custom_title,
+            "created_at": datetime.utcnow(),
+            "expires_at": datetime.utcnow() + timedelta(days=365),
+            "used": False,
+        }
+        await db.dest_links.insert_one(dest_link_doc)
+
+        from config.settings import get_settings
+
+        s = get_settings()
+        dest_link = f"https://{s.DOMAIN}/dest/{dest_token}"
+
+        # Apply shortener if enabled
+        final_link = dest_link
+        if use_shortener:
+            try:
+                from bot.services._link_shortener import LinkShortener
+
+                final_link = await LinkShortener.shorten_url(dest_link)
+                if not final_link:
+                    final_link = dest_link
+            except Exception as e:
+                logger.warning(f"Shortener failed: {e}")
+                final_link = dest_link
+
+        # Add URL to caption
+        caption_lines.append(apply_style(f"{download_link_text}: {final_link}"))
+        if caption_footer:
+            caption_lines.append(f"\n{caption_footer}")
+
+        final_caption = "\n\n".join(caption_lines)
+
+        # Rebuild keyboard with URL button added
+        keyboard_rows.append(
+            [InlineKeyboardButton(f"{download_link_text}", url=final_link)]
+        )
+        reply_markup = InlineKeyboardMarkup(keyboard_rows)
+
+        try:
+            await context.bot.edit_message_caption(
+                chat_id=cid,
+                message_id=msg_id,
+                caption=final_caption,
+                parse_mode="HTML",
+                reply_markup=reply_markup,
+            )
+        except Exception as e:
+            logger.warning(f"Could not edit caption to add link: {e}")
+
         await query.message.edit_text(f"✅ Sent to destination successfully!")
+
+    except Exception as e:
+        logger.error(f"Error sending to dest: {e}")
+        await query.message.edit_text("❌ Error sending to destination.")
 
     except Exception as e:
         logger.error(f"Error sending to dest: {e}")
