@@ -556,7 +556,6 @@ def setup_handlers(application: Application) -> None:
             ("^admin_logs$", handle_admin_logs),
             ("^view_logs_", handle_admin_logs),
             ("^admin_shorteners$", handle_admin_shorteners),
-            ("^add_shortener$", handle_admin_shorteners),
         ]:
             application.add_handler(CallbackQueryHandler(handler, pattern=pattern))
 

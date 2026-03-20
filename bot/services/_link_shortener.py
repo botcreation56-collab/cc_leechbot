@@ -111,8 +111,11 @@ class LinkShortener:
             if not config:
                 return await _fallback()
 
-            shorteners = config.get("link_shorteners", [])
+            shorteners = config.get("shorteners", [])
+            # Use first shortener as active if none marked active
             active_shortener = next((s for s in shorteners if s.get("active")), None)
+            if not active_shortener and shorteners:
+                active_shortener = shorteners[0]
 
             if not active_shortener:
                 return await _fallback()
@@ -173,10 +176,12 @@ class LinkShortener:
             config = await get_config()
             service_domain = "tinyurl.com"
             if config:
-                shorteners = config.get("link_shorteners", [])
+                shorteners = config.get("shorteners", [])
                 active_shortener = next(
                     (s for s in shorteners if s.get("active")), None
                 )
+                if not active_shortener and shorteners:
+                    active_shortener = shorteners[0]
                 if active_shortener and active_shortener.get("domain"):
                     service_domain = active_shortener.get("domain")
 

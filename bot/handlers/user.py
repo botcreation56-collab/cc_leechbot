@@ -217,21 +217,38 @@ async def ask_channel_forward(
 
 
 async def show_shorteners_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show link shorteners menu"""
+    """Show link shorteners menu with existing shorteners"""
     try:
-        keyboard = InlineKeyboardMarkup(
-            [
-                [
-                    InlineKeyboardButton(
-                        "➕ Add Shortener", callback_data="add_shortener"
-                    )
-                ],
-                [InlineKeyboardButton("🔙 Back", callback_data="admin_back")],
-            ]
+        from bot.database import get_config
+
+        config = await get_config() or {}
+        shorteners = config.get("shorteners", [])
+
+        keyboard = []
+        if shorteners:
+            shortener_list = "**Configured Shorteners:**\n\n"
+            for i, s in enumerate(shorteners, 1):
+                domain = s.get("domain", "Unknown")
+                is_active = "✅" if s.get("active") else "📌"
+                keyboard.append(
+                    [
+                        InlineKeyboardButton(
+                            f"{is_active} {domain}",
+                            callback_data=f"edit_shortener_{i}",
+                        )
+                    ]
+                )
+        else:
+            shortener_list = "**No shorteners configured.**\n\n"
+
+        keyboard.append(
+            [InlineKeyboardButton("➕ Add Shortener", callback_data="add_shortener")]
         )
+        keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="admin_back")])
+
         await update.callback_query.message.edit_text(
-            "🔗 **Link Shorteners**\n\nManage link shortener integrations.",
-            reply_markup=keyboard,
+            f"🔗 **Link Shorteners**\n\n{shortener_list}Add or manage your link shortener integrations.",
+            reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode="Markdown",
         )
     except Exception as e:
