@@ -345,6 +345,17 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             handle_us_dest_manage,
             handle_us_dest_remove_confirm,
             handle_us_dest_remove_do,
+            handle_us_dest_caption_builder,
+            handle_us_dest_cap_filename,
+            handle_us_dest_cap_filesize,
+            handle_us_dest_cap_url_label,
+            handle_us_dest_cap_style,
+            handle_us_dest_cap_reset,
+            handle_us_dest_buttons,
+            handle_us_dest_buttons_edit,
+            handle_us_dest_buttons_clear,
+            handle_us_dest_shortener_toggle,
+            handle_us_dest_download_link_choice,
             handle_admin_delete_rclone_prompt,
             handle_admin_delete_rclone_confirm,
             handle_admin_rename_rclone_prompt,
@@ -1872,15 +1883,21 @@ async def handle_user_destination_forward(
                 await msg.reply_text(
                     f"✅ **Destination Added!**\n\n"
                     f"Channel: `{channel_title}`\n\n"
-                    f"Processed files can now be forwarded there.",
+                    f"Tap **Configure** to set up caption options, buttons, and download link settings.",
                     parse_mode="Markdown",
                     reply_markup=InlineKeyboardMarkup(
                         [
                             [
                                 InlineKeyboardButton(
+                                    "⚙️ Configure",
+                                    callback_data=f"us_dest_manage_{channel_id}",
+                                )
+                            ],
+                            [
+                                InlineKeyboardButton(
                                     "🔙 Back to List", callback_data="us_destination"
                                 )
-                            ]
+                            ],
                         ]
                     ),
                 )
