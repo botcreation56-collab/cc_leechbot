@@ -219,6 +219,7 @@ async def ask_channel_forward(
 async def show_shorteners_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show link shorteners menu with existing shorteners"""
     try:
+        await update.callback_query.answer()
         from bot.database import get_config
 
         config = await get_config() or {}
@@ -253,12 +254,16 @@ async def show_shorteners_menu(update: Update, context: ContextTypes.DEFAULT_TYP
         )
     except Exception as e:
         logger.error(f"❌ Error in shorteners menu: {e}", exc_info=True)
-        await update.callback_query.answer(f"❌ Error", show_alert=True)
+        try:
+            await update.callback_query.answer(f"❌ Error", show_alert=True)
+        except:
+            pass
 
 
 async def handle_add_shortener(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Add new link shortener"""
     try:
+        await update.callback_query.answer()
         await update.callback_query.message.reply_text(
             "🔗 **Add Link Shortener**\n\n"
             "Step 1: **Send your API key** for the shortener.\n\n"
@@ -269,7 +274,10 @@ async def handle_add_shortener(update: Update, context: ContextTypes.DEFAULT_TYP
         logger.info("✅ Add shortener API prompt shown")
     except Exception as e:
         logger.error(f"❌ Error: {e}", exc_info=True)
-        await update.callback_query.answer(f"❌ Error", show_alert=True)
+        try:
+            await update.callback_query.answer(f"❌ Error", show_alert=True)
+        except:
+            pass
 
 
 @rate_limit
@@ -1137,6 +1145,7 @@ async def handle_us_dest_meta_name_prompt(
     """Prompt user for custom destination name"""
     try:
         query = update.callback_query
+        await query.answer()
         channel_id = query.data.replace("us_dest_meta_name_", "")
         context.user_data["awaiting"] = f"us_dest_meta_name_{channel_id}"
         await query.message.reply_text(
@@ -1155,6 +1164,7 @@ async def handle_us_dest_meta_auth_prompt(
     """Prompt user for custom destination author"""
     try:
         query = update.callback_query
+        await query.answer()
         channel_id = query.data.replace("us_dest_meta_auth_", "")
         context.user_data["awaiting"] = f"us_dest_meta_auth_{channel_id}"
         await query.message.reply_text(
@@ -1333,10 +1343,11 @@ async def handle_us_dest_shortener_toggle(
             from bot.database import update_user
 
             await update_user(user_id, {"settings": settings})
-            await query.answer("❌ Download link disabled", show_alert=True)
+            await query.answer("❌ Shortener disabled", show_alert=True)
             await handle_us_dest_manage(update, context)
             return
 
+        await query.answer()
         keyboard = InlineKeyboardMarkup(
             [
                 [
@@ -1409,6 +1420,7 @@ async def handle_us_dest_download_link_choice(
         link_text = parts[1] if len(parts) > 1 else ""
 
         if link_text == "CUSTOM":
+            await query.answer()
             context.user_data["awaiting"] = f"us_dest_dl_custom_{channel_id}"
             await query.message.reply_text(
                 "✏️ **Custom Download Link Text**\n\n"
@@ -1445,6 +1457,7 @@ async def handle_us_dest_caption_builder(
     """Show caption builder menu"""
     try:
         query = update.callback_query
+        await query.answer()
         channel_id = query.data.replace("us_dest_caption_builder_", "")
         user_id = query.from_user.id
 
@@ -1547,6 +1560,7 @@ async def handle_us_dest_cap_filename(
     """Prompt for filename label"""
     try:
         query = update.callback_query
+        await query.answer()
         channel_id = query.data.replace("us_dest_cap_filename_", "")
         context.user_data["awaiting"] = f"us_dest_cap_filename_{channel_id}"
         await query.message.reply_text(
@@ -1566,6 +1580,7 @@ async def handle_us_dest_cap_filesize(
     """Prompt for filesize label"""
     try:
         query = update.callback_query
+        await query.answer()
         channel_id = query.data.replace("us_dest_cap_filesize_", "")
         context.user_data["awaiting"] = f"us_dest_cap_filesize_{channel_id}"
         await query.message.reply_text(
@@ -1585,6 +1600,7 @@ async def handle_us_dest_cap_url_label(
     """Prompt for URL label"""
     try:
         query = update.callback_query
+        await query.answer()
         channel_id = query.data.replace("us_dest_cap_url_label_", "")
         context.user_data["awaiting"] = f"us_dest_cap_url_label_{channel_id}"
         await query.message.reply_text(
@@ -1602,6 +1618,7 @@ async def handle_us_dest_cap_style(update: Update, context: ContextTypes.DEFAULT
     """Cycle through caption styles"""
     try:
         query = update.callback_query
+        await query.answer()
         channel_id = query.data.replace("us_dest_cap_style_", "")
         user_id = query.from_user.id
 
@@ -1631,6 +1648,7 @@ async def handle_us_dest_cap_reset(update: Update, context: ContextTypes.DEFAULT
     """Reset caption settings to defaults"""
     try:
         query = update.callback_query
+        await query.answer("✅ Reset to defaults", show_alert=True)
         channel_id = query.data.replace("us_dest_cap_reset_", "")
         user_id = query.from_user.id
 
@@ -1659,6 +1677,7 @@ async def handle_us_dest_buttons(update: Update, context: ContextTypes.DEFAULT_T
     """Show buttons configuration menu"""
     try:
         query = update.callback_query
+        await query.answer()
         channel_id = query.data.replace("us_dest_buttons_", "")
         user_id = query.from_user.id
 
@@ -1739,6 +1758,7 @@ async def handle_us_dest_buttons_edit(
     """Prompt for buttons configuration"""
     try:
         query = update.callback_query
+        await query.answer()
         channel_id = query.data.replace("us_dest_buttons_edit_", "")
         context.user_data["awaiting"] = f"us_dest_buttons_{channel_id}"
 
@@ -1811,6 +1831,7 @@ async def handle_us_dest_caption_prompt(
     """Prompt user for caption footer text"""
     try:
         query = update.callback_query
+        await query.answer()
         channel_id = query.data.replace("us_dest_caption_", "")
         context.user_data["awaiting"] = f"us_dest_caption_{channel_id}"
 
