@@ -830,31 +830,16 @@ async def handle_us_destination_button(
             [InlineKeyboardButton("➕ Add Channel", callback_data="us_dest_add")]
         )
 
-        # [Configured Channel List]
+        # [Configured Channel List - all clickable to manage]
         if destinations:
-            if len(destinations) > 1:
-                for d in destinations:
-                    cid = d.get("id", "unknown")
-                    title = d.get("title") or str(cid)
-                    keyboard.append(
-                        [
-                            InlineKeyboardButton(
-                                f"📁 {title}", callback_data=f"us_dest_manage_{cid}"
-                            )
-                        ]
-                    )
-            elif len(destinations) == 1:
-                d = destinations[0]
+            for d in destinations:
                 cid = d.get("id", "unknown")
                 title = d.get("title") or str(cid)
                 keyboard.append(
                     [
                         InlineKeyboardButton(
                             f"📁 {title}", callback_data=f"us_dest_manage_{cid}"
-                        ),
-                        InlineKeyboardButton(
-                            "🗑️ Remove", callback_data=f"us_dest_remove_confirm_{cid}"
-                        ),
+                        )
                     ]
                 )
         else:
@@ -866,13 +851,8 @@ async def handle_us_destination_button(
                 ]
             )
 
-        # [Cancel] [Back]
-        keyboard.append(
-            [
-                InlineKeyboardButton("❌ Cancel", callback_data="start"),
-                InlineKeyboardButton("🔙 Back", callback_data="us_settings"),
-            ]
-        )
+        # [Back]
+        keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="us_settings")])
 
         await query.message.edit_text(
             f"🎯 **Destination Management**\n\n"
