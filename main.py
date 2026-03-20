@@ -293,6 +293,7 @@ def setup_handlers(application: Application) -> None:
         handle_toggle_plan_rclone,
         handle_toggle_plan_shortener,
         handle_us_rclone_dest_activate,
+        handle_add_shortener,
         callback_handler,
     )
 
