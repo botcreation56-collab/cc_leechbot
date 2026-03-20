@@ -260,6 +260,101 @@ async def show_shorteners_menu(update: Update, context: ContextTypes.DEFAULT_TYP
             pass
 
 
+async def handle_bypass_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle bypass queue button - show shortened web link"""
+    try:
+        query = update.callback_query
+        await query.answer()
+        data = query.data
+        logger.info(f"🔔 BYPASS_Q handler called: {data}")
+
+        task_id = data.replace("bypass_q_", "")
+        from bot.database import get_task
+
+        task = await get_task(task_id)
+        if not task:
+            await query.answer("Bypass link expired or invalid.", show_alert=True)
+            return
+
+        bypass_token = task.get("wizard_bypass_token")
+        if not bypass_token:
+            logger.warning(f"⚠️ BYPASS: No token found for task {task_id}")
+            await query.answer("Bypass link expired or invalid.", show_alert=True)
+            return
+
+        # Generate web URL for bypass success page
+        from config.settings import get_domain
+
+        domain = get_domain()
+        success_url = f"https://{domain}/queue-bypassed?token={bypass_token}&bot={context.bot.username}"
+        logger.info(f"🔔 BYPASS: Generated success URL: {success_url}")
+
+        # Shorten the URL using configured shortener
+        from bot.services._link_shortener import LinkShortener
+
+        shortened_url = await LinkShortener.shorten_url(success_url)
+        if not shortened_url:
+            shortened_url = success_url  # Fallback to original if shortener fails
+        logger.info(f"🔔 BYPASS: Shortened URL: {shortened_url}")
+
+        from bot.database import get_config
+
+        config = await get_config() or {}
+        help_url = config.get("help_text_url", "https://t.me/bot_paiyan_official")
+
+        keyboard = [
+            [InlineKeyboardButton("🔥 Bypass Queue Now", url=shortened_url)],
+            [InlineKeyboardButton("❓ How to use?", url=help_url)],
+        ]
+        await query.edit_message_text(
+            "🔥 **Queue Bypass**\n\n"
+            "Click the button below to verify and instantly bypass the queue.\n\n"
+            "The bot will open and your task will jump to the front!",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        logger.error(f"❌ Error in handle_bypass_queue: {e}", exc_info=True)
+        try:
+            await update.callback_query.answer("❌ Error", show_alert=True)
+        except:
+            pass
+
+
+async def handle_refresh_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle refresh queue position button"""
+    try:
+        query = update.callback_query
+        data = query.data
+        task_id = data.replace("refresh_q_", "")
+        user_id = query.from_user.id
+
+        from bot.database import get_task, get_user_position
+
+        task = await get_task(task_id)
+        if not task or task.get("status") != "queued":
+            await query.answer(
+                "Your task is no longer in the queue. It may be processing now.",
+                show_alert=True,
+            )
+            return
+
+        pos = await get_user_position(user_id)
+        if pos == 0:
+            await query.answer(
+                "Your turn is up! Processing will start momentarily.",
+                show_alert=True,
+            )
+        else:
+            await query.answer(f"Your current queue position is {pos}", show_alert=True)
+    except Exception as e:
+        logger.error(f"❌ Error in handle_refresh_queue: {e}", exc_info=True)
+        try:
+            await update.callback_query.answer("❌ Error", show_alert=True)
+        except:
+            pass
+
+
 @rate_limit
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -668,71 +763,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await handle_send_to_destination(update, context)
             elif data.startswith("fwd_dest_"):
                 await handle_forward_to_destination(update, context)
-            elif data.startswith("refresh_q_"):
-                task_id = data.replace("refresh_q_", "")
-                from bot.database import get_task, get_user_position
-
-                task = await get_task(task_id)
-                if not task or task.get("status") != "queued":
-                    await query.answer(
-                        "Your task is no longer in the queue. It may be processing now.",
-                        show_alert=True,
-                    )
-                    return
-
-                pos = await get_user_position(user_id)
-                if pos == 0:
-                    await query.answer(
-                        "Your turn is up! Processing will start momentarily.",
-                        show_alert=True,
-                    )
-                else:
-                    await query.answer(
-                        f"Your current queue position is {pos + 1}", show_alert=True
-                    )
-
-            elif data.startswith("bypass_q_"):
-                logger.info(f"🔔 BYPASS_Q callback received: {data}")
-                task_id = data.replace("bypass_q_", "")
-                from bot.database import get_task
-
-                task = await get_task(task_id)
-                if not task:
-                    await query.answer(
-                        "Bypass link expired or invalid.", show_alert=True
-                    )
-                    return
-
-                bypass_token = task.get("wizard_bypass_token")
-                if not bypass_token:
-                    logger.warning(f"⚠️ BYPASS: No token found for task {task_id}")
-                    await query.answer(
-                        "Bypass link expired or invalid.", show_alert=True
-                    )
-                    return
-
-                bot_username = context.bot.username or "cc_leechbot"
-                bypass_url = f"https://t.me/{bot_username}?start={bypass_token}"
-                logger.info(f"🔔 BYPASS: Generated URL: {bypass_url}")
-
-                from bot.database import get_config
-
-                config = await get_config() or {}
-                help_url = config.get(
-                    "help_text_url", "https://t.me/bot_paiyan_official"
-                )
-
-                keyboard = [
-                    [InlineKeyboardButton("🔥 Bypass Queue Now", url=bypass_url)],
-                    [InlineKeyboardButton("❓ How to use?", url=help_url)],
-                ]
-                await query.edit_message_text(
-                    "🔥 **Queue Bypass**\n\n"
-                    "Click the button below to verify and instantly bypass the queue.\n\n"
-                    "The bot will open and your task will jump to the front!",
-                    reply_markup=InlineKeyboardMarkup(keyboard),
-                    parse_mode="Markdown",
-                )
             else:
                 logger.warning(f"⚠️ UNHANDLED callback: {data}")
 

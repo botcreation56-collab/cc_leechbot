@@ -148,13 +148,14 @@ async def get_active_task_count(user_id: int) -> int:
 
 
 async def get_user_position(user_id: int) -> int:
-    """Get user's approximate queue position based on pending tasks ahead."""
+    """Get user's approximate queue position based on queued tasks ahead."""
     try:
         db = get_db()
+        # Count only queued tasks (not cancelled, not completed, not failed)
         ahead_count = await db.tasks.count_documents(
             {
                 "user_id": {"$ne": user_id},
-                "status": "pending",
+                "status": "queued",
             }
         )
         position = ahead_count + 1

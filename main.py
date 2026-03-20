@@ -295,6 +295,8 @@ def setup_handlers(application: Application) -> None:
         handle_us_rclone_dest_activate,
         handle_add_shortener,
         callback_handler,
+        handle_bypass_queue,
+        handle_refresh_queue,
     )
 
     # ── Admin handlers ───────────────────────────────────────
@@ -521,10 +523,10 @@ def setup_handlers(application: Application) -> None:
             ("^rem_word$", handle_rem_word),
             ("^rem_meta$", handle_rem_meta),
             ("^rem_inject$", handle_rem_inject),
-            # Queue & bypass
+            # Queue & bypass - use dedicated handlers
             ("^queue_start_", callback_handler),
-            ("^refresh_q_", callback_handler),
-            ("^bypass_q_", callback_handler),
+            ("^refresh_q_", handle_refresh_queue),
+            ("^bypass_q_", handle_bypass_queue),
             # File forwarding
             ("^send_dest_", callback_handler),
             ("^fwd_dest_", callback_handler),
