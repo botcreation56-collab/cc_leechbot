@@ -2107,7 +2107,9 @@ async def handle_forward_to_destination(
         from config.settings import get_settings
 
         s = get_settings()
-        dest_link = f"https://{s.DOMAIN}/dest/{dest_token}"
+        from config.settings import get_domain
+
+        dest_link = f"https://{get_domain()}/dest/{dest_token}"
 
         # Apply shortener if enabled
         final_link = dest_link

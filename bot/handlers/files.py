@@ -476,9 +476,9 @@ async def process_file_task(context: ContextTypes.DEFAULT_TYPE):
     await create_one_time_key(user_id, secure_token, expires, purpose="stream")
 
     # Send user the verification link - this will set the cookie and redirect to clean stream url
-    stream_url = (
-        f"https://{settings.DOMAIN}/api/verify_link/{dump_file_id}/{secure_token}"
-    )
+    from config.settings import get_domain
+
+    stream_url = f"https://{get_domain()}/api/verify_link/{dump_file_id}/{secure_token}"
     link_info = {"link": stream_url}
 
     # 4. Update Task & Storage Msg
@@ -1797,8 +1797,10 @@ class WizardHandler:
             expires = datetime.utcnow() + timedelta(hours=24)
             await create_one_time_key(user_id, secure_token, expires, purpose="stream")
 
+            from config.settings import get_domain
+
             stream_url = (
-                f"https://{settings.DOMAIN}/api/verify_link/{dump_file_id}/{secure_token}"
+                f"https://{get_domain()}/api/verify_link/{dump_file_id}/{secure_token}"
                 if dump_file_id
                 else None
             )
@@ -1945,7 +1947,9 @@ class WizardHandler:
                 )
 
                 bot_username = context.bot.username
-                bypass_url = f"https://{settings.DOMAIN}/queue-bypassed?token={verify_token}&bot={bot_username}"
+                from config.settings import get_domain
+
+                bypass_url = f"https://{get_domain()}/queue-bypassed?token={verify_token}&bot={bot_username}"
                 context.user_data["bypass_url"] = bypass_url
 
                 bot_api_url = user.get("settings", {}).get("shorten_api_url")
@@ -2124,7 +2128,11 @@ async def execute_processing_flow_by_task(bot, task: dict) -> None:
             secure_token = secrets.token_urlsafe(32)
             expires = datetime.utcnow() + timedelta(hours=24)
             await create_one_time_key(user_id, secure_token, expires, purpose="stream")
-            stream_url = f"https://{settings.DOMAIN}/api/verify_link/{dump_file_id}/{secure_token}"
+            from config.settings import get_domain
+
+            stream_url = (
+                f"https://{get_domain()}/api/verify_link/{dump_file_id}/{secure_token}"
+            )
 
         # Update card in storage channel
         await create_or_update_storage_message(

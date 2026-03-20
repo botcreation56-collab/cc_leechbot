@@ -23,6 +23,7 @@ _otp_storage: Dict[int, Dict] = {}
 # CloudLinkGenerator
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class CloudLinkGenerator:
     """Generates and manages cloud file links."""
 
@@ -42,7 +43,9 @@ class CloudLinkGenerator:
                 "token": token,
                 "file_id": file_id,
                 "created_at": datetime.utcnow().isoformat(),
-                "expires_at": (datetime.utcnow() + timedelta(days=expiry_days)).isoformat(),
+                "expires_at": (
+                    datetime.utcnow() + timedelta(days=expiry_days)
+                ).isoformat(),
                 "password": password,
                 "views": 0,
             }
@@ -51,20 +54,25 @@ class CloudLinkGenerator:
             return {}
 
     @staticmethod
-    async def shorten_link(long_link: str, shortener_service: str = "tinyurl") -> Optional[str]:
+    async def shorten_link(
+        long_link: str, shortener_service: str = "tinyurl"
+    ) -> Optional[str]:
         """Shorten cloud link using external service."""
         try:
             import httpx
+
             if shortener_service == "tinyurl":
                 encoded_url = urllib.parse.quote(long_link)
                 async with httpx.AsyncClient() as client:
                     resp = await client.get(
-                        f"https://tinyurl.com/api-create.php?url={encoded_url}", timeout=5
+                        f"https://tinyurl.com/api-create.php?url={encoded_url}",
+                        timeout=5,
                     )
                     if resp.status_code == 200:
                         return resp.text.strip()
 
             from config.settings import get_settings
+
             settings = get_settings()
             base_link = settings.BOT_LINK.replace("https://", "")
             return f"{base_link}?start={long_link[-8:]}"
@@ -81,6 +89,7 @@ class CloudLinkGenerator:
 # ─────────────────────────────────────────────────────────────────────────────
 # LinkShortener
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class LinkShortener:
     """Handles URL shortening using configured external providers."""
@@ -122,74 +131,83 @@ class LinkShortener:
                         data = await response.json()
                         if "shortenedUrl" in data:
                             return data["shortenedUrl"]
-                        logger.warning(f"⚠️ Unknown response format from {domain}: {data}")
+                        logger.warning(
+                            f"⚠️ Unknown response format from {domain}: {data}"
+                        )
                     else:
                         logger.error(f"❌ Shortener API failed: {response.status}")
-            
+
             # If the API request failed or returned unknown format, also fallback
             return await _fallback()
-            
+
         except Exception as e:
             logger.error(f"❌ Shortener error: {e}")
             from bot.services._link_shortener import CloudLinkGenerator
+
             return await CloudLinkGenerator.shorten_link(long_url, "tinyurl")
 
     @staticmethod
-    async def track_and_shorten(file_id: str, user_id: int, master_url: str) -> Optional[str]:
+    async def track_and_shorten(
+        file_id: str, user_id: int, master_url: str
+    ) -> Optional[str]:
         """
         Duplicate the master URL for tracking, shorten it, and log the relationship to MongoDB.
         """
         try:
             import uuid
             from datetime import datetime
-            
+
             # 1. Create duplicate tracking URL
             hash_id = uuid.uuid4().hex[:6]
             separator = "&" if "?" in master_url else "?"
             duplicate_url = f"{master_url}{separator}ref=user_{user_id}&hash={hash_id}"
-            
+
             # 2. Shorten the duplicate URL
             shortened_url = await LinkShortener.shorten_url(duplicate_url)
             if not shortened_url:
                 return None
-                
+
             # 3. Detect which service was used
             from bot.database import get_config
+
             config = await get_config()
             service_domain = "tinyurl.com"
             if config:
                 shorteners = config.get("link_shorteners", [])
-                active_shortener = next((s for s in shorteners if s.get("active")), None)
+                active_shortener = next(
+                    (s for s in shorteners if s.get("active")), None
+                )
                 if active_shortener and active_shortener.get("domain"):
                     service_domain = active_shortener.get("domain")
-                    
+
             if service_domain not in shortened_url and "tinyurl" in shortened_url:
                 service_domain = "tinyurl.com"
 
             # 4. Save to MongoDB
             from bot.database import get_db
+
             db = get_db()
-            
+
             tracking_doc = {
                 "file_id": file_id,
                 "user_id": user_id,
                 "urls": {
                     "master_url": master_url,
                     "duplicate_url": duplicate_url,
-                    "shortened_url": shortened_url
+                    "shortened_url": shortened_url,
                 },
                 "shortener_service": service_domain,
                 "status": {
                     "is_active": True,
                     "clicks": 0,
-                    "last_checked_available": datetime.utcnow()
+                    "last_checked_available": datetime.utcnow(),
                 },
-                "created_at": datetime.utcnow()
+                "created_at": datetime.utcnow(),
             }
-            
+
             await db.tracked_links.insert_one(tracking_doc)
             logger.info(f"✅ Tracked new link for user {user_id} -> {service_domain}")
-            
+
             return shortened_url
         except Exception as e:
             logger.error(f"❌ Error in track_and_shorten: {e}")
@@ -198,9 +216,9 @@ class LinkShortener:
     @staticmethod
     async def get_verification_link(user_id: int) -> str:
         """Generate a verification link for a user to skip the queue."""
-        from config.settings import get_settings
-        settings = get_settings()
-        verify_base = f"https://{settings.DOMAIN}/verify?user={user_id}"
+        from config.settings import get_domain
+
+        verify_base = f"https://{get_domain()}/verify?user={user_id}"
         short_url = await LinkShortener.shorten_url(verify_base)
         return short_url or verify_base
 
@@ -213,6 +231,7 @@ class LinkShortener:
 # ─────────────────────────────────────────────────────────────────────────────
 # OTPService
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class OTPService:
     """Manages One-Time Passwords for Web Authentication via Telegram."""
@@ -235,7 +254,9 @@ class OTPService:
                 f"⏱️ Expires in 5 minutes.\n"
                 f"⚠️ Do not share this code."
             )
-            await bot.send_message(chat_id=user_id, text=msg_text, parse_mode="Markdown")
+            await bot.send_message(
+                chat_id=user_id, text=msg_text, parse_mode="Markdown"
+            )
             logger.info(f"OTP sent to {user_id}")
             return True
         except Exception as e:

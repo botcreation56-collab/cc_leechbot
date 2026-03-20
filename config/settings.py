@@ -12,8 +12,9 @@ class Settings(BaseSettings):
     All other runtime config (channels, limits, flags, etc.) should be
     read from Mongo via get_config().
     """
-    
+
     _is_frozen: bool = False
+    _domain_cache: Optional[str] = None
 
     def freeze(self):
         """Freeze the settings object to prevent further mutation."""
@@ -27,7 +28,9 @@ class Settings(BaseSettings):
     # ============================================
     # TELEGRAM BOT (REQUIRED FROM ENV)
     # ============================================
-    BOT_TOKEN: SecretStr = Field(default=SecretStr(""), description="Telegram bot token from BotFather")
+    BOT_TOKEN: SecretStr = Field(
+        default=SecretStr(""), description="Telegram bot token from BotFather"
+    )
     ADMIN_IDS: str = Field(
         default="123456789",
         description="Admin user IDs (comma-separated)",
@@ -216,7 +219,7 @@ class Settings(BaseSettings):
         default=True,
         description="Enable Google Drive support",
     )
-    
+
     # ============================================
     # ENVIRONMENT
     # ============================================
@@ -244,6 +247,26 @@ def get_bot_token() -> str:
     return settings.BOT_TOKEN.get_secret_value()
 
 
+def get_domain() -> str:
+    """Extract domain from WEBHOOK_URL for generating links."""
+    settings = get_settings()
+    webhook_url = settings.WEBHOOK_URL.rstrip("/")
+
+    # Remove protocol
+    if webhook_url.startswith("https://"):
+        domain = webhook_url[8:]
+    elif webhook_url.startswith("http://"):
+        domain = webhook_url[7:]
+    else:
+        domain = webhook_url
+
+    # Remove path if any
+    if "/" in domain:
+        domain = domain.split("/")[0]
+
+    return domain
+
+
 def get_settings() -> Settings:
     """Get or create global settings instance."""
     global _settings
@@ -256,6 +279,7 @@ def get_settings() -> Settings:
         if not _settings.ENCRYPTION_KEY or _settings.ENCRYPTION_KEY == "":
             try:
                 from cryptography.fernet import Fernet
+
                 _settings.ENCRYPTION_KEY = Fernet.generate_key().decode()
                 _warn_generated("ENCRYPTION_KEY", _settings.ENCRYPTION_KEY)
             except Exception as e:
@@ -263,6 +287,7 @@ def get_settings() -> Settings:
 
         if not _settings.JWT_SECRET or _settings.JWT_SECRET == "":
             import secrets as _secrets
+
             _settings.JWT_SECRET = _secrets.token_urlsafe(32)
             _warn_generated("JWT_SECRET", _settings.JWT_SECRET)
 
@@ -277,8 +302,6 @@ def _warn_generated(name: str, value: str) -> None:
     print(f"   Copy this into your Render environment variables:")
     print(f"   {name}={value}")
     print(f"{border}\n")
-
-
 
 
 def get_admin_ids() -> List[int]:
@@ -304,7 +327,11 @@ def get_force_sub_channels() -> List[int]:
             return []
 
         if isinstance(settings.FORCE_SUB_CHANNELS, str):
-            return [int(x.strip()) for x in settings.FORCE_SUB_CHANNELS.split(",") if x.strip()]
+            return [
+                int(x.strip())
+                for x in settings.FORCE_SUB_CHANNELS.split(",")
+                if x.strip()
+            ]
         elif isinstance(settings.FORCE_SUB_CHANNELS, list):
             return settings.FORCE_SUB_CHANNELS
         else:
