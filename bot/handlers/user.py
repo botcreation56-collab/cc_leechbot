@@ -276,6 +276,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"🔔 CALLBACK RECEIVED: '{data}' from user {user_id}")
 
     try:
+        logger.info(f"🔔 callback_handler ENTRY: data={data}")
         admin_ids = get_admin_ids()
 
         # Unified admin check — covers both env-list IDs and DB role=admin
@@ -691,6 +692,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     )
 
             elif data.startswith("bypass_q_"):
+                logger.info(f"🔔 BYPASS_Q callback received: {data}")
                 task_id = data.replace("bypass_q_", "")
                 from bot.database import get_task
 
@@ -703,6 +705,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                 bypass_token = task.get("wizard_bypass_token")
                 if not bypass_token:
+                    logger.warning(f"⚠️ BYPASS: No token found for task {task_id}")
                     await query.answer(
                         "Bypass link expired or invalid.", show_alert=True
                     )
@@ -710,6 +713,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                 bot_username = context.bot.username or "cc_leechbot"
                 bypass_url = f"https://t.me/{bot_username}?start={bypass_token}"
+                logger.info(f"🔔 BYPASS: Generated URL: {bypass_url}")
 
                 from bot.database import get_config
 
@@ -3200,12 +3204,14 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elif arg.startswith("bypass_"):
                 from bot.database import get_db
 
+                logger.info(f"🔔 BYPASS command received: {arg}")
                 db = get_db()
                 bypass_token = arg
                 task = await db.tasks.find_one_and_update(
                     {"wizard_bypass_token": bypass_token, "status": "queued"},
                     {"$set": {"priority": 100, "wizard_bypass_token": None}},
                 )
+                logger.info(f"🔔 BYPASS task result: {task is not None}")
                 if task:
                     await update.message.reply_text(
                         "🚀 **Queue Bypassed!**\n\nYour file has been moved to the front of the queue and will begin processing momentarily.",
