@@ -513,9 +513,26 @@ async def queue_bypassed_endpoint(request: Request, token: str, bot: str):
     Injects the bot username and bypass token so the HTML button can direct
     the user back to the Telegram bot with the exact start payload.
     """
-    return templates.TemplateResponse(
-        "success.html", {"request": request, "bot_username": bot, "startid": token}
-    )
+    try:
+        if not token or len(token) < 4:
+            logger.warning(f"⚠️ Invalid bypass token received: {token}")
+            raise HTTPException(status_code=400, detail="Invalid bypass token")
+
+        logger.info(f"🔔 Queue bypass page accessed: token={token[:8]}..., bot={bot}")
+
+        return templates.TemplateResponse(
+            "success.html",
+            {
+                "request": request,
+                "bot_username": bot or "cc_leechbot",
+                "startid": token,
+            },
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Queue bypass error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to load bypass page")
 
 
 @router.get("/api/rclone/auth")

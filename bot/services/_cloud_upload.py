@@ -140,7 +140,20 @@ async def upload_to_rclone(
             raise RcloneError(f"Rclone config not found: {rclone_config_id}")
 
         service = config["service"]
-        credentials = config.get("credentials", "")
+        encrypted_creds = config.get("credentials", "")
+
+        # Decrypt credentials before using
+        from bot.utils import decrypt_credentials
+
+        try:
+            creds_dict = decrypt_credentials(encrypted_creds)
+            credentials = creds_dict.get("config", "")
+            if not credentials:
+                raise RcloneError("Decrypted credentials are empty")
+        except Exception as e:
+            logger.error(f"Failed to decrypt credentials: {e}")
+            # Try using raw if decryption fails
+            credentials = str(encrypted_creds) if encrypted_creds else ""
 
         import tempfile
 

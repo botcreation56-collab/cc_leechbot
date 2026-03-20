@@ -747,13 +747,6 @@ async def handle_toggle_rclone(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.callback_query.answer("❌ Error")
 
 
-async def handle_disable_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Disable a rclone remote (stub)."""
-    await update.callback_query.answer(
-        "⏳ Remote-specific disable not yet implemented", show_alert=True
-    )
-
-
 async def rclone_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /rclone command - start configuration wizard"""
     try:

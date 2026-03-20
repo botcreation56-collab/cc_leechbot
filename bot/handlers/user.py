@@ -667,6 +667,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await handle_test_rclone(update, context)
             elif data == "disable_rclone":
                 await handle_disable_rclone(update, context)
+            elif data == "admin_rclone":
+                await handle_admin_rclone(update, context)
             elif data == "configure_rclone":
                 await handle_admin_rclone(update, context)
             elif data.startswith("rclone_delete_prompt_"):
@@ -685,6 +687,22 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await rclone_users_callback(update, context)
             elif data.startswith("toggle_rclone_"):
                 await handle_toggle_rclone(update, context)
+            elif data.startswith("rclone_plan_"):
+                from bot.handlers.cloud import rclone_plan_callback
+
+                await rclone_plan_callback(update, context)
+            elif (
+                data.startswith("rclone_gdrive")
+                or data.startswith("rclone_onedrive")
+                or data.startswith("rclone_dropbox")
+                or data.startswith("rclone_mega")
+                or data.startswith("rclone_s3")
+                or data.startswith("rclone_custom")
+                or data.startswith("rclone_terabox")
+            ):
+                from bot.handlers.cloud import rclone_service_callback
+
+                await rclone_service_callback(update, context)
 
             # ── Terabox ──
             elif data == "terabox_setup_key":
@@ -763,6 +781,30 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await handle_send_to_destination(update, context)
             elif data.startswith("fwd_dest_"):
                 await handle_forward_to_destination(update, context)
+            elif data.startswith("us_dest_meta_name_"):
+                await handle_us_dest_meta_name_prompt(update, context)
+            elif data.startswith("us_dest_meta_auth_"):
+                await handle_us_dest_meta_auth_prompt(update, context)
+            elif data == "us_rclone_service":
+                await handle_us_rclone_service(update, context)
+            elif data == "subtitle_menu":
+                await handle_subtitle_menu(update, context)
+            elif data == "inject_sub":
+                await handle_inject_sub(update, context)
+            elif data == "meta_audio":
+                await handle_meta_audio(update, context)
+            elif data == "meta_video":
+                await handle_meta_video(update, context)
+            elif data == "meta_author":
+                await handle_meta_author(update, context)
+            elif data == "meta_subs":
+                await handle_meta_subs(update, context)
+            elif data == "rem_word":
+                await handle_rem_word(update, context)
+            elif data == "rem_meta":
+                await handle_rem_meta(update, context)
+            elif data == "rem_inject":
+                await handle_rem_inject(update, context)
             else:
                 logger.warning(f"⚠️ UNHANDLED callback: {data}")
 
