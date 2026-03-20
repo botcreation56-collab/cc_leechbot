@@ -1946,15 +1946,6 @@ class WizardHandler:
                     f"execute_processing_flow: task {task_id} QUEUED at position {position}"
                 )
 
-                bot_username = context.bot.username
-                from config.settings import get_domain
-
-                bypass_url = f"https://{get_domain()}/queue-bypassed?token={verify_token}&bot={bot_username}"
-                context.user_data["bypass_url"] = bypass_url
-
-                bot_api_url = user.get("settings", {}).get("shorten_api_url")
-                bot_api_key = user.get("settings", {}).get("shorten_api_key")
-
                 keyboard = [
                     [
                         InlineKeyboardButton(
@@ -1977,7 +1968,9 @@ class WizardHandler:
                 )
 
                 context.user_data["queued_task"] = task_id
-                context.user_data["bypass_url"] = bypass_url
+                context.user_data["bypass_url"] = (
+                    verify_token  # Store token for reference
+                )
                 context.user_data.pop("wizard", None)
                 return
 

@@ -85,14 +85,27 @@ async def update_task(task_id: str, updates: Dict[str, Any]) -> bool:
 
 
 async def get_user_tasks(
-    user_id: int, status: Optional[str] = None, limit: int = 20
+    user_id: int,
+    status: Optional[str] = None,
+    limit: int = 20,
+    exclude_terminal: bool = False,
 ) -> List[Dict]:
-    """Fetch user's tasks with optional status filter."""
+    """Fetch user's tasks with optional status filter.
+
+    Args:
+        user_id: The user ID
+        status: Filter by specific status (optional)
+        limit: Maximum number of tasks to return
+        exclude_terminal: If True, exclude completed/failed/cancelled/expired tasks
+    """
     try:
         db = get_db()
         query = {"user_id": user_id}
         if status:
             query["status"] = status
+        elif exclude_terminal:
+            # Exclude terminal states by default when showing "active" tasks
+            query["status"] = {"$nin": ["completed", "failed", "cancelled", "expired"]}
         tasks = (
             await db.tasks.find(query).sort("created_at", -1).limit(limit).to_list(None)
         )

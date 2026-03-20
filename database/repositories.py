@@ -342,14 +342,16 @@ class TaskRepository:
             return None
 
     async def get_user_tasks(
-        self, user_id: int, *, limit: int = 20
+        self, user_id: int, *, limit: int = 20, exclude_terminal: bool = False
     ) -> List[Dict[str, Any]]:
+        """Fetch user tasks, optionally excluding terminal states."""
         try:
-            cursor = (
-                self._col.find({"user_id": user_id})
-                .sort("created_at", DESCENDING)
-                .limit(limit)
-            )
+            query = {"user_id": user_id}
+            if exclude_terminal:
+                query["status"] = {
+                    "$nin": ["completed", "failed", "cancelled", "expired"]
+                }
+            cursor = self._col.find(query).sort("created_at", DESCENDING).limit(limit)
             return [_to_str_id(d) for d in await cursor.to_list(length=limit)]
         except Exception as exc:
             logger.error("TaskRepository.get_user_tasks failed: %s", exc)

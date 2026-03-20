@@ -251,6 +251,22 @@ def setup_handlers(application: Application) -> None:
         handle_us_thumbnail_menu,
         handle_us_visibility,
         handle_us_destination_button,
+        handle_us_dest_add,
+        handle_us_dest_manage,
+        handle_us_dest_caption_builder,
+        handle_us_dest_cap_filename,
+        handle_us_dest_cap_filesize,
+        handle_us_dest_cap_url_label,
+        handle_us_dest_cap_style,
+        handle_us_dest_cap_reset,
+        handle_us_dest_buttons,
+        handle_us_dest_shortener_toggle,
+        handle_us_dest_download_link_choice,
+        handle_us_dest_caption_prompt,
+        handle_us_dest_meta_name_prompt,
+        handle_us_dest_meta_auth_prompt,
+        handle_us_dest_remove_confirm,
+        handle_us_dest_remove_do,
         handle_us_remove_confirm,
         handle_us_reset_confirm_yes,
         handle_us_myfiles,
@@ -273,14 +289,11 @@ def setup_handlers(application: Application) -> None:
         handle_us_thumbnail_view,
         handle_us_thumbnail_delete,
         handle_us_thumbnail_delete_confirm,
-        handle_meta_author,
         handle_us_rclone_service,
-        # Rclone feature gating
         handle_toggle_plan_rclone,
-        # Shortener feature gating
         handle_toggle_plan_shortener,
-        # Rclone post-auth user action
         handle_us_rclone_dest_activate,
+        callback_handler,
     )
 
     # ── Admin handlers ───────────────────────────────────────
@@ -452,7 +465,7 @@ def setup_handlers(application: Application) -> None:
             )
         )
 
-        # 4. USER SETTINGS CALLBACKS
+        # 4. USER SETTINGS & DESTINATION CALLBACKS
         for pattern, handler in [
             ("^us_metadata$", handle_us_metadata),
             ("^us_thumbnail$", handle_us_thumbnail_menu),
@@ -470,11 +483,27 @@ def setup_handlers(application: Application) -> None:
             ("^us_suffix$", handle_us_suffix),
             ("^us_visibility$", handle_us_visibility),
             ("^us_destination$", handle_us_destination_button),
+            ("^us_dest_add$", handle_us_dest_add),
+            ("^us_dest_manage_", handle_us_dest_manage),
+            ("^us_dest_caption_builder_", handle_us_dest_caption_builder),
+            ("^us_dest_cap_filename_", handle_us_dest_cap_filename),
+            ("^us_dest_cap_filesize_", handle_us_dest_cap_filesize),
+            ("^us_dest_cap_url_label_", handle_us_dest_cap_url_label),
+            ("^us_dest_cap_style_", handle_us_dest_cap_style),
+            ("^us_dest_cap_reset_", handle_us_dest_cap_reset),
+            ("^us_dest_buttons_", handle_us_dest_buttons),
+            ("^us_dest_shortener_", handle_us_dest_shortener_toggle),
+            ("^us_dest_dl_text_", handle_us_dest_download_link_choice),
+            ("^us_dest_caption_", handle_us_dest_caption_prompt),
+            ("^us_dest_meta_name_", handle_us_dest_meta_name_prompt),
+            ("^us_dest_meta_auth_", handle_us_dest_meta_auth_prompt),
+            ("^us_dest_remove_confirm_", handle_us_dest_remove_confirm),
+            ("^us_dest_remove_do_", handle_us_dest_remove_do),
             ("^us_rclone_service$", handle_us_rclone_service),
             (
                 "^us_set_rclone_dest_",
                 handle_us_rclone_dest_activate,
-            ),  # After-auth 'Use as dest' button
+            ),
             ("^us_back$", go_back_to_settings),
             ("^us_close$", handle_us_close),
             ("^us_help$", handle_callback_help),
@@ -486,10 +515,17 @@ def setup_handlers(application: Application) -> None:
             ("^meta_audio$", handle_meta_audio),
             ("^meta_video$", handle_meta_video),
             ("^meta_author$", handle_meta_author),
-            ("^meta_subs$", handle_meta_subs),  # Updated from meta_subtitle
+            ("^meta_subs$", handle_meta_subs),
             ("^rem_word$", handle_rem_word),
             ("^rem_meta$", handle_rem_meta),
             ("^rem_inject$", handle_rem_inject),
+            # Queue & bypass
+            ("^queue_start_", callback_handler),
+            ("^refresh_q_", callback_handler),
+            ("^bypass_q_", callback_handler),
+            # File forwarding
+            ("^send_dest_", callback_handler),
+            ("^fwd_dest_", callback_handler),
         ]:
             application.add_handler(CallbackQueryHandler(handler, pattern=pattern))
 
@@ -537,14 +573,15 @@ def setup_handlers(application: Application) -> None:
             ("^edit_file_expiry$", handle_edit_file_expiry),
             ("^edit_plan_free$", handle_edit_plan),
             ("^edit_plan_premium$", handle_edit_plan),
+            ("^edit_shortener_", handle_add_shortener),
             (
                 "^toggle_plan_rclone_",
                 handle_toggle_plan_rclone,
-            ),  # Admin toggles rclone per plan
+            ),
             (
                 "^toggle_shortener_",
                 handle_toggle_plan_shortener,
-            ),  # Admin toggles shortener per plan
+            ),
         ]:
             application.add_handler(CallbackQueryHandler(handler, pattern=pattern))
 

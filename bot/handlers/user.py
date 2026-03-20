@@ -686,28 +686,41 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     )
 
             elif data.startswith("bypass_q_"):
-                bypass_url = context.user_data.get("bypass_url")
-                if not bypass_url:
+                task_id = data.replace("bypass_q_", "")
+                from bot.database import get_task
+
+                task = await get_task(task_id)
+                if not task:
                     await query.answer(
                         "Bypass link expired or invalid.", show_alert=True
                     )
                     return
 
+                bypass_token = task.get("wizard_bypass_token")
+                if not bypass_token:
+                    await query.answer(
+                        "Bypass link expired or invalid.", show_alert=True
+                    )
+                    return
+
+                bot_username = context.bot.username or "cc_leechbot"
+                bypass_url = f"https://t.me/{bot_username}?start={bypass_token}"
+
                 from bot.database import get_config
 
                 config = await get_config() or {}
-                # The user requested "ref teh help text in /admin"
                 help_url = config.get(
-                    "shorten_help_link",
-                    config.get("help_text_url", "https://t.me/bot_paiyan_official"),
+                    "help_text_url", "https://t.me/bot_paiyan_official"
                 )
 
                 keyboard = [
-                    [InlineKeyboardButton("Use me to proceed", url=bypass_url)],
-                    [InlineKeyboardButton("How to use ?", url=help_url)],
+                    [InlineKeyboardButton("🔥 Bypass Queue Now", url=bypass_url)],
+                    [InlineKeyboardButton("❓ How to use?", url=help_url)],
                 ]
                 await query.edit_message_text(
-                    "🔥 **Queue Bypass Activated**\n\nClick the button below to verify and instantly bypass the processing queue.",
+                    "🔥 **Queue Bypass**\n\n"
+                    "Click the button below to verify and instantly bypass the queue.\n\n"
+                    "The bot will open and your task will jump to the front!",
                     reply_markup=InlineKeyboardMarkup(keyboard),
                     parse_mode="Markdown",
                 )
@@ -3402,7 +3415,7 @@ async def cancel_task_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         task_id = match.group(1).strip()
 
-        tasks = await get_user_tasks(user_id) or []
+        tasks = await get_user_tasks(user_id, exclude_terminal=True) or []
         task = next((t for t in tasks if str(t.get("task_id", "")) == task_id), None)
 
         if not task:
