@@ -643,7 +643,7 @@ async def upload_and_send_file(
                     user_id=user_id,
                     task_id=task_id,
                     filesize=file_size_bytes,
-                    stage="⏳ Waiting for available Cloud Transfer Slot...",
+                    stage="cloud_wait",
                     progress=0,
                 )
             await asyncio.sleep(30)
@@ -675,7 +675,7 @@ async def upload_and_send_file(
                 if match:
                     progress = int(match.group(1))
                     now = time.time()
-                    if now - last_rclone_update[0] > 5 or progress >= 100:
+                    if now - last_rclone_update[0] > 3 or progress >= 100:
                         last_rclone_update[0] = now
                         asyncio.create_task(
                             send_progress_message(
@@ -683,7 +683,7 @@ async def upload_and_send_file(
                                 user_id=user_id,
                                 task_id=task_id,
                                 filesize=file_size_bytes,
-                                stage="📤 **Uploading to Cloud...**",
+                                stage="rclone",
                                 progress=progress,
                                 start_time=start_update_time,
                             )

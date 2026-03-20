@@ -2190,37 +2190,104 @@ async def handle_forward_to_destination(
         await query.message.edit_text("❌ Error sending to destination.")
 
 
+STAGE_INFO = {
+    "init": {
+        "emoji": "🚀",
+        "name": "Initializing",
+        "desc": "Setting up your file for processing...",
+        "step": 1,
+        "total": 5,
+    },
+    "download": {
+        "emoji": "📥",
+        "name": "Downloading",
+        "desc": "Getting your file from Telegram servers to our server...",
+        "step": 2,
+        "total": 5,
+    },
+    "probe": {
+        "emoji": "🔍",
+        "name": "Analyzing",
+        "desc": "Reading video info, audio tracks, subtitles...",
+        "step": 3,
+        "total": 5,
+    },
+    "ffmpeg": {
+        "emoji": "🎬",
+        "name": "Processing",
+        "desc": "Applying your choices: subtitles, audio, metadata, watermark...",
+        "step": 4,
+        "total": 5,
+    },
+    "upload": {
+        "emoji": "📤",
+        "name": "Uploading",
+        "desc": "Sending your processed file back to you via Telegram...",
+        "step": 5,
+        "total": 5,
+    },
+    "complete": {
+        "emoji": "✅",
+        "name": "Complete",
+        "desc": "Your file is ready! Check below 👇",
+        "step": 5,
+        "total": 5,
+    },
+    "cloud_upload": {
+        "emoji": "☁️",
+        "name": "Cloud Upload",
+        "desc": "Uploading to cloud storage for large file delivery...",
+        "step": 4,
+        "total": 5,
+    },
+    "cloud_wait": {
+        "emoji": "⏳",
+        "name": "Waiting for Slot",
+        "desc": "Cloud servers are busy. Waiting for a free slot...",
+        "step": 4,
+        "total": 5,
+    },
+    "rclone": {
+        "emoji": "🔄",
+        "name": "Cloud Transfer",
+        "desc": "Transferring file to cloud storage destination...",
+        "step": 4,
+        "total": 5,
+    },
+    "rclone": {
+        "emoji": "🔄",
+        "name": "Cloud Transfer",
+        "desc": "Transferring file to cloud storage...",
+        "step": 4,
+        "total": 5,
+    },
+}
+
+
 def get_progress_bar(progress: int) -> str:
-    """
-    3-color hill-style progress bar with emojis:
-    """
+    """Generate a visual progress bar with percentage."""
     if progress < 0:
         progress = 0
     if progress >= 100:
-        return "🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴 **100%**"
+        return "████████████████████ **100%**"
 
-    if progress <= 30:
-        block = "⚪"
-    elif progress <= 69:
-        block = "🟠"
-    else:
-        block = "🔴"
-
-    level = min(progress // 10, 9)
-    bar = block * 10
-    return f"{bar} **{progress:>3}%**"
+    filled = int(progress / 5)
+    empty = 20 - filled
+    bar = "█" * filled + "░" * empty
+    return f"`{bar}` **{progress}%**"
 
 
 def format_eta(seconds: int) -> str:
+    """Format ETA in human-readable format."""
     if seconds <= 0:
-        return "0s"
+        return "Calculating..."
     if seconds < 60:
-        return f"{int(seconds)}s"
+        return f"~{int(seconds)}s"
     m, s = divmod(int(seconds), 60)
     if m < 60:
-        return f"{m}m {s}s"
+        return f"~{m}m {s}s"
     h, m = divmod(m, 60)
-    return f"{h}h {m}m {s}s"
+    return f"~{h}h {m}m"
 
 
 async def send_progress_message(
@@ -2234,16 +2301,14 @@ async def send_progress_message(
     start_time=None,
 ):
     """
-    Send or update progress message in user PM + dump channel.
+    Send or update progress message with user-friendly step indicators.
     """
     import time
 
-    # Thread-safe storage
     if not hasattr(bot, "progress_data"):
         bot.progress_data = {}
     progress_data = bot.progress_data
 
-    # Update current task state
     task_info = progress_data.setdefault(task_id, {})
     if stage is not None:
         task_info["stage"] = stage
@@ -2254,37 +2319,43 @@ async def send_progress_message(
     elif "start_time" not in task_info:
         task_info["start_time"] = time.time()
 
-    # Get current values
-    current_stage = task_info.get("stage", "🚀 Starting...")
+    current_stage_key = task_info.get("stage", "init")
     current_progress = task_info.get("progress", 0)
     task_start_time = task_info.get("start_time", time.time())
 
-    # Calculate ETA
+    stage_info = STAGE_INFO.get(current_stage_key, STAGE_INFO["init"])
+
     elapsed_time = time.time() - task_start_time
-    eta_text = "⏳ **ETA:** Calculating..."
-    speed_text = "📊 **Speed:** Calculating..."
-    if current_progress > 0 and current_progress <= 100:
+
+    speed_text = ""
+    eta_text = ""
+
+    if current_progress > 5 and current_progress <= 100:
         eta_seconds = (elapsed_time / current_progress) * (100 - current_progress)
         eta_text = f"⏳ **ETA:** {format_eta(eta_seconds)}"
 
-        # Approximate speed based on file size and elapsed time if size > 0
         if filesize > 0 and elapsed_time > 0:
             bytes_done = (current_progress / 100) * filesize
             speed_mb = (bytes_done / 1024 / 1024) / elapsed_time
             speed_text = f"⚡ **Speed:** {speed_mb:.1f} MB/s"
 
-    # Generate beautiful progress bar
     progress_bar = get_progress_bar(current_progress)
     size_text = f"{filesize / (1024 * 1024):.1f} MB" if filesize > 0 else "---"
 
+    step_text = f"**Step {stage_info['step']}/{stage_info['total']}**"
+
     message_text = (
-        f"{current_stage}\n\n"
-        f"{progress_bar}\n"
+        f"{stage_info['emoji']} **{stage_info['name']}**\n"
+        f"_{stage_info['desc']}_\n\n"
+        f"{step_text}\n\n"
+        f"{progress_bar}\n\n"
         f"📦 **Size:** {size_text}\n"
-        f"{speed_text}\n"
-        f"{eta_text}\n\n"
-        f"🆔 **Task:** `{task_id}`"
     )
+
+    if speed_text:
+        message_text += f"{speed_text}\n"
+    if eta_text:
+        message_text += f"{eta_text}\n"
 
     keyboard = [
         [
@@ -2294,12 +2365,11 @@ async def send_progress_message(
         ]
     ]
 
-    if current_progress >= 100:
+    if current_progress >= 100 or current_stage_key == "complete":
         message_text += "\n\n✅ **Processing Complete!** 🎉"
-        keyboard = []  # Remove button when done
+        keyboard = []
 
     try:
-        # ——— Update User PM ———
         if "user_progress_msg_id" not in task_info:
             msg = await bot.send_message(
                 chat_id=user_id,

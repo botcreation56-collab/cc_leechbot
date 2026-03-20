@@ -1576,20 +1576,12 @@ class WizardHandler:
                 user_id,
                 task_id,
                 filesize=session.get("file_size", 0),
-                stage="🚀 Initializing...",
+                stage="init",
                 progress=0,
             )
 
             # --- JIT DOWNLOAD IF DEFERRED ---
             if not session.get("file_path"):
-                await send_progress_message(
-                    bot,
-                    user_id,
-                    task_id,
-                    filesize=session.get("file_size", 0),
-                    stage="📥 Downloading file...",
-                    progress=10,
-                )
                 import uuid
                 from pathlib import Path
                 from config.constants import DOWNLOADS_DIR
@@ -1604,9 +1596,29 @@ class WizardHandler:
                 if not file_id:
                     raise RuntimeError("Missing file reference. Task failed.")
 
+                # Update stage to downloading
+                await send_progress_message(
+                    bot,
+                    user_id,
+                    task_id,
+                    filesize=session.get("file_size", 0),
+                    stage="download",
+                    progress=5,
+                )
+
                 file_obj = await bot.get_file(file_id)
                 file_path = await file_obj.download_to_drive(custom_path=internal_path)
                 session["file_path"] = str(file_path)
+
+                # Update stage to analyzing
+                await send_progress_message(
+                    bot,
+                    user_id,
+                    task_id,
+                    filesize=session.get("file_size", 0),
+                    stage="probe",
+                    progress=20,
+                )
 
             # 2. Get Selections
             audio_indices = [
@@ -1686,7 +1698,7 @@ class WizardHandler:
                     progress = min(int((current_sec / duration) * 100), 100)
 
                     now = time.time()
-                    if now - last_update[0] > 5 or progress >= 100:
+                    if now - last_update[0] > 3 or progress >= 100:
                         last_update[0] = now
                         asyncio.create_task(
                             send_progress_message(
@@ -1694,7 +1706,7 @@ class WizardHandler:
                                 user_id=user_id,
                                 task_id=task_id,
                                 filesize=file_size,
-                                stage="🎬 **Processing Media (FFmpeg)...**",
+                                stage="ffmpeg",
                                 progress=progress,
                                 start_time=start_time,
                             )
@@ -1723,10 +1735,16 @@ class WizardHandler:
 
             # 5. Upload and Send
             logger.info(f"process_session_background: {task_id} - Uploading file")
-            if query:
-                await query.edit_message_text("📤 **Uploading File...**")
-            else:
-                await bot.send_message(user_id, "📤 **Uploading File...**")
+
+            # Update stage to uploading
+            await send_progress_message(
+                bot,
+                user_id,
+                task_id,
+                filesize=session.get("file_size", 0),
+                stage="upload",
+                progress=80,
+            )
 
             from bot.database import get_user, get_config
             from bot.services import upload_and_send_file
