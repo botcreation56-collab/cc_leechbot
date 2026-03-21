@@ -860,7 +860,8 @@ async def lifespan(app: FastAPI):
         try:
             from bot.services import GDriveService
 
-            if GDriveService.is_configured():
+            is_gdrive_configured = await GDriveService.is_configured()
+            if is_gdrive_configured:
                 await GDriveService.setup_folders()
                 logger.info("🚀 GDrive folder structure initialized")
             else:
@@ -877,6 +878,8 @@ async def lifespan(app: FastAPI):
                 logger.info("🚀 Rclone binary ready at %s", rclone_path)
             else:
                 logger.warning("⚠️ Rclone binary not available")
+        except Exception as e:
+            logger.warning(f"⚠️ Rclone setup skipped: {e}")
         except Exception as e:
             logger.warning(f"⚠️ Rclone setup skipped: {e}")
 
