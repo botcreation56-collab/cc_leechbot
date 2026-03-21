@@ -2260,3 +2260,25 @@ async def handle_add_shortener(update: Update, context: ContextTypes.DEFAULT_TYP
             await update.callback_query.answer(f"❌ Error", show_alert=True)
         except:
             pass
+
+
+async def handle_edit_tutorial_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Edit tutorial link for bypass - asks for new link"""
+    try:
+        await update.callback_query.answer()
+        await update.callback_query.message.reply_text(
+            "📚 **Bypass Tutorial Link**\n\n"
+            "Send the tutorial link shown in 'How to bypass?' button.\n"
+            "Example: `https://youtube.com/watch?v=example`\n\n"
+            "Leave empty to remove the link.\n\n"
+            "Use /cancel to abort.",
+            parse_mode="Markdown",
+        )
+        context.user_data["awaiting"] = "edit_tutorial_link"
+        logger.info("✅ Edit tutorial link prompt shown")
+    except Exception as e:
+        logger.error(f"❌ Error in handle_edit_tutorial_link: {e}", exc_info=True)
+        try:
+            await update.callback_query.answer(f"❌ Error", show_alert=True)
+        except:
+            pass

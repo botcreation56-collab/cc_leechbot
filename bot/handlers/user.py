@@ -8,7 +8,7 @@ import uuid
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.error import TelegramError
-from bot.middleware import admin_only, rate_limit, is_admin
+from bot.middleware import admin_only, rate_limit, action_lock, is_admin
 from bot.database import (
     get_db,
     get_user,
@@ -224,6 +224,7 @@ async def show_shorteners_menu(update: Update, context: ContextTypes.DEFAULT_TYP
 
         config = await get_config() or {}
         shorteners = config.get("shorteners", [])
+        tutorial_link = config.get("shortener_tutorial_link")
 
         keyboard = []
         if shorteners:
@@ -242,13 +243,34 @@ async def show_shorteners_menu(update: Update, context: ContextTypes.DEFAULT_TYP
         else:
             shortener_list = "**No shorteners configured.**\n\n"
 
+        # Show tutorial link status
+        tutorial_status = (
+            f"**Tutorial Link:** `{tutorial_link}`"
+            if tutorial_link
+            else "**Tutorial Link:** `Not set`"
+        )
+        if tutorial_link:
+            tutorial_btn_text = "✏️ Edit Tutorial Link"
+        else:
+            tutorial_btn_text = "➕ Add Tutorial Link"
+
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    tutorial_btn_text, callback_data="edit_tutorial_link"
+                )
+            ]
+        )
         keyboard.append(
             [InlineKeyboardButton("➕ Add Shortener", callback_data="add_shortener")]
         )
         keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="admin_back")])
 
         await update.callback_query.message.edit_text(
-            f"🔗 **Link Shorteners**\n\n{shortener_list}Add or manage your link shortener integrations.",
+            f"🔗 **Link Shorteners**\n\n"
+            f"{shortener_list}"
+            f"{tutorial_status}\n\n"
+            f"Add or manage your link shortener integrations.",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode="Markdown",
         )
@@ -260,6 +282,7 @@ async def show_shorteners_menu(update: Update, context: ContextTypes.DEFAULT_TYP
             pass
 
 
+@action_lock
 async def handle_bypass_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle bypass queue button - show encrypted bypass link"""
     try:

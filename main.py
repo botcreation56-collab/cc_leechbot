@@ -290,6 +290,7 @@ def setup_handlers(application: Application) -> None:
         handle_toggle_plan_shortener,
         handle_us_rclone_dest_activate,
         handle_add_shortener,
+        handle_edit_tutorial_link,
         callback_handler,
         handle_bypass_queue,
         handle_refresh_queue,
@@ -337,6 +338,7 @@ def setup_handlers(application: Application) -> None:
         handle_admin_add_storage_channel,
         handle_admin_shorteners,
         handle_add_shortener,
+        handle_edit_tutorial_link,
         handle_admin_stats,
         handle_admin_terabox,
         handle_admin_unban_user,
@@ -555,6 +557,7 @@ def setup_handlers(application: Application) -> None:
             ("^view_logs_", handle_admin_logs),
             ("^admin_shorteners$", handle_admin_shorteners),
             ("^add_shortener$", handle_add_shortener),
+            ("^edit_tutorial_link$", handle_edit_tutorial_link),
         ]:
             application.add_handler(CallbackQueryHandler(handler, pattern=pattern))
 
@@ -942,23 +945,46 @@ async def _startup_tasks(app: FastAPI):
 
     await asyncio.sleep(0.5)
 
+    # Check GDrive/Rclone configuration status
+    has_gdrive = False
+    has_rclone = False
+
     try:
         from bot.services import GDriveService
 
-        if await GDriveService.is_configured():
-            await GDriveService.setup_folders()
-            logger.info("✅ GDrive ready")
-    except Exception as e:
-        logger.warning(f"⚠️ GDrive: {e}")
+        has_gdrive = await GDriveService.is_configured()
+    except Exception:
+        pass
 
     try:
         from bot.services._cloud_upload import ensure_rclone_binary
 
         path = await ensure_rclone_binary()
-        if path:
-            logger.info(f"✅ Rclone: {path}")
-    except Exception as e:
-        logger.warning(f"⚠️ Rclone: {e}")
+        has_rclone = bool(path)
+    except Exception:
+        pass
+
+    try:
+        from bot.database import get_rclone_configs
+
+        rclone_configs = await get_rclone_configs()
+        has_rclone = has_rclone or bool(rclone_configs)
+    except Exception:
+        pass
+
+    if has_gdrive:
+        try:
+            await GDriveService.setup_folders()
+            logger.info("✅ GDrive ready")
+        except Exception as e:
+            logger.warning(f"⚠️ GDrive setup: {e}")
+    else:
+        logger.info("⚠️ GDrive NOT configured. Run /admin → Rclone → Add → Google Drive")
+
+    if has_rclone:
+        logger.info("✅ Rclone ready")
+    else:
+        logger.info("⚠️ Rclone NOT configured. Run /admin → Rclone → Add Remote")
 
     try:
         if settings.WEBHOOK_URL:

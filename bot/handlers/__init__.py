@@ -58,6 +58,7 @@ from .admin import (
     handle_admin_forwards,
     handle_admin_shorteners,
     handle_add_shortener,
+    handle_edit_tutorial_link,
     stats_command,
     get_queue_stats,
 )

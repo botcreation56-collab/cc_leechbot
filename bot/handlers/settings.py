@@ -124,7 +124,25 @@ async def show_config_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             get_ch_name("storage", "storage_channel_id"),
         )
 
-        # FIX: 'current_settings' was never defined. Build it here from config.
+        # Check GDrive/Rclone status
+        gdrive_status = "❌ Not configured"
+        rclone_status = "❌ No remotes"
+        try:
+            from bot.database import get_rclone_configs
+
+            remotes = await get_rclone_configs()
+            if remotes:
+                rclone_status = f"✅ {len(remotes)} remote(s)"
+            try:
+                from bot.services import GDriveService
+
+                if await GDriveService.is_configured():
+                    gdrive_status = "✅ Configured"
+            except:
+                pass
+        except:
+            pass
+
         current_settings = (
             f"⚙️ **Bot Configuration**\n\n"
             f"🏢 Site: `{config.get('site_name', 'Not set')}`\n"
@@ -136,7 +154,10 @@ async def show_config_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📅 File Expiry: `{config.get('file_expiry_days', 7)} days`\n"
             f"📌 Log Channel: `{log_name}`\n"
             f"💾 Dump Channel: `{dump_name}`\n"
-            f"🗄️ Storage Channel: `{storage_name}`"
+            f"🗄️ Storage Channel: `{storage_name}`\n\n"
+            f"☁️ **Cloud Storage**\n"
+            f"GDrive: {gdrive_status}\n"
+            f"Rclone: {rclone_status}"
         )
 
         keyboard = InlineKeyboardMarkup(
@@ -203,7 +224,7 @@ async def show_config_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ],
                 [
                     InlineKeyboardButton(
-                        "☁️ GDrive (via Rclone)",
+                        "☁️ Cloud Storage Setup",
                         callback_data="admin_rclone",
                     )
                 ],
@@ -801,6 +822,40 @@ async def handle_config_edit_input(
                     context.bot,
                     update.effective_chat.id,
                     "❌ Failed to save shortener.",
+                    parse_mode="Markdown",
+                )
+
+            context.user_data.pop("awaiting", None)
+
+        elif state == "edit_tutorial_link":
+            tutorial_link = text.strip() if text.strip() else None
+
+            ok = await set_config({"shortener_tutorial_link": tutorial_link})
+            if ok:
+                if tutorial_link:
+                    await send_auto_delete_msg(
+                        context.bot,
+                        update.effective_chat.id,
+                        f"✅ **Tutorial Link Updated**\n\n`{tutorial_link}`",
+                        parse_mode="Markdown",
+                    )
+                else:
+                    await send_auto_delete_msg(
+                        context.bot,
+                        update.effective_chat.id,
+                        "✅ **Tutorial Link Removed**",
+                        parse_mode="Markdown",
+                    )
+                await log_admin_action(
+                    user_id,
+                    "updated_tutorial_link",
+                    {"tutorial_link": tutorial_link},
+                )
+            else:
+                await send_auto_delete_msg(
+                    context.bot,
+                    update.effective_chat.id,
+                    "❌ Failed to save tutorial link.",
                     parse_mode="Markdown",
                 )
 

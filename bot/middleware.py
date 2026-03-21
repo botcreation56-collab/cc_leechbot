@@ -48,11 +48,15 @@ def escape_md(text: str) -> str:
 # TTLCache: auto-evicts entries after 120 s — zero memory leak
 _ACTIVE_USERS: TTLCache = TTLCache(maxsize=10_000, ttl=120)
 
+# Per-action spam protection - tracks specific callback_data
+_ACTION_LOCKS: TTLCache = TTLCache(maxsize=50_000, ttl=60)
+
 
 def rate_limit(func: Callable) -> Callable:
     """
     Decorator to prevent users from spam-clicking buttons or sending rapid requests.
     Locks the user for max 120s while the current request is processing.
+    Also prevents duplicate clicks on the SAME button.
     """
 
     @wraps(func)
@@ -63,7 +67,27 @@ def rate_limit(func: Callable) -> Callable:
         user_id = update.effective_user.id
         now = time.time()
 
-        # Check cooldown — TTLCache auto-evicts after 120 s so no manual cleanup needed
+        # Get callback_data for per-action locking
+        callback_data = None
+        if update.callback_query and update.callback_query.data:
+            callback_data = update.callback_query.data
+
+        # Create unique action key: user_id + callback_data
+        action_key = f"{user_id}:{callback_data}" if callback_data else str(user_id)
+
+        # Check per-action lock FIRST (prevent same button spam)
+        if action_key in _ACTION_LOCKS:
+            logger.warning(f"⏳ Duplicate action blocked: {action_key}")
+            if update.callback_query:
+                try:
+                    await update.callback_query.answer(
+                        "⏳ Already processing...", show_alert=False
+                    )
+                except Exception:
+                    pass
+            return
+
+        # Check global cooldown
         if user_id in _ACTIVE_USERS:
             last_request_time = _ACTIVE_USERS[user_id]
             if now - last_request_time < 1.5:
@@ -77,14 +101,50 @@ def rate_limit(func: Callable) -> Callable:
                         logger.debug(f"Rate-limit answer skipped: {e}")
                 return
 
-        # Acquire lock — timestamp held for full duration of call
+        # Acquire locks
         _ACTIVE_USERS[user_id] = now
+        _ACTION_LOCKS[action_key] = now
+
         try:
             return await func(update, context)
         finally:
-            # Update timestamp on exit so cooldown starts from completion, not from start.
-            # This prevents rapid re-entry while the coroutine is still running.
+            # Release locks after completion
             _ACTIVE_USERS[user_id] = time.time()
+            # Remove action lock after a short delay to allow same action later
+            _ACTION_LOCKS.pop(action_key, None)
+
+    return wrapper
+
+
+def action_lock(func: Callable) -> Callable:
+    """
+    Decorator for critical actions - locks by callback_data ONLY.
+    Use for buttons that trigger long operations (bypass, upload, etc.)
+    """
+
+    @wraps(func)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Any:
+        if not update.callback_query or not update.callback_query.data:
+            return await func(update, context)
+
+        user_id = update.effective_user.id
+        callback_data = update.callback_query.data
+        action_key = f"{user_id}:{callback_data}"
+
+        if action_key in _ACTION_LOCKS:
+            try:
+                await update.callback_query.answer(
+                    "⏳ Processing in progress...", show_alert=True
+                )
+            except Exception:
+                pass
+            return
+
+        _ACTION_LOCKS[action_key] = time.time()
+        try:
+            return await func(update, context)
+        finally:
+            _ACTION_LOCKS.pop(action_key, None)
 
     return wrapper
 

@@ -633,13 +633,21 @@ async def rclone_service_callback(update: Update, context: ContextTypes.DEFAULT_
                     InlineKeyboardButton("🆓 Free", callback_data="rclone_plan_free"),
                     InlineKeyboardButton("💎 Pro", callback_data="rclone_plan_pro"),
                 ],
+                [
+                    InlineKeyboardButton(
+                        "🌐 For All (Free + Pro)", callback_data="rclone_plan_all"
+                    ),
+                ],
                 [InlineKeyboardButton("❌ Cancel", callback_data="admin_rclone")],
             ]
         )
         await query.message.edit_text(
             f"✅ Service selected: **{service.upper()}**\n\n"
             f"**Step 2 / 5 — Plan**\n\n"
-            "Choose which user plan this remote will serve:",
+            "Choose which user plan this remote will serve:\n"
+            "• Free = Free users only\n"
+            "• Pro = Pro users only\n"
+            "• For All = Both Free and Pro users",
             reply_markup=keyboard,
             parse_mode="Markdown",
         )

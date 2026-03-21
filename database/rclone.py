@@ -111,14 +111,24 @@ async def get_rclone_config(config_id: str = None) -> Optional[Dict[str, Any]]:
 
 
 async def pick_rclone_config_for_plan(plan: str) -> Optional[Dict[str, Any]]:
-    """Pick best rclone config for a plan (load balancing by current_users)."""
+    """Pick best rclone config for a plan (load balancing by current_users).
+
+    If plan is 'all', matches configs with plan='all', 'free', or the specific plan.
+    """
     try:
         db = get_db()
+
+        # Build query - "all" plan matches any plan, otherwise match exact plan
+        if plan == "all":
+            plan_query = {"$in": ["all", "free", plan]}
+        else:
+            plan_query = {"$in": ["all", plan]}
+
         configs = await (
             db.rclone_configs.find(
                 {
                     "is_active": True,
-                    "plan": plan,
+                    "plan": plan_query,
                     "$expr": {
                         "$lt": ["$current_users", {"$ifNull": ["$concurrency", 4]}]
                     },
@@ -129,7 +139,9 @@ async def pick_rclone_config_for_plan(plan: str) -> Optional[Dict[str, Any]]:
             .to_list(length=1)
         )
         if configs:
-            logger.info(f"✅ Selected rclone config: {configs[0].get('service')}")
+            logger.info(
+                f"✅ Selected rclone config: {configs[0].get('service')} (plan: {configs[0].get('plan')})"
+            )
             return configs[0]
         logger.warning(f"⚠️ No active rclone config for plan: {plan}")
         return None
