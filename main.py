@@ -879,13 +879,10 @@ async def cleanup_bot(application: Application, db_conn) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifespan with startup tasks."""
+    """Lifespan - startup runs before port binds."""
     global bot_application
 
-    # Run startup tasks (don't await - let them run in background)
-    import asyncio
-
-    asyncio.create_task(_startup_tasks(app))
+    await _startup_tasks(app)
 
     yield  # PORT BINDS HERE
 
@@ -895,20 +892,22 @@ async def lifespan(app: FastAPI):
 async def _startup_tasks(app: FastAPI):
     """Run ALL startup tasks after port is bound."""
     import asyncio
+    import traceback as tb
 
     logger.info("🚀 Running startup tasks...")
 
     try:
         validate_environment()
+        logger.info("✅ Environment validated")
     except Exception as e:
-        logger.warning(f"⚠️ Env: {e}")
+        logger.warning(f"⚠️ Env validation: {e}")
 
     try:
         deps = await build_dependency_graph()
         app.state.deps = deps
         logger.info("✅ Dependencies ready")
     except Exception as e:
-        logger.error(f"❌ Dependencies: {e}")
+        logger.error(f"❌ Dependencies failed: {e}\n{tb.format_exc()}")
         return
 
     try:
@@ -916,9 +915,9 @@ async def _startup_tasks(app: FastAPI):
         app.state.bot = bot_app.bot
         global bot_application
         bot_application = bot_app
-        logger.info("✅ Bot application built")
+        logger.info("✅ Bot application built and ready!")
     except Exception as e:
-        logger.error(f"❌ Bot app: {e}")
+        logger.error(f"❌ Bot app failed: {e}\n{tb.format_exc()}")
         return
 
     # Start background services (delayed to not block)
@@ -974,6 +973,8 @@ async def _startup_tasks(app: FastAPI):
 
     if has_gdrive:
         try:
+            from bot.services import GDriveService
+
             await GDriveService.setup_folders()
             logger.info("✅ GDrive ready")
         except Exception as e:
