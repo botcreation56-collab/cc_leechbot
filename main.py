@@ -876,16 +876,15 @@ async def cleanup_bot(application: Application, db_conn) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Ultra-minimal lifespan - port binds immediately."""
+    """Lifespan with startup tasks."""
     global bot_application
 
-    yield  # PORT BINDS IMMEDIATELY
-
-    # Start all tasks after port is bound
+    # Run startup tasks (don't await - let them run in background)
     import asyncio
 
     asyncio.create_task(_startup_tasks(app))
-    logger.info("✅ Startup tasks queued")
+
+    yield  # PORT BINDS HERE
 
     logger.info("🛑 FastAPI shutting down...")
 
