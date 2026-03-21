@@ -274,6 +274,12 @@ def get_settings() -> Settings:
         is_production = environment == "production"
 
         if is_production:
+            if not _settings.WEBHOOK_URL:
+                render_url = os.getenv("RENDER_EXTERNAL_URL")
+                if render_url:
+                    _settings.WEBHOOK_URL = render_url
+                    print(f"⚠️ WEBHOOK_URL auto-configured from Render: {render_url}")
+
             if not _settings.WEBHOOK_SECRET:
                 import secrets
                 _settings.WEBHOOK_SECRET = secrets.token_urlsafe(32).replace('_', '').replace('-', '')
