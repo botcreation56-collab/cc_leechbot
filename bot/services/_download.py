@@ -14,8 +14,13 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from config.constants import (
-    ARIA2C_PATH, YTDLP_PATH, ARIA2C_CONNECTIONS, ARIA2C_SPLITS,
-    DOWNLOAD_TIMEOUT, YTDLP_TIMEOUT, DOWNLOADS_DIR,
+    ARIA2C_PATH,
+    YTDLP_PATH,
+    ARIA2C_CONNECTIONS,
+    ARIA2C_SPLITS,
+    DOWNLOAD_TIMEOUT,
+    YTDLP_TIMEOUT,
+    DOWNLOADS_DIR,
 )
 
 logger = logging.getLogger("filebot.services.download")
@@ -23,6 +28,7 @@ logger = logging.getLogger("filebot.services.download")
 
 class DownloadError(Exception):
     """Download related errors."""
+
     pass
 
 
@@ -35,16 +41,29 @@ async def analyze_url_with_ytdlp(url: str) -> Optional[Dict[str, Any]]:
         Dict with {direct_url, filename, ext, filesize, duration, meta} or None if failed.
     """
     try:
+        from bot.utils.error_handler import validate_url
+
+        if not url or not isinstance(url, str):
+            raise DownloadError("Invalid URL provided")
+
+        # Validate URL for security
+        is_valid, msg = validate_url(url)
+        if not is_valid:
+            raise DownloadError(msg)
+
         if "youtube.com" in url.lower() or "youtu.be" in url.lower():
             raise DownloadError("YouTube downloads are strictly disabled per policy.")
 
         cmd = [
             YTDLP_PATH,
             "--dump-json",
-            "-f", "bestvideo+bestaudio/best",
+            "-f",
+            "bestvideo+bestaudio/best",
             "--no-warnings",
-            "--proxy", "",
-            "--max-downloads", "1",
+            "--proxy",
+            "",
+            "--max-downloads",
+            "1",
             "--",  # SECURITY: Stop option parsing before URL
             url,
         ]
@@ -89,7 +108,9 @@ async def analyze_url_with_ytdlp(url: str) -> Optional[Dict[str, Any]]:
             "meta": info,
         }
 
-        logger.info(f"✅ URL analyzed: {result_data['filename']} ({result_data['filesize']} bytes)")
+        logger.info(
+            f"✅ URL analyzed: {result_data['filename']} ({result_data['filesize']} bytes)"
+        )
         return result_data
 
     except asyncio.TimeoutError:
@@ -117,11 +138,27 @@ async def download_with_aria2c(
     Returns:
         Local file path or None if failed.
     """
+    from bot.utils.error_handler import validate_url, validate_filename
+
     try:
-        user_dir = DOWNLOADS_DIR / str(user_id)
+        # Validate URL
+        is_valid, msg = validate_url(url)
+        if not is_valid:
+            raise DownloadError(msg)
+
+        # Validate filename
+        is_valid, msg = validate_filename(filename)
+        if not is_valid:
+            raise DownloadError(f"Invalid filename: {msg}")
+
+        # Sanitize user_id
+        safe_user_id = str(user_id) if user_id else "unknown"
+
+        user_dir = DOWNLOADS_DIR / safe_user_id
         user_dir.mkdir(parents=True, exist_ok=True)
 
         from bot.utils import safe_path, check_disk_space
+
         dest_path = Path(safe_path(str(user_dir), filename))
 
         if not check_disk_space(str(DOWNLOADS_DIR), min_gb=1.0):
@@ -131,9 +168,12 @@ async def download_with_aria2c(
 
         cmd = [
             ARIA2C_PATH,
-            "-x", str(ARIA2C_CONNECTIONS),
-            "-s", str(ARIA2C_SPLITS),
-            "-k", "1M",
+            "-x",
+            str(ARIA2C_CONNECTIONS),
+            "-s",
+            str(ARIA2C_SPLITS),
+            "-k",
+            "1M",
             "--file-allocation=none",
             "--continue=true",
             "--allow-overwrite=true",
@@ -155,8 +195,13 @@ async def download_with_aria2c(
             async for line_bytes in process.stdout:
                 try:
                     # TOCTOU Mitigation: hard limit 10GB check dynamically during chunked downloads
-                    if dest_path.exists() and dest_path.stat().st_size > 10 * 1024 * 1024 * 1024:
-                        raise DownloadError("File exceeds maximum allowed system size limit (10GB)")
+                    if (
+                        dest_path.exists()
+                        and dest_path.stat().st_size > 10 * 1024 * 1024 * 1024
+                    ):
+                        raise DownloadError(
+                            "File exceeds maximum allowed system size limit (10GB)"
+                        )
 
                     line = line_bytes.decode(errors="ignore").strip()
                     if "MiB" in line or "GiB" in line:
@@ -166,7 +211,10 @@ async def download_with_aria2c(
                                 if len(paren_split) >= 2:
                                     percent_str = paren_split[1].split("%")[0].strip()
                                     progress = min(int(float(percent_str)), 100)
-                                if db and (progress - last_progress_update >= 5 or progress == 100):
+                                if db and (
+                                    progress - last_progress_update >= 5
+                                    or progress == 100
+                                ):
                                     await db.tasks.update_one(
                                         {"task_id": task_id},
                                         {"$set": {"progress": progress}},
@@ -197,7 +245,9 @@ async def download_with_aria2c(
                 try:
                     process.kill()
                     await process.wait()
-                    logger.warning("🧟 Killed orphaned aria2c zombie process successfully.")
+                    logger.warning(
+                        "🧟 Killed orphaned aria2c zombie process successfully."
+                    )
                 except Exception as e:
                     logger.error(f"Failed to kill aria2c zombie: {e}")
 
@@ -238,14 +288,18 @@ async def download_from_mega(
 
     # Pass credentials to subprocess if admin has them
     from bot.database import get_db
+
     mega_email = ""
     mega_password = ""
     from config.settings import get_admin_ids
+
     admin_ids = get_admin_ids()
     if user_id in admin_ids:
         try:
             db_inst = get_db()
-            mega_conf = await db_inst.rclone_configs.find_one({"user_id": user_id, "service": "mega"})
+            mega_conf = await db_inst.rclone_configs.find_one(
+                {"user_id": user_id, "service": "mega"}
+            )
             if mega_conf and "credentials" in mega_conf:
                 # Basic parsing of rclone conf format for mega: user = ... \n pass = ...
                 creds = mega_conf["credentials"]
@@ -260,11 +314,15 @@ async def download_from_mega(
                             # Using python's subprocess since this is a quick synchronous-like operation
                             # but we do it async so we don't block.
                             reveal_proc = await asyncio.create_subprocess_exec(
-                                "rclone", "reveal", mega_password,
+                                "rclone",
+                                "reveal",
+                                mega_password,
                                 stdout=asyncio.subprocess.PIPE,
-                                stderr=asyncio.subprocess.PIPE
+                                stderr=asyncio.subprocess.PIPE,
                             )
-                            stdout, _ = await asyncio.wait_for(reveal_proc.communicate(), timeout=5.0)
+                            stdout, _ = await asyncio.wait_for(
+                                reveal_proc.communicate(), timeout=5.0
+                            )
                             if reveal_proc.returncode == 0:
                                 mega_password = stdout.decode().strip()
                         except Exception as e:
@@ -292,33 +350,37 @@ except Exception as e:
     print(str(e), file=sys.stderr)
     raise
 '''
-    
+
     env = os.environ.copy()
     if mega_email and mega_password:
         env["MEGA_EMAIL"] = mega_email
         env["MEGA_PASSWORD"] = mega_password
 
     process = await asyncio.create_subprocess_exec(
-        "python", "-c", script,
+        "python",
+        "-c",
+        script,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
-        env=env
+        env=env,
     )
 
     try:
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=DOWNLOAD_TIMEOUT)
-        
+        stdout, stderr = await asyncio.wait_for(
+            process.communicate(), timeout=DOWNLOAD_TIMEOUT
+        )
+
         if process.returncode != 0:
-            error_msg = stderr.decode('utf-8', errors='ignore').strip()
+            error_msg = stderr.decode("utf-8", errors="ignore").strip()
             logger.error(f"❌ Mega download error: {error_msg}")
             raise DownloadError(f"Mega download failed: {error_msg[:100]}")
-            
-        stdout_str = stdout.decode('utf-8', errors='ignore')
+
+        stdout_str = stdout.decode("utf-8", errors="ignore")
         downloaded_file = None
         for line in stdout_str.splitlines():
             if line.startswith("MEGA_FILE_PATH="):
                 downloaded_file = line.split("=", 1)[1].strip()
-                
+
     except asyncio.TimeoutError:
         logger.error("❌ Mega download timed out after %ss", DOWNLOAD_TIMEOUT)
         try:
@@ -327,10 +389,12 @@ except Exception as e:
             logger.warning("🧟 Killed orphaned Mega worker process successfully.")
         except Exception as e:
             logger.error(f"Failed to kill Mega zombie: {e}")
-            
+
         try:
             for f in user_dir.iterdir():
-                if f.is_file() and f.stat().st_mtime > (asyncio.get_event_loop().time() - DOWNLOAD_TIMEOUT - 60):
+                if f.is_file() and f.stat().st_mtime > (
+                    asyncio.get_event_loop().time() - DOWNLOAD_TIMEOUT - 60
+                ):
                     f.unlink(missing_ok=True)
         except Exception:
             pass
@@ -349,6 +413,7 @@ except Exception as e:
 
     try:
         from bot.utils import sanitize_filename
+
         original_path = Path(downloaded_file)
         display_filename = sanitize_filename(original_path.name)
         ext = original_path.suffix or ".bin"
@@ -357,7 +422,9 @@ except Exception as e:
         original_path.rename(dest_path)
         file_size = dest_path.stat().st_size
 
-        logger.info(f"✅ Mega Download complete: {display_filename} ({file_size} bytes)")
+        logger.info(
+            f"✅ Mega Download complete: {display_filename} ({file_size} bytes)"
+        )
 
         if db:
             await db.tasks.update_one(
@@ -387,8 +454,15 @@ async def download_from_url(
     """
     Main download function: analyze + download.
     Includes retry logic (3 attempts) with partial-file cleanup on failure.
-    Uses UUID for internal filename (S001).
+    Uses UUID for internal filename.
     """
+    from bot.utils.error_handler import validate_url, validate_filename
+
+    # Validate URL first
+    is_valid, msg = validate_url(url)
+    if not is_valid:
+        raise DownloadError(msg)
+
     last_error = None
 
     if "mega.nz" in url.lower():
@@ -408,22 +482,29 @@ async def download_from_url(
     if not analysis:
         raise DownloadError(f"URL analysis failed after 3 attempts: {last_error}")
 
-    direct_url = analysis["direct_url"]
+    direct_url = analysis.get("direct_url")
+    if not direct_url:
+        raise DownloadError("No download URL found from analysis")
 
     from bot.utils import sanitize_filename, check_disk_space, safe_path
+
     raw_name = analysis.get("filename", "video.mp4")
     display_filename = sanitize_filename(raw_name)
 
+    # Validate filename
+    is_valid, msg = validate_filename(display_filename)
+    if not is_valid:
+        display_filename = "download.mp4"
+
     ext = analysis.get("ext", "mp4")
+    # Sanitize extension
+    ext = re.sub(r"[^a-zA-Z0-9]", "", ext) or "mp4"
     internal_filename = f"{uuid.uuid4()}.{ext}"
 
-    size = analysis.get("filesize", 0)
+    size = analysis.get("filesize", 0) or 0
     MAX_SIZE = 2 * 1024 * 1024 * 1024  # 2GB
     if size > MAX_SIZE:
         raise DownloadError(f"File too large ({size / (1024**3):.2f}GB). Max 2GB.")
-
-    if not direct_url:
-        raise DownloadError("No download URL found")
 
     file_path = None
     for attempt in range(3):
@@ -432,20 +513,23 @@ async def download_from_url(
             file_path = await download_with_aria2c(
                 direct_url, internal_filename, user_id, task_id, db
             )
-            if file_path:
+            if file_path and os.path.exists(file_path):
                 break
         except Exception as e:
             last_error = e
             logger.warning(f"⚠️ Download attempt {attempt + 1}/3 failed: {e}")
             # P2 FIX: Remove partial file and aria2c control file before retrying
-            for stale in [potential_path, potential_path.with_suffix(potential_path.suffix + ".aria2")]:
+            for stale in [
+                potential_path,
+                potential_path.with_suffix(potential_path.suffix + ".aria2"),
+            ]:
                 try:
                     stale.unlink(missing_ok=True)
                 except Exception:
                     pass
             await asyncio.sleep(2 * (attempt + 1))
 
-    if not file_path:
+    if not file_path or not os.path.exists(file_path):
         raise DownloadError(f"Download failed after 3 attempts: {last_error}")
 
     file_size = Path(file_path).stat().st_size if file_path else 0
@@ -454,15 +538,17 @@ async def download_from_url(
         "file_path": file_path,
         "filename": display_filename,
         "filesize": file_size,
-        "duration": analysis.get("duration", 0),
-        "meta": analysis.get("meta", {}),
+        "duration": analysis.get("duration", 0) or 0,
+        "meta": analysis.get("meta", {}) or {},
     }
 
 
 async def cleanup_old_downloads(older_than_hours: int = 24):
     """Clean up temporary download files older than X hours (non-blocking)."""
+
     def _sync_cleanup():
         import time
+
         cutoff_time = time.time() - (older_than_hours * 3600)
         deleted_count = 0
         for user_dir in DOWNLOADS_DIR.iterdir():

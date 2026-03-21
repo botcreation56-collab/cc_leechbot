@@ -805,29 +805,48 @@ async def upload_and_send_file(
                         )
                 else:
                     delivery_method = "Bot API Direct"
-                    for attempt in range(3):
-                        try:
-                            with open(part_path, "rb") as f:
-                                dump_message = await bot.send_document(
-                                    chat_id=dump_channel_id,
-                                    document=f,
-                                    caption=f"User: {user_id}\nFile: {Path(part_path).name}\nSize: {part_size_mb:.1f} MB",
-                                    file_name=Path(part_path).name,
-                                    read_timeout=60,
-                                    write_timeout=60,
-                                    connect_timeout=60,
+                    part_count = len(files_to_send)
+                    for idx, part_path in enumerate(files_to_send):
+                        # Update progress for multi-part uploads
+                        if task_id and part_count > 1:
+                            try:
+                                from bot.handlers.user import send_progress_message
+
+                                upload_progress = int(80 + (15 * idx / part_count))
+                                await send_progress_message(
+                                    bot=bot,
+                                    user_id=user_id,
+                                    task_id=task_id,
+                                    filesize=file_size_bytes,
+                                    stage="upload",
+                                    progress=upload_progress,
                                 )
-                            telegram_file_id = (
-                                dump_message.document.file_id
-                                if hasattr(dump_message, "document")
-                                else dump_message.video.file_id
-                            )
-                            dump_msg_id = dump_message.message_id
-                            break
-                        except Exception as e:
-                            if attempt == 2:
-                                raise e
-                            await asyncio.sleep(2)
+                            except Exception:
+                                pass
+
+                        for attempt in range(3):
+                            try:
+                                with open(part_path, "rb") as f:
+                                    dump_message = await bot.send_document(
+                                        chat_id=dump_channel_id,
+                                        document=f,
+                                        caption=f"User: {user_id}\nFile: {Path(part_path).name}\nSize: {part_size_mb:.1f} MB",
+                                        file_name=Path(part_path).name,
+                                        read_timeout=60,
+                                        write_timeout=60,
+                                        connect_timeout=60,
+                                    )
+                                telegram_file_id = (
+                                    dump_message.document.file_id
+                                    if hasattr(dump_message, "document")
+                                    else dump_message.video.file_id
+                                )
+                                dump_msg_id = dump_message.message_id
+                                break
+                            except Exception as e:
+                                if attempt == 2:
+                                    raise e
+                                await asyncio.sleep(2)
         except Exception as e:
             logger.warning(f"⚠️ Dump upload failed: {e}")
 
@@ -878,6 +897,22 @@ async def upload_and_send_file(
         if dump_channel_id and dump_msg_id
         else None
     )
+
+    # Send final progress update (100% complete) if this is a processing task
+    if task_id:
+        try:
+            from bot.handlers.user import send_progress_message
+
+            await send_progress_message(
+                bot=bot,
+                user_id=user_id,
+                task_id=task_id,
+                filesize=file_size_bytes,
+                stage="complete",
+                progress=100,
+            )
+        except Exception as e:
+            logger.warning(f"Could not send complete progress: {e}")
 
     logger.info(
         f"Upload + delivery complete for {user_id} ({file_size_mb:.1f}MB) | Via: {delivery_method}"

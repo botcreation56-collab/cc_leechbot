@@ -14,9 +14,11 @@ logger = logging.getLogger(__name__)
 app: Optional[Client] = None
 user_app: Optional[Client] = None
 
+
 def get_pyrogram_apps():
     """Returns the (bot_app, user_app) instances"""
     return app, user_app
+
 
 async def init_pyrogram():
     """Starts the pyrogram clients"""
@@ -49,17 +51,20 @@ async def init_pyrogram():
                 "filebot_user",
                 api_id=api_id,
                 api_hash=api_hash,
-                session_string=user_session
+                session_string=user_session,
             )
             await user_app.start()
             logger.info("✅ Pyrogram Userbot Client Started (Premium Uploads Enabled)")
         else:
-            logger.info("ℹ️ No USERBOT_SESSION found. Files > 2GB will be bounced to Rclone.")
+            logger.info(
+                "ℹ️ No USERBOT_SESSION found. Files > 2GB will be bounced to Rclone."
+            )
 
         return True
     except Exception as e:
         logger.error(f"❌ Failed to start Pyrogram: {e}")
         return False
+
 
 async def stop_pyrogram():
     global app, user_app
@@ -69,6 +74,7 @@ async def stop_pyrogram():
         await user_app.stop()
     logger.info("🛑 Pyrogram clients stopped")
 
+
 async def upload_file_pyrogram(
     file_path: str,
     chat_id: int,
@@ -76,12 +82,12 @@ async def upload_file_pyrogram(
     ptb_bot: Any,
     user_id: int,
     task_id: str,
-    thumb_path: str = None
+    thumb_path: str = None,
 ) -> Optional[Message]:
     """Upload large files using Pyrogram Userbot"""
     global user_app, app
     path = Path(file_path)
-    
+
     if not path.exists():
         logger.error(f"File not found: {file_path}")
         return None
@@ -101,15 +107,16 @@ async def upload_file_pyrogram(
         client_to_use = user_app if user_app else app
 
     if not client_to_use:
-         logger.error("No suitable Pyrogram client available for upload.")
-         return None
+        logger.error("No suitable Pyrogram client available for upload.")
+        return None
 
     last_update_time = [time.time()]
 
     async def pyrogram_progress(current, total):
         from bot.handlers.user import send_progress_message
+
         now = time.time()
-        
+
         # Throttle updates to exactly 5 seconds OR 100% completion
         if now - last_update_time[0] >= 5.0 or current >= total:
             last_update_time[0] = now
@@ -120,14 +127,16 @@ async def upload_file_pyrogram(
                     user_id=user_id,
                     task_id=task_id,
                     filesize=total,
-                    stage="📤 **Uploading via Telegram...**",
-                    progress=progress_pct
+                    stage="upload",
+                    progress=progress_pct,
                 )
             )
 
     try:
-        logger.info(f"Uploading {path.name} ({file_size/1024/1024:.2f} MB) via Pyrogram")
-        
+        logger.info(
+            f"Uploading {path.name} ({file_size / 1024 / 1024:.2f} MB) via Pyrogram"
+        )
+
         # Decide if video or document (video based on extension)
         ext = path.suffix.lower()
         if ext in [".mp4", ".mkv", ".avi", ".mov"]:
@@ -136,7 +145,7 @@ async def upload_file_pyrogram(
                 video=file_path,
                 caption=caption,
                 thumb=thumb_path if thumb_path else None,
-                progress=pyrogram_progress
+                progress=pyrogram_progress,
             )
         else:
             msg = await client_to_use.send_document(
@@ -144,9 +153,9 @@ async def upload_file_pyrogram(
                 document=file_path,
                 caption=caption,
                 thumb=thumb_path if thumb_path else None,
-                progress=pyrogram_progress
+                progress=pyrogram_progress,
             )
-            
+
         logger.info(f"✅ Pyrogram upload successful: {path.name}")
         return msg
 

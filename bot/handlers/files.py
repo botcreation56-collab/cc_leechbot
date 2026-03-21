@@ -1504,6 +1504,12 @@ class WizardHandler:
     ):
         """Core processing logic decoupled from UI callbacks, runnable by QueueWorker."""
         task_id = session.get("task_id")
+        from bot.utils.error_handler import (
+            handle_processing_error,
+            get_user_error_message,
+            notify_admin,
+        )
+
         logger.info(
             f"process_session_background: STARTING task_id={task_id}, user_id={user_id}"
         )
@@ -1519,34 +1525,41 @@ class WizardHandler:
             )
 
             # Vanish old storage message first
-            user = await get_user(user_id)
-            old_msg_id = user.get("storage_msg_id") if user else None
-            if old_msg_id:
-                storage_channel = await get_channel_id("storage") or (
-                    await get_config()
-                ).get("storage_channel_id")
-                if storage_channel:
-                    try:
-                        await bot.delete_message(
-                            chat_id=storage_channel, message_id=old_msg_id
-                        )
-                        logger.info(f"Vanished old storage message {old_msg_id}")
-                    except:
-                        pass
+            try:
+                user = await get_user(user_id)
+                old_msg_id = user.get("storage_msg_id") if user else None
+                if old_msg_id:
+                    storage_channel = await get_channel_id("storage") or (
+                        await get_config()
+                    ).get("storage_channel_id")
+                    if storage_channel:
+                        try:
+                            await bot.delete_message(
+                                chat_id=storage_channel, message_id=old_msg_id
+                            )
+                            logger.info(f"Vanished old storage message {old_msg_id}")
+                        except Exception as e:
+                            logger.debug(f"Could not delete old storage message: {e}")
+            except Exception as e:
+                logger.warning(f"Error getting user/storage info: {e}")
 
             # Post new ledger message
-            ledger_msg_id = await create_or_update_storage_message(
-                bot,
-                {
-                    "filename": custom_name,
-                    "status": "🏗️ Processing (Wizard)...",
-                    "size": session.get("file_size", 0),
-                },
-                user_id=user_id,
-            )
-            logger.info(
-                f"process_session_background: Storage message done, ledger_id={ledger_msg_id}"
-            )
+            try:
+                ledger_msg_id = await create_or_update_storage_message(
+                    bot,
+                    {
+                        "filename": custom_name,
+                        "status": "🏗️ Processing (Wizard)...",
+                        "size": session.get("file_size", 0),
+                    },
+                    user_id=user_id,
+                )
+                logger.info(
+                    f"process_session_background: Storage message done, ledger_id={ledger_msg_id}"
+                )
+            except Exception as e:
+                logger.warning(f"Could not create storage message: {e}")
+                ledger_msg_id = None
 
             # --- PROGRESS BAR FIX ---
             # Register message ID and send initial progress (0%) immediately
@@ -1558,27 +1571,35 @@ class WizardHandler:
             if query:
                 try:
                     await query.answer()
-                except:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Could not answer query: {e}")
                 task_info["user_progress_msg_id"] = query.message.message_id
             else:
                 # If no query (automatic background process), send a new status message
-                initial_msg = await bot.send_message(
-                    user_id, "🚀 **Initializing Processing...**", parse_mode="Markdown"
-                )
-                task_info["user_progress_msg_id"] = initial_msg.message_id
+                try:
+                    initial_msg = await bot.send_message(
+                        user_id,
+                        "🚀 **Initializing Processing...**",
+                        parse_mode="Markdown",
+                    )
+                    task_info["user_progress_msg_id"] = initial_msg.message_id
+                except Exception as e:
+                    logger.warning(f"Could not send initial message: {e}")
 
             # Show early progress bar (0% / Initializing)
             from bot.handlers.user import send_progress_message
 
-            await send_progress_message(
-                bot,
-                user_id,
-                task_id,
-                filesize=session.get("file_size", 0),
-                stage="init",
-                progress=0,
-            )
+            try:
+                await send_progress_message(
+                    bot,
+                    user_id,
+                    task_id,
+                    filesize=session.get("file_size", 0),
+                    stage="init",
+                    progress=0,
+                )
+            except Exception as e:
+                logger.warning(f"Could not send progress message: {e}")
 
             # --- JIT DOWNLOAD IF DEFERRED ---
             if not session.get("file_path"):
@@ -1597,49 +1618,66 @@ class WizardHandler:
                     raise RuntimeError("Missing file reference. Task failed.")
 
                 # Update stage to downloading
-                await send_progress_message(
-                    bot,
-                    user_id,
-                    task_id,
-                    filesize=session.get("file_size", 0),
-                    stage="download",
-                    progress=5,
-                )
+                try:
+                    await send_progress_message(
+                        bot,
+                        user_id,
+                        task_id,
+                        filesize=session.get("file_size", 0),
+                        stage="download",
+                        progress=5,
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not update progress: {e}")
 
-                file_obj = await bot.get_file(file_id)
-                file_path = await file_obj.download_to_drive(custom_path=internal_path)
-                session["file_path"] = str(file_path)
+                try:
+                    file_obj = await bot.get_file(file_id)
+                    file_path = await file_obj.download_to_drive(
+                        custom_path=internal_path
+                    )
+                    session["file_path"] = str(file_path)
+                except Exception as e:
+                    logger.error(f"Download failed: {e}")
+                    raise RuntimeError("Failed to download file from Telegram.")
 
                 # Update stage to analyzing
-                await send_progress_message(
-                    bot,
-                    user_id,
-                    task_id,
-                    filesize=session.get("file_size", 0),
-                    stage="probe",
-                    progress=20,
-                )
+                try:
+                    await send_progress_message(
+                        bot,
+                        user_id,
+                        task_id,
+                        filesize=session.get("file_size", 0),
+                        stage="probe",
+                        progress=20,
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not update progress: {e}")
 
             # 2. Get Selections
             audio_indices = [
                 idx
                 for idx, selected in session.get("selected_audio", {}).items()
-                if selected
+                if selected and isinstance(idx, int)
             ]
             sub_indices = [
                 idx
                 for idx, selected in session.get("selected_subs", {}).items()
-                if selected
+                if selected and isinstance(idx, int)
             ]
 
             # 3. Handle Renaming / Output Path
             from pathlib import Path
 
-            input_path = session["file_path"]
-            original_ext = Path(input_path).suffix
+            input_path = session.get("file_path")
+            if not input_path:
+                raise RuntimeError("File path not available for processing.")
 
-            custom_name = session.get("rename") or session.get("original_name")
-            if not custom_name.endswith(original_ext):
+            original_ext = Path(input_path).suffix or ""
+
+            custom_name = (
+                session.get("rename") or session.get("original_name") or "file"
+            )
+            if original_ext and not custom_name.endswith(original_ext):
                 custom_name += original_ext
 
             from config.constants import DOWNLOADS_DIR
@@ -1658,59 +1696,62 @@ class WizardHandler:
 
             # ALWAYS edit the message we registered, never send a new one if we have a msg_id
             target_msg_id = task_info.get("user_progress_msg_id")
-            if target_msg_id:
-                try:
+            try:
+                if target_msg_id:
                     await bot.edit_message_text(
                         chat_id=user_id,
                         message_id=target_msg_id,
                         text=msg_text,
                         parse_mode="Markdown",
                     )
-                except:
+                else:
                     await bot.send_message(user_id, msg_text, parse_mode="Markdown")
-            else:
-                await bot.send_message(user_id, msg_text, parse_mode="Markdown")
+            except Exception as e:
+                logger.warning(f"Could not update processing message: {e}")
 
             logger.info(
                 f"process_session_background: {task_id} - Calling FFmpegService.process_media"
             )
 
             # Progress Tracking Setup
+            duration = 0.0
             try:
                 probe_data = await FFmpegService.probe_file(input_path)
-                duration = probe_data.get("duration", 0.0)
-            except:
-                duration = 0.0
+                duration = probe_data.get("duration", 0.0) or 0.0
+            except Exception as e:
+                logger.warning(f"Probe failed, continuing without duration: {e}")
 
             file_size = session.get("file_size", 0)
             import re, time, asyncio
-            from bot.handlers.user import send_progress_message
 
             time_regex = re.compile(r"time=(\d+):(\d+):(\d+\.\d+)")
             last_update = [time.time()]
             start_time = time.time()
 
             def ffmpeg_progress(line):
-                match = time_regex.search(line)
-                if match and duration > 0:
-                    h, m, s = map(float, match.groups())
-                    current_sec = h * 3600 + m * 60 + s
-                    progress = min(int((current_sec / duration) * 100), 100)
+                try:
+                    match = time_regex.search(line)
+                    if match and duration > 0:
+                        h, m, s = map(float, match.groups())
+                        current_sec = h * 3600 + m * 60 + s
+                        progress = min(int((current_sec / duration) * 100), 100)
 
-                    now = time.time()
-                    if now - last_update[0] > 3 or progress >= 100:
-                        last_update[0] = now
-                        asyncio.create_task(
-                            send_progress_message(
-                                bot=bot,
-                                user_id=user_id,
-                                task_id=task_id,
-                                filesize=file_size,
-                                stage="ffmpeg",
-                                progress=progress,
-                                start_time=start_time,
+                        now = time.time()
+                        if now - last_update[0] > 3 or progress >= 100:
+                            last_update[0] = now
+                            asyncio.create_task(
+                                send_progress_message(
+                                    bot=bot,
+                                    user_id=user_id,
+                                    task_id=task_id,
+                                    filesize=file_size,
+                                    stage="ffmpeg",
+                                    progress=progress,
+                                    start_time=start_time,
+                                )
                             )
-                        )
+                except Exception as e:
+                    logger.debug(f"Progress callback error: {e}")
 
             success = await FFmpegService.process_media(
                 input_path=input_path,
@@ -1731,20 +1772,25 @@ class WizardHandler:
             )
 
             if not success:
-                raise RuntimeError("Media processing failed.")
+                raise RuntimeError(
+                    "Media processing failed. The file could not be processed."
+                )
 
             # 5. Upload and Send
             logger.info(f"process_session_background: {task_id} - Uploading file")
 
             # Update stage to uploading
-            await send_progress_message(
-                bot,
-                user_id,
-                task_id,
-                filesize=session.get("file_size", 0),
-                stage="upload",
-                progress=80,
-            )
+            try:
+                await send_progress_message(
+                    bot,
+                    user_id,
+                    task_id,
+                    filesize=session.get("file_size", 0),
+                    stage="upload",
+                    progress=80,
+                )
+            except Exception as e:
+                logger.warning(f"Could not update upload progress: {e}")
 
             from bot.database import get_user, get_config
             from bot.services import upload_and_send_file
@@ -1862,6 +1908,19 @@ class WizardHandler:
             # 7. Cleanup
             Path(input_path).unlink(missing_ok=True)
             Path(output_path).unlink(missing_ok=True)
+
+            # 8. Send final progress update (100% complete)
+            try:
+                await send_progress_message(
+                    bot,
+                    user_id,
+                    task_id,
+                    filesize=session.get("file_size", 0),
+                    stage="complete",
+                    progress=100,
+                )
+            except Exception as e:
+                logger.warning(f"Could not send complete progress: {e}")
 
             logger.info(f"✅ Wizard flow complete for user {user_id}: {custom_name}")
 
@@ -1986,16 +2045,45 @@ class WizardHandler:
 
         except Exception as e:
             logger.error(f"❌ execute_processing_flow error: {e}", exc_info=True)
+
+            from bot.utils.error_handler import (
+                handle_processing_error,
+                get_user_error_message,
+            )
+
+            # Notify admin with technical details
+            try:
+                from config.settings import get_admin_ids
+
+                admin_ids = get_admin_ids()
+                error_msg = str(e)
+                for admin_id in admin_ids:
+                    try:
+                        await context.bot.send_message(
+                            chat_id=admin_id,
+                            text=f"🚨 **Processing Error**\n\n"
+                            f"**User:** `{user_id}`\n"
+                            f"**Task:** `{task_id}`\n"
+                            f"**Error:** `{error_msg[:200]}`",
+                            parse_mode="Markdown",
+                        )
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+            # Send user-friendly message
+            user_msg = get_user_error_message(e)
             try:
                 await query.edit_message_text(
-                    f"❌ **Processing Failed**\n\nError: `{str(e)[:150]}`",
+                    f"❌ {user_msg}",
                     parse_mode="Markdown",
                 )
             except Exception:
                 try:
                     await context.bot.send_message(
                         chat_id=user_id,
-                        text=f"❌ **Processing Failed**\n\nError: `{str(e)[:150]}`",
+                        text=f"❌ {user_msg}",
                         parse_mode="Markdown",
                     )
                 except Exception:
@@ -2031,6 +2119,7 @@ async def execute_processing_flow_by_task(bot, task: dict) -> None:
             get_config as _get_config,
             update_task as _update_task,
         )
+        from bot.handlers.user import send_progress_message
 
         user = await _get_user(user_id)
         config = await _get_config()
@@ -2040,6 +2129,19 @@ async def execute_processing_flow_by_task(bot, task: dict) -> None:
             await _update_task(task_id, {"status": "failed", "error": "User not found"})
             return
 
+        # Send initial progress
+        try:
+            await send_progress_message(
+                bot=bot,
+                user_id=user_id,
+                task_id=task_id,
+                filesize=task.get("file_size", 0),
+                stage="init",
+                progress=0,
+            )
+        except Exception:
+            pass
+
         # Determine what to process
         task_url = task.get("url") or task.get("metadata", {}).get("url")
         task_file_id = task.get("file_id")
@@ -2047,6 +2149,19 @@ async def execute_processing_flow_by_task(bot, task: dict) -> None:
         if task_url:
             # URL download task — use downloader service
             from bot.services import download_from_url
+
+            # Update progress to downloading stage
+            try:
+                await send_progress_message(
+                    bot=bot,
+                    user_id=user_id,
+                    task_id=task_id,
+                    filesize=task.get("file_size", 0),
+                    stage="download",
+                    progress=5,
+                )
+            except Exception:
+                pass
 
             db = get_db()
             download_result = await download_from_url(
@@ -2061,11 +2176,37 @@ async def execute_processing_flow_by_task(bot, task: dict) -> None:
             file_path = download_result["file_path"]
             display_name = download_result.get("filename", "download")
 
+            # Update progress after download
+            try:
+                await send_progress_message(
+                    bot=bot,
+                    user_id=user_id,
+                    task_id=task_id,
+                    filesize=task.get("file_size", 0),
+                    stage="probe",
+                    progress=20,
+                )
+            except Exception:
+                pass
+
         elif task_file_id:
             # Telegram file — download to disk first
             import uuid
             from pathlib import Path as _Path
             from config.constants import DOWNLOADS_DIR
+
+            # Update progress to downloading stage
+            try:
+                await send_progress_message(
+                    bot=bot,
+                    user_id=user_id,
+                    task_id=task_id,
+                    filesize=task.get("file_size", 0),
+                    stage="download",
+                    progress=5,
+                )
+            except Exception:
+                pass
 
             tg_file = await bot.get_file(task_file_id)
             ext = _Path(task.get("filename", "file")).suffix or ".tmp"
@@ -2173,4 +2314,50 @@ async def execute_processing_flow_by_task(bot, task: dict) -> None:
             f"❌ execute_processing_flow_by_task failed for {task_id}: {e}",
             exc_info=True,
         )
-        raise
+
+        from bot.utils.error_handler import get_user_error_message, notify_admin
+        from bot.database import fail_task
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+        # Notify admin with technical details
+        await notify_admin(
+            bot=bot,
+            error=e,
+            context={"task_type": task.get("task_type"), "source": "queue_worker"},
+            user_id=user_id,
+            task_id=task_id,
+            phase="background_processing",
+        )
+
+        # Mark task as failed
+        try:
+            await fail_task(task_id, str(e)[:100])
+        except Exception:
+            pass
+
+        # Send user-friendly message
+        user_msg = get_user_error_message(e)
+        try:
+            keyboard = InlineKeyboardMarkup(
+                [
+                    [InlineKeyboardButton("🔄 Try Again", callback_data="retry_last")],
+                    [InlineKeyboardButton("📞 Support", callback_data="us_support")],
+                ]
+            )
+            await bot.send_message(
+                chat_id=user_id,
+                text=f"❌ {user_msg}\n\nTask ID: `{task_id}`",
+                reply_markup=keyboard,
+                parse_mode="Markdown",
+            )
+        except Exception:
+            pass
+
+        # Cleanup temp file if it exists
+        try:
+            if "file_path" in locals() and file_path:
+                from pathlib import Path
+
+                Path(file_path).unlink(missing_ok=True)
+        except Exception:
+            pass

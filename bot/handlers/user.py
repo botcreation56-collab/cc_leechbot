@@ -451,9 +451,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             handle_us_dest_remove_confirm,
             handle_us_dest_remove_do,
             handle_us_dest_caption_builder,
-            handle_us_dest_cap_filename,
-            handle_us_dest_cap_filesize,
-            handle_us_dest_cap_url_label,
+            handle_us_dest_cap_edit,
+            handle_us_dest_cap_stream_btn,
             handle_us_dest_cap_style,
             handle_us_dest_cap_reset,
             handle_us_dest_buttons,
@@ -754,12 +753,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await handle_us_dest_download_link_choice(update, context)
             elif data.startswith("us_dest_caption_builder_"):
                 await handle_us_dest_caption_builder(update, context)
-            elif data.startswith("us_dest_cap_filename_"):
-                await handle_us_dest_cap_filename(update, context)
-            elif data.startswith("us_dest_cap_filesize_"):
-                await handle_us_dest_cap_filesize(update, context)
-            elif data.startswith("us_dest_cap_url_label_"):
-                await handle_us_dest_cap_url_label(update, context)
+            elif data.startswith("us_dest_cap_edit_"):
+                await handle_us_dest_cap_edit(update, context)
+            elif data.startswith("us_dest_cap_stream_btn_"):
+                await handle_us_dest_cap_stream_btn(update, context)
             elif data.startswith("us_dest_cap_style_"):
                 await handle_us_dest_cap_style(update, context)
             elif data.startswith("us_dest_cap_reset_"):
@@ -1016,10 +1013,10 @@ async def handle_us_dest_manage(update: Update, context: ContextTypes.DEFAULT_TY
         download_link_text = dest_metadata.get("download_link_text", "Stream URL")
         caption_footer = dest_metadata.get("caption_footer", "")
 
-        cap_filename_label = dest_metadata.get("cap_filename_label", "File name")
-        cap_filesize_label = dest_metadata.get("cap_filesize_label", "File size")
-        cap_url_label = dest_metadata.get("cap_url_label", "Stream URL")
+        cap_caption = dest_metadata.get("cap_caption", "")
         cap_style = dest_metadata.get("cap_style", "none")
+        use_stream_button = dest_metadata.get("use_stream_button", False)
+        stream_button_text = dest_metadata.get("stream_button_text", "Watch Online")
 
         user_plan = user.get("plan", "free")
         plans_config = await get_config("plans") or {}
@@ -1036,32 +1033,26 @@ async def handle_us_dest_manage(update: Update, context: ContextTypes.DEFAULT_TY
         else:
             download_status = "❌ URL Shortener: OFF"
 
+        default_caption = "{file_name}\n{file_size}"
+        display_caption = cap_caption if cap_caption else default_caption
+
         cap_preview_lines = []
         if cap_style == "bold":
-            cap_preview_lines.append(f"<b>{cap_filename_label}: Test Video.mp4</b>")
+            cap_preview_lines.append(f"<b>{display_caption}</b>")
         elif cap_style == "italic":
-            cap_preview_lines.append(f"<i>{cap_filename_label}: Test Video.mp4</i>")
+            cap_preview_lines.append(f"<i>{display_caption}</i>")
         elif cap_style == "bolditalic":
-            cap_preview_lines.append(
-                f"<b><i>{cap_filename_label}: Test Video.mp4</i></b>"
-            )
+            cap_preview_lines.append(f"<b><i>{display_caption}</i></b>")
         else:
-            cap_preview_lines.append(f"{cap_filename_label}: Test Video.mp4")
-
-        cap_preview_lines.append(f"{cap_filesize_label}: 1.2 GB")
-        if use_shortener:
-            cap_preview_lines.append(f"{cap_url_label}: https://link.com/abc")
+            cap_preview_lines.append(display_caption)
 
         if caption_footer:
             cap_preview_lines.append(f"\n{caption_footer}")
 
         cap_preview = "\n".join(cap_preview_lines)
 
-        caption_status = (
-            f"📋 Footer: {caption_footer[:15]}..."
-            if caption_footer
-            else "📋 Footer: None"
-        )
+        caption_status = "📝 Caption: Custom" if cap_caption else "📝 Caption: Default"
+        stream_btn_status = "🔗 Stream: ON" if use_stream_button else ""
 
         keyboard = InlineKeyboardMarkup(
             [
@@ -1306,39 +1297,28 @@ async def handle_us_dest_meta_input(update: Update, context: ContextTypes.DEFAUL
                 parse_mode="Markdown",
             )
 
-        elif awaiting.startswith("us_dest_cap_filename_"):
-            channel_id = awaiting.replace("us_dest_cap_filename_", "")
+        elif awaiting.startswith("us_dest_cap_text_"):
+            channel_id = awaiting.replace("us_dest_cap_text_", "")
             if channel_id not in dest_metadata:
                 dest_metadata[channel_id] = {}
-            dest_metadata[channel_id]["cap_filename_label"] = text
+            dest_metadata[channel_id]["cap_caption"] = text
             await send_auto_delete_msg(
                 context.bot,
                 update.effective_chat.id,
-                f"✅ Filename label set to:\n`{text}`",
+                f"✅ Caption updated:\n`{text}`",
                 parse_mode="Markdown",
             )
 
-        elif awaiting.startswith("us_dest_cap_filesize_"):
-            channel_id = awaiting.replace("us_dest_cap_filesize_", "")
+        elif awaiting.startswith("us_dest_cap_stream_text_"):
+            channel_id = awaiting.replace("us_dest_cap_stream_text_", "")
             if channel_id not in dest_metadata:
                 dest_metadata[channel_id] = {}
-            dest_metadata[channel_id]["cap_filesize_label"] = text
+            dest_metadata[channel_id]["use_stream_button"] = True
+            dest_metadata[channel_id]["stream_button_text"] = text
             await send_auto_delete_msg(
                 context.bot,
                 update.effective_chat.id,
-                f"✅ Filesize label set to:\n`{text}`",
-                parse_mode="Markdown",
-            )
-
-        elif awaiting.startswith("us_dest_cap_url_label_"):
-            channel_id = awaiting.replace("us_dest_cap_url_label_", "")
-            if channel_id not in dest_metadata:
-                dest_metadata[channel_id] = {}
-            dest_metadata[channel_id]["cap_url_label"] = text
-            await send_auto_delete_msg(
-                context.bot,
-                update.effective_chat.id,
-                f"✅ URL label set to:\n`{text}`",
+                f"✅ Stream button added: `{text}`",
                 parse_mode="Markdown",
             )
 
@@ -1510,23 +1490,23 @@ async def handle_us_dest_download_link_choice(
 async def handle_us_dest_caption_builder(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
-    """Show caption builder menu"""
+    """Show simplified caption builder with placeholders"""
     try:
         query = update.callback_query
         await query.answer()
         channel_id = query.data.replace("us_dest_caption_builder_", "")
         user_id = query.from_user.id
 
-        from bot.database import get_user
+        from bot.database import get_user, get_config
 
         user = await get_user(user_id)
         settings = user.get("settings", {})
         dest_metadata = settings.get("destination_metadata", {}).get(channel_id, {})
 
-        cap_filename_label = dest_metadata.get("cap_filename_label", "File name")
-        cap_filesize_label = dest_metadata.get("cap_filesize_label", "File size")
-        cap_url_label = dest_metadata.get("cap_url_label", "Stream URL")
+        cap_caption = dest_metadata.get("cap_caption", "")
         cap_style = dest_metadata.get("cap_style", "none")
+        use_stream_button = dest_metadata.get("use_stream_button", False)
+        stream_button_text = dest_metadata.get("stream_button_text", "Watch Online")
 
         style_names = {
             "none": "Normal",
@@ -1540,26 +1520,20 @@ async def handle_us_dest_caption_builder(
             [
                 [
                     InlineKeyboardButton(
-                        f"📄 Filename: {cap_filename_label}",
-                        callback_data=f"us_dest_cap_filename_{channel_id}",
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        f"📦 Filesize: {cap_filesize_label}",
-                        callback_data=f"us_dest_cap_filesize_{channel_id}",
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        f"🔗 URL Label: {cap_url_label}",
-                        callback_data=f"us_dest_cap_url_label_{channel_id}",
+                        "✏️ Edit Caption",
+                        callback_data=f"us_dest_cap_edit_{channel_id}",
                     )
                 ],
                 [
                     InlineKeyboardButton(
                         f"✨ Style: {current_style}",
                         callback_data=f"us_dest_cap_style_{channel_id}",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🔗 Stream Button: " + ("ON" if use_stream_button else "OFF"),
+                        callback_data=f"us_dest_cap_stream_btn_{channel_id}",
                     )
                 ],
                 [
@@ -1576,28 +1550,41 @@ async def handle_us_dest_caption_builder(
             ]
         )
 
+        available_placeholders = (
+            "📋 **Available Placeholders:**\n\n"
+            "Copy and use these in your caption:\n\n"
+            "• `{file_name}` - File name\n"
+            "• `{file_size}` - File size\n"
+            "• `{file_ext}` - File extension\n"
+        )
+
+        default_caption = "{file_name}\n{file_size}"
+
+        current_caption = cap_caption if cap_caption else default_caption
+
+        caption_preview = current_caption
+        if cap_style == "bold":
+            caption_preview = f"<b>{current_caption}</b>"
+        elif cap_style == "italic":
+            caption_preview = f"<i>{current_caption}</i>"
+        elif cap_style == "bolditalic":
+            caption_preview = f"<b><i>{current_caption}</i></b>"
+
+        stream_note = ""
+        if use_stream_button:
+            stream_note = (
+                f"\n🔗 **Stream Button:** `{stream_button_text}` (added as button)"
+            )
+
         help_text = (
             "📝 **Caption Builder**\n\n"
-            "Customize how your file caption looks:\n\n"
-            "**How to use each option:**\n\n"
-            "📄 **Filename Label**\n"
-            "• Set the text shown before the file name\n"
-            "• Examples: `Title`, `Movie`, `Episode`, `File`\n"
-            "• Tap to change\n\n"
-            "📦 **Filesize Label**\n"
-            "• Set the text shown before the file size\n"
-            "• Examples: `Size`, `GB`, `Duration`, `Length`\n"
-            "• Tap to change\n\n"
-            "🔗 **URL Label**\n"
-            "• Set the text shown before the download link\n"
-            "• Examples: `Download`, `Watch`, `Stream`, `Link`\n"
-            "• Tap to change\n\n"
-            "✨ **Style**\n"
-            "• Cycles through: Normal → Bold → Italic → Bold+Italic\n"
-            "• Applies HTML formatting to caption lines\n"
-            "• HTML tags: `<b>bold</b>`, `<i>italic</i>`\n\n"
-            "🔄 **Reset to Default**\n"
-            "• Resets all labels to defaults"
+            "Create your caption using placeholders.\n\n"
+            f"**Current Caption:**\n"
+            f"```{caption_preview}```\n\n"
+            f"{available_placeholders}\n"
+            f"{stream_note}\n\n"
+            "**Tap 'Edit Caption' to customize your caption text.**\n"
+            "**Use placeholders like `{file_name}` in your text.**"
         )
 
         await query.message.edit_text(
@@ -1610,24 +1597,91 @@ async def handle_us_dest_caption_builder(
         logger.error(f"❌ Error in handle_us_dest_caption_builder: {e}")
 
 
-async def handle_us_dest_cap_filename(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-):
-    """Prompt for filename label"""
+async def handle_us_dest_cap_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Prompt for caption text with placeholders"""
     try:
         query = update.callback_query
         await query.answer()
-        channel_id = query.data.replace("us_dest_cap_filename_", "")
-        context.user_data["awaiting"] = f"us_dest_cap_filename_{channel_id}"
+        channel_id = query.data.replace("us_dest_cap_edit_", "")
+        context.user_data["awaiting"] = f"us_dest_cap_text_{channel_id}"
+
+        from bot.database import get_user
+
+        user = await get_user(query.from_user.id)
+        settings = user.get("settings", {})
+        dest_metadata = settings.get("destination_metadata", {}).get(channel_id, {})
+        current = dest_metadata.get("cap_caption", "")
+
+        default_caption = "{file_name}\n{file_size}"
+        display_caption = current if current else default_caption
+        current_text = f"\n\n**Current:**\n`{display_caption}`" if current else ""
+
         await query.message.reply_text(
-            "📄 **Filename Label**\n\n"
-            "Set the label shown before the filename.\n"
-            "Examples: `File name`, `Title`, `Movie`, `Video`\n\n"
-            "Send your label or /cancel to abort.",
+            "✏️ **Edit Caption**\n\n"
+            "Create your caption using placeholders:\n\n"
+            "**Available Placeholders:**\n"
+            "• `{file_name}` - File name\n"
+            "• `{file_size}` - File size\n"
+            "• `{file_ext}` - File extension\n\n"
+            "**Examples:**\n"
+            "• `{file_name}\n{file_size}`\n"
+            "• `📽️ {file_name}\n📦 {file_size}\n\nJoin: @channel`\n\n"
+            "**Tips:**\n"
+            "• Use HTML: `<b>bold</b>`, `<i>italic</i>`\n"
+            "• Use emoji for flair\n"
+            "• Max 1024 characters\n\n"
+            f"{current_text}\n\n"
+            "Send your caption or /cancel to abort.",
             parse_mode="Markdown",
         )
     except Exception as e:
-        logger.error(f"❌ Error in handle_us_dest_cap_filename: {e}")
+        logger.error(f"❌ Error in handle_us_dest_cap_edit: {e}")
+
+
+async def handle_us_dest_cap_stream_btn(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+    """Toggle or configure stream URL button"""
+    try:
+        query = update.callback_query
+        await query.answer()
+        channel_id = query.data.replace("us_dest_cap_stream_btn_", "")
+        user_id = query.from_user.id
+
+        from bot.database import get_user, update_user
+
+        user = await get_user(user_id)
+        settings = user.get("settings", {})
+        dest_metadata = settings.get("destination_metadata", {}).get(channel_id, {})
+
+        use_stream_button = dest_metadata.get("use_stream_button", False)
+
+        if use_stream_button:
+            dest_metadata["use_stream_button"] = False
+            settings["destination_metadata"][channel_id] = dest_metadata
+            await update_user(user_id, {"settings": settings})
+            await query.answer("✅ Stream button disabled", show_alert=True)
+        else:
+            context.user_data["awaiting"] = f"us_dest_cap_stream_text_{channel_id}"
+            current_text = dest_metadata.get("stream_button_text", "Watch Online")
+            await query.message.reply_text(
+                "🔗 **Add Stream URL Button**\n\n"
+                "This adds a clickable button with the download URL to your file.\n\n"
+                f"**Current button text:** `{current_text}`\n\n"
+                "**Examples:**\n"
+                "• `Watch Online`\n"
+                "• `Download`\n"
+                "• `Stream URL`\n"
+                "• `🖥️ Watch Now`\n\n"
+                "Send your button text or /cancel to abort.",
+                parse_mode="Markdown",
+            )
+            return
+
+        await handle_us_dest_caption_builder(update, context)
+
+    except Exception as e:
+        logger.error(f"❌ Error in handle_us_dest_cap_stream_btn: {e}")
 
 
 async def handle_us_dest_cap_filesize(
@@ -1714,10 +1768,10 @@ async def handle_us_dest_cap_reset(update: Update, context: ContextTypes.DEFAULT
         settings = user.get("settings", {})
         dest_metadata = settings.get("destination_metadata", {}).get(channel_id, {})
 
-        dest_metadata["cap_filename_label"] = "File name"
-        dest_metadata["cap_filesize_label"] = "File size"
-        dest_metadata["cap_url_label"] = "Stream URL"
+        dest_metadata["cap_caption"] = ""
         dest_metadata["cap_style"] = "none"
+        dest_metadata["use_stream_button"] = False
+        dest_metadata["stream_button_text"] = "Watch Online"
 
         settings["destination_metadata"][channel_id] = dest_metadata
         await update_user(user_id, {"settings": settings})
@@ -2087,11 +2141,11 @@ async def handle_forward_to_destination(
     # Caption builder settings
     custom_title = dest_metadata.get("title", filename) if filename else "File"
     caption_footer = dest_metadata.get("caption_footer", "")
-    cap_filename_label = dest_metadata.get("cap_filename_label", "File name")
-    cap_filesize_label = dest_metadata.get("cap_filesize_label", "File size")
-    cap_url_label = dest_metadata.get("cap_url_label", "Stream URL")
+    cap_caption = dest_metadata.get("cap_caption", "")
     cap_style = dest_metadata.get("cap_style", "none")
     cap_buttons = dest_metadata.get("cap_buttons", "")
+    use_stream_button = dest_metadata.get("use_stream_button", False)
+    stream_button_text = dest_metadata.get("stream_button_text", "Watch Online")
 
     use_shortener = dest_metadata.get("use_shortener", False) and can_generate_link
     download_link_text = dest_metadata.get("download_link_text", "Stream URL")
@@ -2106,12 +2160,22 @@ async def handle_forward_to_destination(
             return f"<b><i>{text}</i></b>"
         return text
 
-    caption_lines = []
-    caption_lines.append(apply_style(f"{cap_filename_label}: {custom_title}"))
-    if size > 0:
-        from bot.utils import format_bytes
+    from bot.utils import format_bytes
 
-        caption_lines.append(apply_style(f"{cap_filesize_label}: {format_bytes(size)}"))
+    file_ext = filename.split(".")[-1] if filename and "." in filename else ""
+
+    default_caption = "{file_name}\n{file_size}"
+    caption_template = cap_caption if cap_caption else default_caption
+
+    # Replace placeholders
+    caption_lines = []
+    caption_lines.append(
+        apply_style(
+            caption_template.replace("{file_name}", custom_title)
+            .replace("{file_size}", format_bytes(size) if size > 0 else "Unknown")
+            .replace("{file_ext}", file_ext)
+        )
+    )
 
     # Parse buttons from cap_buttons
     keyboard_rows = []
@@ -2239,6 +2303,10 @@ async def handle_forward_to_destination(
         final_caption = "\n\n".join(caption_lines)
 
         # Rebuild keyboard with URL button added
+        if use_stream_button:
+            keyboard_rows.append(
+                [InlineKeyboardButton(f"{stream_button_text}", url=final_link)]
+            )
         keyboard_rows.append(
             [InlineKeyboardButton(f"{download_link_text}", url=final_link)]
         )
@@ -2261,10 +2329,6 @@ async def handle_forward_to_destination(
         logger.error(f"Error sending to dest: {e}")
         await query.message.edit_text("❌ Error sending to destination.")
 
-    except Exception as e:
-        logger.error(f"Error sending to dest: {e}")
-        await query.message.edit_text("❌ Error sending to destination.")
-
 
 STAGE_INFO = {
     "init": {
@@ -2272,70 +2336,63 @@ STAGE_INFO = {
         "name": "Initializing",
         "desc": "Setting up your file for processing...",
         "step": 1,
-        "total": 5,
+        "total": 6,
     },
     "download": {
         "emoji": "📥",
         "name": "Downloading",
         "desc": "Getting your file from Telegram servers to our server...",
         "step": 2,
-        "total": 5,
+        "total": 6,
     },
     "probe": {
         "emoji": "🔍",
         "name": "Analyzing",
         "desc": "Reading video info, audio tracks, subtitles...",
         "step": 3,
-        "total": 5,
+        "total": 6,
     },
     "ffmpeg": {
         "emoji": "🎬",
         "name": "Processing",
-        "desc": "Applying your choices: subtitles, audio, metadata, watermark...",
+        "desc": "Applying your choices: subtitles, audio, metadata...",
         "step": 4,
-        "total": 5,
+        "total": 6,
     },
     "upload": {
         "emoji": "📤",
         "name": "Uploading",
         "desc": "Sending your processed file back to you via Telegram...",
         "step": 5,
-        "total": 5,
+        "total": 6,
     },
     "complete": {
         "emoji": "✅",
         "name": "Complete",
         "desc": "Your file is ready! Check below 👇",
-        "step": 5,
-        "total": 5,
+        "step": 6,
+        "total": 6,
     },
     "cloud_upload": {
         "emoji": "☁️",
         "name": "Cloud Upload",
         "desc": "Uploading to cloud storage for large file delivery...",
-        "step": 4,
-        "total": 5,
+        "step": 5,
+        "total": 6,
     },
     "cloud_wait": {
         "emoji": "⏳",
         "name": "Waiting for Slot",
         "desc": "Cloud servers are busy. Waiting for a free slot...",
         "step": 4,
-        "total": 5,
+        "total": 6,
     },
     "rclone": {
         "emoji": "🔄",
         "name": "Cloud Transfer",
         "desc": "Transferring file to cloud storage destination...",
-        "step": 4,
-        "total": 5,
-    },
-    "rclone": {
-        "emoji": "🔄",
-        "name": "Cloud Transfer",
-        "desc": "Transferring file to cloud storage...",
-        "step": 4,
-        "total": 5,
+        "step": 5,
+        "total": 6,
     },
 }
 

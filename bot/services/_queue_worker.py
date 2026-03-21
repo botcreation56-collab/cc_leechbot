@@ -325,6 +325,24 @@ class QueueWorker:
             except Exception as e:
                 logger.error(f"Task {task_id} Failed: {e}", exc_info=True)
 
+                # Notify admin with technical details
+                try:
+                    from bot.utils.error_handler import (
+                        notify_admin,
+                        get_user_error_message,
+                    )
+
+                    await notify_admin(
+                        bot=self.bot,
+                        error=e,
+                        context={"bypass": bypass_semaphore, "retry": retry_count},
+                        user_id=user_id,
+                        task_id=task_id,
+                        phase="queue_worker",
+                    )
+                except Exception:
+                    pass
+
                 if retry_count < MAX_RETRIES:
                     logger.info(
                         f"🔄 Retrying Task {task_id} (Attempt {retry_count + 1}/{MAX_RETRIES})"
@@ -334,15 +352,39 @@ class QueueWorker:
                         {
                             "status": "queued",
                             "retry_count": retry_count + 1,
-                            "last_error": str(e),
+                            "last_error": str(e)[:200],
                         },
                     )
                 else:
-                    await update_task(task_id, {"status": "failed", "error": str(e)})
+                    await update_task(
+                        task_id, {"status": "failed", "error": str(e)[:200]}
+                    )
+
+                    # Get user-friendly message
+                    user_msg = (
+                        get_user_error_message(e)
+                        if "get_user_error_message" in dir()
+                        else "Processing failed. Please try again."
+                    )
+
                     try:
+                        keyboard = InlineKeyboardMarkup(
+                            [
+                                [
+                                    InlineKeyboardButton(
+                                        "🔄 Try Again", callback_data="retry_last"
+                                    ),
+                                    InlineKeyboardButton(
+                                        "📞 Support", callback_data="us_support"
+                                    ),
+                                ]
+                            ]
+                        )
                         await self.bot.send_message(
                             chat_id=user_id,
-                            text=f"❌ **Task Failed** (Max Retries Exceeded)\n\nError: `{str(e)[:100]}`",
+                            text=f"❌ {user_msg}\n\nTask ID: `{task_id}`",
+                            reply_markup=keyboard,
+                            parse_mode="Markdown",
                         )
                     except Exception:
                         pass
