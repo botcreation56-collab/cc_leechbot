@@ -999,8 +999,12 @@ async def _startup_tasks(app: FastAPI):
                 user_count,
             )
             logger.info("✅ Webhook configured")
+        else:
+            logger.info("⚠️ No WEBHOOK_URL. Starting long polling...")
+            await bot_application.updater.start_polling(drop_pending_updates=True)
+            logger.info("✅ Polling started")
     except Exception as e:
-        logger.warning(f"⚠️ Webhook: {e}")
+        logger.warning(f"⚠️ Webhook/Polling startup error: {e}")
 
     logger.info("🎉 All startup tasks complete!")
 
