@@ -876,50 +876,43 @@ async def cleanup_bot(application: Application, db_conn) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Minimal lifespan - port binds immediately, all init after yield."""
     global bot_application
 
-    logger.info("🚀 FastAPI startup")
-    validate_environment()
+    logger.info("🚀 FastAPI starting (port will bind now)...")
 
-    deps = None
+    try:
+        validate_environment()
+    except Exception as e:
+        logger.warning(f"⚠️ Env validation: {e}")
+
+    yield  # PORT BINDS HERE - everything before this must be fast!
+
+    # Run startup tasks after port is bound
+    asyncio.create_task(_startup_tasks(app))
+    logger.info("✅ Startup tasks queued")
+
+
+async def _startup_tasks(app: FastAPI):
+    """Run all startup tasks after port is bound."""
+    import asyncio
+
     try:
         deps = await build_dependency_graph()
         app.state.deps = deps
 
         bot_application = await build_bot_application(deps)
         app.state.bot = bot_application.bot
+        logger.info("✅ Bot application built")
 
-        # Start background workers (non-blocking)
-        try:
-            import asyncio as _asyncio
-            from bot.services import QueueWorker
-
-            worker = QueueWorker(bot_application.bot)
-            _asyncio.create_task(worker.start())
-            logger.info("🚀 QueueWorker started")
-        except Exception as e:
-            logger.warning(f"⚠️ QueueWorker skipped: {e}")
-
-        # GDrive setup (non-blocking)
-        try:
-            from bot.services import GDriveService
-
-            _asyncio.create_task(_setup_gdrive())
-            logger.info("🚀 GDrive setup started")
-        except Exception as e:
-            logger.warning(f"⚠️ GDrive setup skipped: {e}")
-
-        # Rclone setup (non-blocking)
-        try:
-            from bot.services._cloud_upload import ensure_rclone_binary
-
-            _asyncio.create_task(_setup_rclone())
-            logger.info("🚀 Rclone setup started")
-        except Exception as e:
-            logger.warning(f"⚠️ Rclone setup skipped: {e}")
+        # Start background workers
+        asyncio.create_task(_init_pyrogram_bg())
+        asyncio.create_task(_setup_gdrive())
+        asyncio.create_task(_setup_rclone())
+        asyncio.create_task(_start_queue_worker())
 
         # Configure webhook
-        if settings.WEBHOOK_URL:
+        if settings.WEBHOOK_URL and deps:
             try:
                 user_count = await deps["user_repo"]._col.count_documents({})
                 await configure_webhook(
@@ -929,18 +922,10 @@ async def lifespan(app: FastAPI):
                     user_count,
                 )
             except Exception as e:
-                logger.warning(f"⚠️ Webhook setup skipped: {e}")
+                logger.warning(f"⚠️ Webhook setup: {e}")
 
     except Exception as exc:
-        logger.error("❌ Startup error: %s", exc, exc_info=True)
-        logger.warning("⚠️ Degraded mode — web serving continues")
-
-    yield
-
-    logger.info("🛑 FastAPI shutdown")
-    if bot_application is not None:
-        if deps:
-            await cleanup_bot(bot_application, deps.get("db_conn"))
+        logger.error("❌ Startup tasks failed: %s", exc, exc_info=True)
 
 
 # ============================================================
