@@ -54,42 +54,6 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         )
         response.headers["Pragma"] = "no-cache"
 
-        if not is_static:
-            response.headers["Content-Security-Policy"] = self._get_csp(is_api)
-
-        report_uri = os.getenv("CSP_REPORT_URI")
-        if report_uri:
-            response.headers["Content-Security-Policy-Report-Only"] = (
-                self._get_csp(is_api) + f"; report-uri {report_uri}"
-            )
-
         return response
 
-    def _get_csp(self, is_api: bool) -> str:
-        if is_api:
-            return (
-                "default-src 'none'; "
-                "form-action 'none'; "
-                "frame-ancestors *; "
-                "base-uri 'none'; "
-                "script-src 'none'; "
-                "style-src 'self'; "
-                "img-src 'self' data:; "
-                "connect-src 'self'; "
-                "font-src 'self'; "
-                "frame-src 'none'; "
-                "media-src 'self'; "
-                "object-src 'none'"
-            )
-        else:
-            return (
-                "default-src 'self'; "
-                "script-src 'self' 'unsafe-inline'; "
-                "style-src 'self' 'unsafe-inline'; "
-                "img-src 'self' data: https:; "
-                "connect-src 'self'; "
-                "font-src 'self'; "
-                "frame-ancestors *; "
-                "base-uri 'self'; "
-                "form-action 'self'"
-            )
+
