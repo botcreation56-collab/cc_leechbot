@@ -261,7 +261,7 @@ async def show_shorteners_menu(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def handle_bypass_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle bypass queue button - show shortened web link"""
+    """Handle bypass queue button - show encrypted bypass link"""
     try:
         query = update.callback_query
         await query.answer()
@@ -282,34 +282,40 @@ async def handle_bypass_queue(update: Update, context: ContextTypes.DEFAULT_TYPE
             await query.answer("Bypass link expired or invalid.", show_alert=True)
             return
 
-        # Generate web URL for bypass success page
+        # Encrypt the token for URL safety
+        from bot.utils import encrypt_token
+
+        encrypted_token = encrypt_token(bypass_token)
+
+        # Generate success page URL with encrypted token
         from config.settings import get_domain
 
         domain = get_domain()
-        success_url = f"https://{domain}/queue-bypassed?token={bypass_token}&bot={context.bot.username}"
-        logger.info(f"🔔 BYPASS: Generated success URL: {success_url}")
+        success_url = f"https://{domain}/queue-bypassed?token={encrypted_token}"
 
         # Shorten the URL using configured shortener
         from bot.services._link_shortener import LinkShortener
 
         shortened_url = await LinkShortener.shorten_url(success_url)
         if not shortened_url:
-            shortened_url = success_url  # Fallback to original if shortener fails
-        logger.info(f"🔔 BYPASS: Shortened URL: {shortened_url}")
+            shortened_url = success_url  # Fallback
 
+        # Get tutorial link from config
         from bot.database import get_config
 
         config = await get_config() or {}
-        help_url = config.get("help_text_url", "https://t.me/bot_paiyan_official")
+        tutorial_url = config.get(
+            "shortener_tutorial_link", "https://t.me/bot_paiyan_official"
+        )
 
         keyboard = [
-            [InlineKeyboardButton("🔥 Bypass Queue Now", url=shortened_url)],
-            [InlineKeyboardButton("❓ How to use?", url=help_url)],
+            [InlineKeyboardButton("[🔥 Bypass Now]", url=shortened_url)],
+            [InlineKeyboardButton("[❓ How to bypass?]", url=tutorial_url)],
         ]
         await query.edit_message_text(
-            "🔥 **Queue Bypass**\n\n"
-            "Click the button below to verify and instantly bypass the queue.\n\n"
-            "The bot will open and your task will jump to the front!",
+            "**Queue Bypass**\n\n"
+            "Click 'Bypass Now' to move your file to the front of the queue!\n\n"
+            "Your task will process instantly.",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode="Markdown",
         )

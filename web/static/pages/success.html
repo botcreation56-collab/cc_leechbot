@@ -4,65 +4,116 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Verification Successful</title>
+    <title>Queue Bypass</title>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #0f172a;
-            color: #f8fafc;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
-            margin: 0;
-            text-align: center;
+            padding: 20px;
         }
 
         .card {
-            background-color: #1e293b;
-            padding: 2rem;
-            border-radius: 1rem;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-            max-width: 400px;
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 420px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
         }
 
         .icon {
-            font-size: 4rem;
-            margin-bottom: 1rem;
+            font-size: 5rem;
+            margin-bottom: 20px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
         }
 
         h1 {
-            margin: 0 0 1rem 0;
             color: #4ade80;
+            font-size: 2rem;
+            margin-bottom: 15px;
+            font-weight: 700;
         }
 
         p {
-            margin-bottom: 2rem;
-            color: #cbd5e1;
+            color: #94a3b8;
+            font-size: 1rem;
+            line-height: 1.6;
+            margin-bottom: 30px;
         }
 
         .btn {
-            background-color: #3b82f6;
+            display: inline-block;
+            background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
             color: white;
-            padding: 0.75rem 1.5rem;
-            border-radius: 0.5rem;
+            padding: 16px 40px;
+            border-radius: 12px;
             text-decoration: none;
-            font-weight: bold;
+            font-weight: 600;
+            font-size: 1.1rem;
+            transition: all 0.3s ease;
+            box-shadow: 0 10px 30px rgba(59, 130, 246, 0.3);
+            border: none;
+            cursor: pointer;
         }
 
         .btn:hover {
-            background-color: #2563eb;
+            transform: translateY(-3px);
+            box-shadow: 0 15px 40px rgba(59, 130, 246, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(-1px);
+        }
+
+        .note {
+            margin-top: 20px;
+            font-size: 0.85rem;
+            color: #64748b;
         }
     </style>
 </head>
 
 <body>
     <div class="card">
-        <div class="icon">{{ icon | default('🚀') }}</div>
-        <h1>{{ heading | default('Priority Activated!') }}</h1>
-        <p>{{ message | default('You have successfully skipped the queue.<br>Your priority access is active for <strong>1 Hour</strong>.') | safe }}</p>
-        <a href="https://t.me/{{ bot_username }}{% if startid %}?start={{ startid }}{% endif %}" class="btn">{{ btn_text | default('Return to Bot') }}</a>
+        <div class="icon">🚀</div>
+        <h1>Success!</h1>
+        <p>
+            Your queue bypass is now active!<br>
+            Click the button below to return to the bot and process your file instantly.
+        </p>
+        <a href="https://t.me/{{ bot_username }}?start={{ bypass_token }}" class="btn">
+            Return to Bot
+        </a>
+        <p class="note">
+            The button will open Telegram with your bypass token.
+        </p>
     </div>
+
+    <script>
+        // Auto-click the button after page loads (optional - removes one tap)
+        window.onload = function() {
+            // Uncomment below line to auto-open Telegram
+            // document.querySelector('.btn').click();
+        };
+    </script>
 </body>
 
 </html>

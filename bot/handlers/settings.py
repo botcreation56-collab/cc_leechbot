@@ -201,6 +201,12 @@ async def show_config_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         callback_data="admin_set_storage_channel",
                     )
                 ],
+                [
+                    InlineKeyboardButton(
+                        "☁️ GDrive (via Rclone)",
+                        callback_data="admin_rclone",
+                    )
+                ],
                 [InlineKeyboardButton("🔙 Back", callback_data="admin_back")],
             ]
         )
@@ -731,37 +737,65 @@ async def handle_config_edit_input(
             return
 
         elif state == "add_shortener_url":
+            context.user_data["temp_shortener_domain"] = text.strip()
+            context.user_data["awaiting"] = "add_shortener_tutorial"
+            await update.message.reply_text(
+                "🔗 **Step 3: Bypass Tutorial Link**\n\n"
+                "Send a tutorial link for how to bypass the queue.\n"
+                "This will be shown as 'How to bypass?' button.\n\n"
+                "Example: `https://youtube.com/watch?v=example`\n"
+                "Or leave empty if not needed.\n\n"
+                "Use /cancel to abort.",
+                parse_mode="Markdown",
+            )
+            return
+
+        elif state == "add_shortener_tutorial":
             api_key = context.user_data.pop("temp_shortener_api", None)
-            if not api_key:
+            domain = context.user_data.pop("temp_shortener_domain", None)
+            tutorial_link = text.strip() if text.strip() else None
+
+            if not api_key or not domain:
                 await send_auto_delete_msg(
                     context.bot,
                     update.effective_chat.id,
-                    "❌ Missing API key. Please start over.",
+                    "❌ Missing data. Please start over.",
                     parse_mode="Markdown",
                 )
                 context.user_data.pop("awaiting", None)
                 return
 
-            domain = text.strip()
-            if not domain.startswith("http"):
-                domain = f"https://{domain}"
+            domain_url = domain.strip()
+            if not domain_url.startswith("http"):
+                domain_url = f"https://{domain_url}"
 
             from bot.database import set_config, get_config
 
             config = await get_config() or {}
             shorteners = config.get("shorteners", [])
-            # Remove existing entry for same domain
-            shorteners = [s for s in shorteners if s.get("domain") == domain]
-            shorteners.append({"domain": domain, "api_key": api_key})
+            shorteners = [s for s in shorteners if s.get("domain") != domain_url]
+            shorteners.append({"domain": domain_url, "api_key": api_key})
             ok = await set_config({"shorteners": shorteners})
+
+            # Also save tutorial link globally for bypass
+            if tutorial_link:
+                await set_config({"shortener_tutorial_link": tutorial_link})
+
             if ok:
+                tutorial_text = (
+                    f"\nTutorial: `{tutorial_link}`" if tutorial_link else ""
+                )
                 await send_auto_delete_msg(
                     context.bot,
                     update.effective_chat.id,
-                    f"✅ **Shortener Added**\n\nSite: `{domain}`",
+                    f"✅ **Shortener Added**\n\nSite: `{domain_url}`{tutorial_text}",
                     parse_mode="Markdown",
                 )
-                await log_admin_action(user_id, "added_shortener", {"domain": domain})
+                await log_admin_action(
+                    user_id,
+                    "added_shortener",
+                    {"domain": domain_url, "tutorial": tutorial_link},
+                )
             else:
                 await send_auto_delete_msg(
                     context.bot,

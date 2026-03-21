@@ -591,9 +591,11 @@ async def upload_and_send_file(
     visibility: str = "public",
     task_id: str = None,
     selected_destinations: Optional[List[str]] = None,
+    source_file_id: str = None,
 ) -> Dict[str, Any]:
     """
     MAIN UPLOAD ROUTER:
+      - FAST PATH: If source_file_id provided, forward directly (no re-upload).
       - <50MB: Bot API direct send to user + dump.
       - >=50MB: Rclone cloud upload + link to user + dump (optional).
     """
@@ -608,6 +610,49 @@ async def upload_and_send_file(
         get_channel_id,
     )
     from bot.services._file_processing import split_file, cleanup_split_files
+
+    # FAST PATH: Forward original file directly using file_id
+    if source_file_id and file_path is None:
+        logger.info(
+            f"upload_and_send_file: FAST PATH for file_id={source_file_id[:20]}..."
+        )
+
+        filename = custom_filename or "file"
+        config = await get_config()
+        dump_channel_id = await get_channel_id("dump") or config.get("dump_channel_id")
+
+        # Forward to dump channel
+        dump_message = None
+        if dump_channel_id:
+            try:
+                dump_message = await bot.forward_message(
+                    chat_id=dump_channel_id,
+                    from_chat_id=user_id,
+                    message_id=source_file_id,
+                )
+            except Exception as e:
+                logger.warning(f"Fast path dump forward failed: {e}")
+
+        # Send to user
+        try:
+            sent_msg = await bot.send_document(
+                chat_id=user_id,
+                document=source_file_id,
+                caption=custom_caption,
+                parse_mode="Markdown",
+            )
+            telegram_file_id = sent_msg.document.file_id
+        except Exception as e:
+            logger.error(f"Fast path send to user failed: {e}")
+            raise UploadError("Failed to send file")
+
+        return {
+            "file_id": telegram_file_id,
+            "filename": filename,
+            "method": "fast_forward",
+            "size": 0,
+            "url": None,
+        }
 
     file_path = str(Path(file_path))
     if not Path(file_path).exists():

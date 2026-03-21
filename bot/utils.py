@@ -178,6 +178,29 @@ def decrypt_credentials(encrypted: str) -> Dict[str, Any]:
     return get_encryption_manager().decrypt(encrypted)
 
 
+def encrypt_token(token: str) -> str:
+    """Encrypt a simple token string for URL-safe storage."""
+    try:
+        manager = get_encryption_manager()
+        return manager.cipher.encrypt(token.encode()).decode()
+    except Exception as e:
+        logger.error(f"Token encryption failed: {e}")
+        raise
+
+
+def decrypt_token(encrypted: str) -> str:
+    """Decrypt an encrypted token string."""
+    try:
+        manager = get_encryption_manager()
+        return manager.cipher.decrypt(encrypted.encode()).decode()
+    except InvalidToken:
+        logger.error("Token decryption failed: invalid token")
+        raise
+    except Exception as e:
+        logger.error(f"Token decryption failed: {e}")
+        raise
+
+
 # ============================================================
 # LOGGING SETUP
 # ============================================================

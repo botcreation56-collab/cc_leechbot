@@ -68,25 +68,55 @@ from bot.services._cloud_upload import (
     MAX_BOT_FILE_SIZE_MB,
 )
 
+# ── Google Drive Direct Upload ────────────────────────────────────────────────
+from bot.services._gdrive import (
+    GDriveService,
+)
+
 __all__ = [
     # Download
-    "DownloadError", "analyze_url_with_ytdlp", "download_with_aria2c",
-    "download_from_mega", "download_from_url", "cleanup_old_downloads",
+    "DownloadError",
+    "analyze_url_with_ytdlp",
+    "download_with_aria2c",
+    "download_from_mega",
+    "download_from_url",
+    "cleanup_old_downloads",
     # FFmpeg
     "FFmpegService",
     # File Processing
-    "ProcessingError", "validate_file_size", "get_upload_engine_limit",
-    "should_split_file", "split_file", "cleanup_split_files",
-    "get_file_info", "cleanup_temp_files",
+    "ProcessingError",
+    "validate_file_size",
+    "get_upload_engine_limit",
+    "should_split_file",
+    "split_file",
+    "cleanup_split_files",
+    "get_file_info",
+    "cleanup_temp_files",
     # Links / OTP
-    "CloudLinkGenerator", "LinkShortener", "OTPService", "_otp_storage",
+    "CloudLinkGenerator",
+    "LinkShortener",
+    "OTPService",
+    "_otp_storage",
     # Queue
-    "QueueWorker", "run_broadcast_worker",
+    "QueueWorker",
+    "run_broadcast_worker",
     # Cloud Upload
-    "RcloneError", "upload_to_rclone", "generate_rclone_link",
-    "get_available_rclone", "test_rclone_connection", "list_rclone_files",
-    "StorageChannelManager", "create_or_update_storage_message",
-    "TeraboxError", "upload_to_terabox", "get_terabox_config",
-    "test_terabox_connection", "get_terabox_storage_info",
-    "UploadError", "upload_and_send_file", "MAX_BOT_FILE_SIZE_MB",
+    "RcloneError",
+    "upload_to_rclone",
+    "generate_rclone_link",
+    "get_available_rclone",
+    "test_rclone_connection",
+    "list_rclone_files",
+    "StorageChannelManager",
+    "create_or_update_storage_message",
+    "TeraboxError",
+    "upload_to_terabox",
+    "get_terabox_config",
+    "test_terabox_connection",
+    "get_terabox_storage_info",
+    "UploadError",
+    "upload_and_send_file",
+    "MAX_BOT_FILE_SIZE_MB",
+    # GDrive
+    "GDriveService",
 ]

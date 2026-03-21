@@ -856,6 +856,30 @@ async def lifespan(app: FastAPI):
                 f"❌ Failed to start QueueWorker: {e}\n{traceback.format_exc()}"
             )
 
+        # Setup GDrive folder structure
+        try:
+            from bot.services import GDriveService
+
+            if GDriveService.is_configured():
+                await GDriveService.setup_folders()
+                logger.info("🚀 GDrive folder structure initialized")
+            else:
+                logger.info("ℹ️ GDrive not configured - set GDRIVE_* env vars to enable")
+        except Exception as e:
+            logger.warning(f"⚠️ GDrive setup skipped: {e}")
+
+        # Ensure rclone binary is downloaded
+        try:
+            from bot.services._cloud_upload import ensure_rclone_binary
+
+            rclone_path = await ensure_rclone_binary()
+            if rclone_path:
+                logger.info("🚀 Rclone binary ready at %s", rclone_path)
+            else:
+                logger.warning("⚠️ Rclone binary not available")
+        except Exception as e:
+            logger.warning(f"⚠️ Rclone setup skipped: {e}")
+
         # Fetch bot identity for display
         try:
             me = await bot_application.bot.get_me()

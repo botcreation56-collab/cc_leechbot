@@ -664,7 +664,8 @@ async def rclone_plan_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             await query.message.reply_text(
                 f"✅ Plan: **{plan.upper()}**\n\n"
                 "**Step 3 / 6 — Google Client ID**\n\n"
-                "This will create a global Rclone configuration usable by multiple users depending on their plan.\n\n"
+                "This will create a Google Drive configuration.\n"
+                "Files will be uploaded directly to GDrive (no server storage).\n\n"
                 "Please enter your Google **Client ID**.\n"
                 "*(It usually ends with `apps.googleusercontent.com`)*\n\n"
                 "Use /cancel to abort.",

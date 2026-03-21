@@ -1685,6 +1685,167 @@ class WizardHandler:
             output_filename = f"processed_{Path(input_path).name}"
             output_path = str(Path(input_path).parent / output_filename)
 
+            # SMART BYPASS: Check if FFmpeg is actually needed
+            has_custom_audio = bool(audio_indices)
+            has_custom_subs = bool(sub_indices)
+            has_metadata = bool(session.get("custom_metadata"))
+            has_rename = session.get("rename") and session.get("rename") != session.get(
+                "original_name"
+            )
+            has_injected_audio = bool(session.get("injected_audio"))
+            has_injected_subs = bool(session.get("injected_subs"))
+
+            needs_processing = (
+                has_custom_audio
+                or has_custom_subs
+                or has_metadata
+                or has_rename
+                or has_injected_audio
+                or has_injected_subs
+            )
+
+            # If no processing needed, skip download/FFmpeg/upload cycle entirely
+            if not needs_processing:
+                logger.info(
+                    f"process_session_background: {task_id} - No processing needed, using fast path"
+                )
+
+                # Update stage to fast path
+                try:
+                    await send_progress_message(
+                        bot,
+                        user_id,
+                        task_id,
+                        filesize=session.get("file_size", 0),
+                        stage="upload",
+                        progress=50,
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not update progress: {e}")
+
+                # Use original file directly
+                from bot.database import get_user
+                from bot.services import upload_and_send_file
+
+                user = await get_user(user_id)
+                user_plan = user.get("plan", "free")
+                visibility = user.get("settings", {}).get("visibility", "public")
+
+                # Fast path: send original file directly using file_id
+                original_file_id = session.get("file_id")
+                if original_file_id:
+                    # Forward directly without re-downloading
+                    upload_result = await upload_and_send_file(
+                        bot=bot,
+                        user_id=user_id,
+                        file_path=None,  # Signal fast path
+                        user_plan=user_plan,
+                        custom_filename=custom_name,
+                        visibility=visibility,
+                        task_id=task_id,
+                        source_file_id=original_file_id,
+                    )
+                else:
+                    # Fallback: still need to download
+                    upload_result = await upload_and_send_file(
+                        bot=bot,
+                        user_id=user_id,
+                        file_path=input_path,
+                        user_plan=user_plan,
+                        custom_filename=custom_name,
+                        visibility=visibility,
+                        task_id=task_id,
+                    )
+
+                if not upload_result:
+                    raise RuntimeError("Upload failed.")
+
+                dump_file_id = upload_result.get("file_id")
+
+                # Update storage message
+                await create_or_update_storage_message(
+                    bot,
+                    {
+                        "file_id": dump_file_id,
+                        "filename": custom_name,
+                        "static_size": session.get("file_size", 0),
+                        "status": "✅ Completed (Fast)",
+                    },
+                    user_id=user_id,
+                    message_id=ledger_msg_id,
+                )
+
+                # Store metadata for destination forward
+                if dump_file_id:
+                    context.user_data[f"fwd_meta_{dump_file_id[-10:]}"] = {
+                        "filename": custom_name,
+                        "size": session.get("file_size", 0),
+                    }
+
+                # Generate stream URL
+                from bot.database import create_one_time_key
+                import secrets
+                from datetime import datetime, timedelta
+
+                secure_token = secrets.token_urlsafe(32)
+                expires = datetime.utcnow() + timedelta(hours=24)
+                await create_one_time_key(
+                    user_id, secure_token, expires, purpose="stream"
+                )
+
+                from config.settings import get_domain
+
+                stream_url = f"https://{get_domain()}/api/verify_link/{dump_file_id}/{secure_token}"
+
+                # Update final progress
+                try:
+                    await send_progress_message(
+                        bot,
+                        user_id,
+                        task_id,
+                        filesize=session.get("file_size", 0),
+                        stage="complete",
+                        progress=100,
+                    )
+                except Exception:
+                    pass
+
+                # Finalize task
+                from bot.database import update_task
+
+                await update_task(task_id, {"status": "completed"})
+
+                # Send completion message
+                final_msg = (
+                    f"✅ **File Ready!**\n\n"
+                    f"📄 `{custom_name}`\n"
+                    f"📦 {session.get('file_size', 0) or 0}\n\n"
+                )
+                if stream_url:
+                    final_msg += f"🔗 [Stream/Download]({stream_url})\n\n"
+                final_msg += "💡 Use /myfiles to manage your files"
+
+                try:
+                    target_msg_id = task_info.get("user_progress_msg_id")
+                    if target_msg_id:
+                        await bot.edit_message_text(
+                            chat_id=user_id,
+                            message_id=target_msg_id,
+                            text=final_msg,
+                            parse_mode="Markdown",
+                        )
+                    else:
+                        await bot.send_message(
+                            user_id, final_msg, parse_mode="Markdown"
+                        )
+                except Exception as e:
+                    logger.warning(f"Could not send completion message: {e}")
+
+                logger.info(
+                    f"process_session_background: {task_id} - FAST PATH COMPLETE"
+                )
+                return
+
             # 4. Process Media (FFmpeg)
             from bot.services import FFmpegService
 
@@ -2008,20 +2169,21 @@ class WizardHandler:
                 keyboard = [
                     [
                         InlineKeyboardButton(
-                            "Bypass the queue", callback_data=f"bypass_q_{task_id}"
+                            "[🔥 Bypass Queue]", callback_data=f"bypass_q_{task_id}"
                         )
                     ],
                     [
                         InlineKeyboardButton(
-                            "Refresh (to know the queue no)",
+                            "[🔄 Refresh Position]",
                             callback_data=f"refresh_q_{task_id}",
                         )
                     ],
                 ]
 
                 await query.edit_message_text(
-                    f"The bot is processing many file now your position `{position}`,\n"
-                    f"you'll get notification when your turn come",
+                    f"**Your file is in queue**\n\n"
+                    f"Position: `{position}`\n\n"
+                    f"Click 'Bypass Queue' to move to the front instantly!",
                     reply_markup=InlineKeyboardMarkup(keyboard),
                     parse_mode="Markdown",
                 )

@@ -510,22 +510,31 @@ async def verify_priority_endpoint(user: int, token: str):
 async def queue_bypassed_endpoint(request: Request, token: str, bot: str):
     """
     Renders the success page after a user completes the shortener link.
-    Injects the bot username and bypass token so the HTML button can direct
-    the user back to the Telegram bot with the exact start payload.
+    Decrypts the token and injects the bot username so the HTML button can
+    direct the user back to the Telegram bot with the bypass command.
     """
     try:
         if not token or len(token) < 4:
-            logger.warning(f"⚠️ Invalid bypass token received: {token}")
+            logger.warning(f"⚠️ Invalid bypass token received")
             raise HTTPException(status_code=400, detail="Invalid bypass token")
 
         logger.info(f"🔔 Queue bypass page accessed: token={token[:8]}..., bot={bot}")
+
+        # Decrypt the token
+        try:
+            from bot.utils import decrypt_token
+
+            bypass_token = decrypt_token(token)
+        except Exception as e:
+            logger.error(f"❌ Failed to decrypt bypass token: {e}")
+            raise HTTPException(status_code=400, detail="Invalid bypass token")
 
         return templates.TemplateResponse(
             "success.html",
             {
                 "request": request,
                 "bot_username": bot or "cc_leechbot",
-                "startid": token,
+                "bypass_token": bypass_token,
             },
         )
     except HTTPException:
@@ -800,6 +809,26 @@ async def rclone_callback(
                 f"[{remote_name}]", f"[{config_id}]"
             )
             await update_rclone_config(config_id, {"credentials": updated_snippet})
+
+            # ALSO save to GDriveService for direct uploads (no server storage)
+            try:
+                from database.gdrive import save_gdrive_config
+
+                await save_gdrive_config(
+                    client_id=client_id,
+                    client_secret=client_secret,
+                    refresh_token=refresh_token,
+                    admin_id=user_id,
+                )
+
+                # Auto-setup GDrive folders (temp/, Free/, Pro/)
+                from bot.services import GDriveService
+
+                GDriveService._access_token = None  # Clear cached token
+                await GDriveService.setup_folders()
+                logger.info("✅ GDrive folders auto-created after rclone setup")
+            except Exception as e:
+                logger.warning(f"GDrive direct upload setup skipped: {e}")
 
             # Notify user via bot — show them the config and a confirm button
             from telegram import InlineKeyboardButton, InlineKeyboardMarkup
