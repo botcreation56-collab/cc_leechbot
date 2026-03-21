@@ -215,30 +215,6 @@ class Settings(BaseSettings):
         default=True,
         description="Enable terabox support",
     )
-    ENABLE_GDRIVE: bool = Field(
-        default=True,
-        description="Enable Google Drive support",
-    )
-
-    # ============================================
-    # GOOGLE DRIVE (for direct uploads)
-    # ============================================
-    GDRIVE_CLIENT_ID: str = Field(
-        default="",
-        description="Google OAuth2 Client ID for GDrive",
-    )
-    GDRIVE_CLIENT_SECRET: str = Field(
-        default="",
-        description="Google OAuth2 Client Secret for GDrive",
-    )
-    GDRIVE_REFRESH_TOKEN: str = Field(
-        default="",
-        description="Google OAuth2 Refresh Token for GDrive",
-    )
-    GDRIVE_ROOT_FOLDER_ID: str = Field(
-        default="",
-        description="GDrive root folder ID for bot files",
-    )
 
     # ============================================
     # ENVIRONMENT

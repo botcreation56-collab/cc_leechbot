@@ -294,6 +294,7 @@ def setup_handlers(application: Application) -> None:
         callback_handler,
         handle_bypass_queue,
         handle_refresh_queue,
+        handle_refresh_progress,
     )
 
     # ── Admin handlers ───────────────────────────────────────
@@ -524,6 +525,7 @@ def setup_handlers(application: Application) -> None:
             ("^queue_start_", callback_handler),
             ("^refresh_q_", handle_refresh_queue),
             ("^bypass_q_", handle_bypass_queue),
+            ("^refresh_progress_", handle_refresh_progress),
             # File forwarding
             ("^send_dest_", callback_handler),
             ("^fwd_dest_", callback_handler),
@@ -838,19 +840,6 @@ async def _init_pyrogram_bg():
         logger.warning(f"⚠️ Pyrogram init failed: {e}")
 
 
-async def _setup_gdrive():
-    """Background GDrive setup."""
-    try:
-        from bot.services import GDriveService
-
-        is_configured = await GDriveService.is_configured()
-        if is_configured:
-            await GDriveService.setup_folders()
-            logger.info("✅ GDrive folders ready")
-    except Exception as e:
-        logger.warning(f"⚠️ GDrive setup failed: {e}")
-
-
 async def _setup_rclone():
     """Background Rclone setup."""
     try:
@@ -881,19 +870,25 @@ async def cleanup_bot(application: Application, db_conn) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifespan - startup runs before port binds."""
+    """Lifespan - port binds immediately, startup runs in background."""
     global bot_application
 
-    await _startup_tasks(app)
+    logger.info("🚀 Starting up...")
+
+    validate_environment()
+
+    loop = asyncio.get_running_loop()
+    loop.create_task(_startup_tasks(app))
 
     yield  # PORT BINDS HERE
 
     logger.info("🛑 FastAPI shutting down...")
+    if bot_application:
+        await cleanup_bot(bot_application, app.state.deps.get("db_conn"))
 
 
 async def _startup_tasks(app: FastAPI):
-    """Run ALL startup tasks after port is bound."""
-    import asyncio
+    """Run ALL startup tasks in background (port already bound)."""
     import traceback as tb
 
     logger.info("🚀 Running startup tasks...")
@@ -922,7 +917,6 @@ async def _startup_tasks(app: FastAPI):
         logger.error(f"❌ Bot app failed: {e}\n{tb.format_exc()}")
         return
 
-    # Start background services (delayed to not block)
     await asyncio.sleep(1)
 
     try:
@@ -946,16 +940,7 @@ async def _startup_tasks(app: FastAPI):
 
     await asyncio.sleep(0.5)
 
-    # Check GDrive/Rclone configuration status
-    has_gdrive = False
     has_rclone = False
-
-    try:
-        from bot.services import GDriveService
-
-        has_gdrive = await GDriveService.is_configured()
-    except Exception:
-        pass
 
     try:
         from bot.services._cloud_upload import ensure_rclone_binary
@@ -972,17 +957,6 @@ async def _startup_tasks(app: FastAPI):
         has_rclone = has_rclone or bool(rclone_configs)
     except Exception:
         pass
-
-    if has_gdrive:
-        try:
-            from bot.services import GDriveService
-
-            await GDriveService.setup_folders()
-            logger.info("✅ GDrive ready")
-        except Exception as e:
-            logger.warning(f"⚠️ GDrive setup: {e}")
-    else:
-        logger.info("⚠️ GDrive NOT configured. Run /admin → Rclone → Add → Google Drive")
 
     if has_rclone:
         logger.info("✅ Rclone ready")
@@ -1001,8 +975,9 @@ async def _startup_tasks(app: FastAPI):
             logger.info("✅ Webhook configured")
         else:
             logger.info("⚠️ No WEBHOOK_URL. Starting long polling...")
-            await bot_application.updater.start_polling(drop_pending_updates=True)
-            logger.info("✅ Polling started")
+            if bot_application and bot_application.updater:
+                await bot_application.updater.start_polling(drop_pending_updates=True)
+                logger.info("✅ Polling started")
     except Exception as e:
         logger.warning(f"⚠️ Webhook/Polling startup error: {e}")
 
@@ -1099,12 +1074,6 @@ async def health():
 # ============================================================
 
 WEBHOOK_PATH = "/webhook/telegram"
-
-
-@app.get("/health", include_in_schema=False)
-async def health_check():
-    """Health check endpoint for Render deployment."""
-    return {"status": "ok", "service": "filebot"}
 
 
 @app.post(WEBHOOK_PATH, include_in_schema=False)

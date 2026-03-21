@@ -477,6 +477,8 @@ async def create_or_update_storage_message(
                 )
                 return message_id
             except Exception as edit_err:
+                if "Message is not modified" in str(edit_err):
+                    return message_id
                 logger.warning(
                     f"Failed to edit storage message {message_id}: {edit_err}"
                 )

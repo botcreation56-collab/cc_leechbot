@@ -68,11 +68,6 @@ from bot.services._cloud_upload import (
     MAX_BOT_FILE_SIZE_MB,
 )
 
-# ── Google Drive Direct Upload ────────────────────────────────────────────────
-from bot.services._gdrive import (
-    GDriveService,
-)
-
 __all__ = [
     # Download
     "DownloadError",
@@ -117,6 +112,4 @@ __all__ = [
     "UploadError",
     "upload_and_send_file",
     "MAX_BOT_FILE_SIZE_MB",
-    # GDrive
-    "GDriveService",
 ]

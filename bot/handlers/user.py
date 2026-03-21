@@ -1076,11 +1076,11 @@ async def handle_us_dest_manage(update: Update, context: ContextTypes.DEFAULT_TY
 
         cap_preview_lines = []
         if cap_style == "bold":
-            cap_preview_lines.append(f"<b>{display_caption}</b>")
+            cap_preview_lines.append(f"*{display_caption}*")
         elif cap_style == "italic":
-            cap_preview_lines.append(f"<i>{display_caption}</i>")
+            cap_preview_lines.append(f"_{display_caption}_")
         elif cap_style == "bolditalic":
-            cap_preview_lines.append(f"<b><i>{display_caption}</i></b>")
+            cap_preview_lines.append(f"*_{display_caption}_*")
         else:
             cap_preview_lines.append(display_caption)
 
@@ -1146,7 +1146,7 @@ async def handle_us_dest_manage(update: Update, context: ContextTypes.DEFAULT_TY
                 f"🎯 **Destination Settings**\n\n"
                 f"Channel: `{title}`\n"
                 f"ID: `{channel_id}`\n\n"
-                f"Preview:\n```{cap_preview}```\n\n"
+                f"**Preview:**\n{cap_preview}\n\n"
                 f"Configure how files are sent to this channel:",
                 reply_markup=keyboard,
                 parse_mode="Markdown",
@@ -1157,7 +1157,7 @@ async def handle_us_dest_manage(update: Update, context: ContextTypes.DEFAULT_TY
                 f"🎯 **Destination Settings**\n\n"
                 f"Channel: `{title}`\n"
                 f"ID: `{channel_id}`\n\n"
-                f"Preview:\n```{cap_preview}```\n\n"
+                f"**Preview:**\n{cap_preview}\n\n"
                 f"Configure how files are sent to this channel:",
                 reply_markup=keyboard,
                 parse_mode="Markdown",
@@ -1602,11 +1602,11 @@ async def handle_us_dest_caption_builder(
 
         caption_preview = current_caption
         if cap_style == "bold":
-            caption_preview = f"<b>{current_caption}</b>"
+            caption_preview = f"*{current_caption}*"
         elif cap_style == "italic":
-            caption_preview = f"<i>{current_caption}</i>"
+            caption_preview = f"_{current_caption}_"
         elif cap_style == "bolditalic":
-            caption_preview = f"<b><i>{current_caption}</i></b>"
+            caption_preview = f"*_{current_caption}_*"
 
         stream_note = ""
         if use_stream_button:
@@ -1618,7 +1618,7 @@ async def handle_us_dest_caption_builder(
             "📝 **Caption Builder**\n\n"
             "Create your caption using placeholders.\n\n"
             f"**Current Caption:**\n"
-            f"```{caption_preview}```\n\n"
+            f"{caption_preview}\n\n"
             f"{available_placeholders}\n"
             f"{stream_note}\n\n"
             "**Tap 'Edit Caption' to customize your caption text.**\n"
@@ -2461,6 +2461,12 @@ def format_eta(seconds: int) -> str:
     return f"~{h}h {m}m"
 
 
+async def handle_refresh_progress(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle manual progress refresh query"""
+    query = update.callback_query
+    await query.answer("🔄 Progress auto-updates every few seconds.", show_alert=False)
+
+
 async def send_progress_message(
     bot,
     user_id,
@@ -2551,13 +2557,17 @@ async def send_progress_message(
             task_info["user_progress_msg_id"] = msg.message_id
             task_info["user_id"] = user_id
         else:
-            await bot.edit_message_text(
-                chat_id=user_id,
-                message_id=task_info["user_progress_msg_id"],
-                text=message_text,
-                reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None,
-                parse_mode="Markdown",
-            )
+            try:
+                await bot.edit_message_text(
+                    chat_id=user_id,
+                    message_id=task_info["user_progress_msg_id"],
+                    text=message_text,
+                    reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None,
+                    parse_mode="Markdown",
+                )
+            except Exception as e:
+                if "Message is not modified" not in str(e):
+                    logger.warning(f"Failed to edit user progress message: {e}")
 
         # ——— Update Dump Channel (optional) ———
         if dump_channel:
@@ -2568,12 +2578,16 @@ async def send_progress_message(
                 )
                 task_info["dump_progress_msg_id"] = msg.message_id
             else:
-                await bot.edit_message_text(
-                    chat_id=dump_channel,
-                    message_id=task_info["dump_progress_msg_id"],
-                    text=dump_text,
-                    parse_mode="Markdown",
-                )
+                try:
+                    await bot.edit_message_text(
+                        chat_id=dump_channel,
+                        message_id=task_info["dump_progress_msg_id"],
+                        text=dump_text,
+                        parse_mode="Markdown",
+                    )
+                except Exception as e:
+                    if "Message is not modified" not in str(e):
+                        logger.warning(f"Failed to edit dump progress message: {e}")
 
         # Save state
         bot.progress_data[task_id] = task_info

@@ -816,26 +816,6 @@ async def rclone_callback(
             )
             await update_rclone_config(config_id, {"credentials": updated_snippet})
 
-            # ALSO save to GDriveService for direct uploads (no server storage)
-            try:
-                from database.gdrive import save_gdrive_config
-
-                await save_gdrive_config(
-                    client_id=client_id,
-                    client_secret=client_secret,
-                    refresh_token=refresh_token,
-                    admin_id=user_id,
-                )
-
-                # Auto-setup GDrive folders (temp/, Free/, Pro/)
-                from bot.services import GDriveService
-
-                GDriveService._access_token = None  # Clear cached token
-                await GDriveService.setup_folders()
-                logger.info("✅ GDrive folders auto-created after rclone setup")
-            except Exception as e:
-                logger.warning(f"GDrive direct upload setup skipped: {e}")
-
             # Notify user via bot — show them the config and a confirm button
             from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 

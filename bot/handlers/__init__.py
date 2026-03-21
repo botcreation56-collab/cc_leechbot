@@ -218,4 +218,5 @@ from .user import (
     handle_rem_word,
     handle_rem_meta,
     handle_rem_inject,
+    handle_refresh_progress,
 )
