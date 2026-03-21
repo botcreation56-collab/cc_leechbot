@@ -876,56 +876,105 @@ async def cleanup_bot(application: Application, db_conn) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Minimal lifespan - port binds immediately, all init after yield."""
+    """Ultra-minimal lifespan - port binds immediately."""
     global bot_application
 
-    logger.info("🚀 FastAPI starting (port will bind now)...")
+    yield  # PORT BINDS IMMEDIATELY
+
+    # Start all tasks after port is bound
+    import asyncio
+
+    asyncio.create_task(_startup_tasks(app))
+    logger.info("✅ Startup tasks queued")
+
+    logger.info("🛑 FastAPI shutting down...")
+
+
+async def _startup_tasks(app: FastAPI):
+    """Run ALL startup tasks after port is bound."""
+    import asyncio
+
+    logger.info("🚀 Running startup tasks...")
 
     try:
         validate_environment()
     except Exception as e:
-        logger.warning(f"⚠️ Env validation: {e}")
-
-    yield  # PORT BINDS HERE - everything before this must be fast!
-
-    # Run startup tasks after port is bound
-    asyncio.create_task(_startup_tasks(app))
-    logger.info("✅ Startup tasks queued")
-
-
-async def _startup_tasks(app: FastAPI):
-    """Run all startup tasks after port is bound."""
-    import asyncio
+        logger.warning(f"⚠️ Env: {e}")
 
     try:
         deps = await build_dependency_graph()
         app.state.deps = deps
+        logger.info("✅ Dependencies ready")
+    except Exception as e:
+        logger.error(f"❌ Dependencies: {e}")
+        return
 
-        bot_application = await build_bot_application(deps)
-        app.state.bot = bot_application.bot
+    try:
+        bot_app = await build_bot_application(deps)
+        app.state.bot = bot_app.bot
+        global bot_application
+        bot_application = bot_app
         logger.info("✅ Bot application built")
+    except Exception as e:
+        logger.error(f"❌ Bot app: {e}")
+        return
 
-        # Start background workers
-        asyncio.create_task(_init_pyrogram_bg())
-        asyncio.create_task(_setup_gdrive())
-        asyncio.create_task(_setup_rclone())
-        asyncio.create_task(_start_queue_worker())
+    # Start background services (delayed to not block)
+    await asyncio.sleep(1)
 
-        # Configure webhook
-        if settings.WEBHOOK_URL and deps:
-            try:
-                user_count = await deps["user_repo"]._col.count_documents({})
-                await configure_webhook(
-                    get_bot_token(),
-                    settings.WEBHOOK_URL,
-                    settings.WEBHOOK_SECRET or "",
-                    user_count,
-                )
-            except Exception as e:
-                logger.warning(f"⚠️ Webhook setup: {e}")
+    try:
+        from bot.services import QueueWorker
 
-    except Exception as exc:
-        logger.error("❌ Startup tasks failed: %s", exc, exc_info=True)
+        worker = QueueWorker(bot_application.bot)
+        asyncio.create_task(worker.start())
+        logger.info("✅ QueueWorker started")
+    except Exception as e:
+        logger.warning(f"⚠️ QueueWorker: {e}")
+
+    await asyncio.sleep(0.5)
+
+    try:
+        from bot.pyrogram_client import init_pyrogram
+
+        await init_pyrogram()
+        logger.info("✅ Pyrogram started")
+    except Exception as e:
+        logger.warning(f"⚠️ Pyrogram: {e}")
+
+    await asyncio.sleep(0.5)
+
+    try:
+        from bot.services import GDriveService
+
+        if await GDriveService.is_configured():
+            await GDriveService.setup_folders()
+            logger.info("✅ GDrive ready")
+    except Exception as e:
+        logger.warning(f"⚠️ GDrive: {e}")
+
+    try:
+        from bot.services._cloud_upload import ensure_rclone_binary
+
+        path = await ensure_rclone_binary()
+        if path:
+            logger.info(f"✅ Rclone: {path}")
+    except Exception as e:
+        logger.warning(f"⚠️ Rclone: {e}")
+
+    try:
+        if settings.WEBHOOK_URL:
+            user_count = await deps["user_repo"]._col.count_documents({})
+            await configure_webhook(
+                get_bot_token(),
+                settings.WEBHOOK_URL,
+                settings.WEBHOOK_SECRET or "",
+                user_count,
+            )
+            logger.info("✅ Webhook configured")
+    except Exception as e:
+        logger.warning(f"⚠️ Webhook: {e}")
+
+    logger.info("🎉 All startup tasks complete!")
 
 
 # ============================================================
