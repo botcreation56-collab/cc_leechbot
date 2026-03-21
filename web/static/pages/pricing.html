@@ -789,7 +789,18 @@
             try {
                 const res = await fetch('/api/public/plans');
                 const data = await res.json();
+                
                 botUsername = data.bot_username || 'cc_leechbot';
+                
+                // Update site info if provided
+                if (data.site_name) {
+                    document.title = data.site_name + ' - Pricing';
+                    document.querySelector('.logo span:last-child').textContent = data.site_name;
+                }
+                if (data.site_description) {
+                    document.querySelector('.hero p').textContent = data.site_description;
+                }
+                
                 renderPricing(data.plans || { free: {}, pro: {} });
             } catch (e) {
                 console.error('Failed to load pricing:', e);
@@ -810,28 +821,37 @@
             }
         }
 
-        function formatFeatures(features, plan) {
-            if (!features || features.length === 0) {
-                if (plan === 'free') {
-                    return [
-                        'Basic file processing',
-                        'Up to 50MB per file',
-                        'Standard processing speed',
-                        'Community support'
-                    ];
-                } else {
-                    return [
-                        'Priority processing queue',
-                        'Up to 2GB per file',
-                        'High-speed processing',
-                        'Cloud storage upload',
-                        'Custom metadata injection',
-                        'Batch file processing',
-                        'Extended storage retention',
-                        '24/7 Priority support'
-                    ];
-                }
+        function generateFeatures(planData, planType) {
+            // If features are explicitly defined, use them
+            if (planData.features && planData.features.length > 0) {
+                return planData.features;
             }
+            
+            // Otherwise, generate features based on plan settings
+            const features = [];
+            const parallel = planData.parallel || 1;
+            const storage = planData.storage_per_day || 5;
+            const expiry = planData.dump_expiry_days || 0;
+            const maxSize = planData.max_file_size_mb || 50;
+            
+            if (planType === 'free') {
+                features.push('Basic file processing');
+                if (parallel > 1) features.push(`${parallel} parallel uploads`);
+                features.push(`${storage} GB daily storage`);
+                if (maxSize > 50) features.push(`Up to ${maxSize}MB per file`);
+                features.push('Standard processing speed');
+            } else {
+                features.push('Priority processing queue');
+                features.push(`${parallel} parallel uploads`);
+                features.push(`Up to ${maxSize}MB per file`);
+                features.push('High-speed processing');
+                features.push(`${storage} GB daily storage`);
+                if (expiry > 0) features.push(`${expiry} days file retention`);
+                features.push('Cloud storage upload');
+                features.push('Custom metadata injection');
+                features.push('24/7 Priority support');
+            }
+            
             return features;
         }
 
@@ -840,8 +860,8 @@
             const freePlan = plans.free || {};
             const proPlan = plans.pro || plans.premium || {};
 
-            const freeFeatures = formatFeatures(freePlan.features, 'free');
-            const proFeatures = formatFeatures(proPlan.features, 'pro');
+            const freeFeatures = generateFeatures(freePlan, 'free');
+            const proFeatures = generateFeatures(proPlan, 'pro');
 
             grid.innerHTML = `
                 <!-- Free Plan -->

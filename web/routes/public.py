@@ -539,69 +539,108 @@ async def queue_bypassed_endpoint(request: Request, token: str, bot: str):
 async def get_public_plans():
     """
     Get pricing plans for public display (no auth required).
+    Dynamically reads from database configuration.
     """
     try:
         from bot.database import get_config
         from config.settings import get_settings
 
         config = await get_config() or {}
-        plans = config.get(
-            "plans",
-            {
-                "free": {
-                    "price": 0,
-                    "parallel": 1,
-                    "storage_per_day": 5,
-                    "dump_expiry_days": 0,
-                    "max_file_size_mb": 50,
-                    "features": [
-                        "Basic file processing",
-                        "Single file uploads",
-                        "Standard speed",
-                    ],
-                },
-                "pro": {
-                    "price": 5,
-                    "parallel": 3,
-                    "storage_per_day": 50,
-                    "dump_expiry_days": 30,
-                    "max_file_size_mb": 2000,
-                    "features": [
-                        "Priority processing",
-                        "Batch uploads",
-                        "High speed",
-                        "Cloud upload",
-                        "Custom metadata",
-                        "Extended storage",
-                        "No ads",
-                    ],
-                },
-            },
+        plans_config = config.get("plans", {})
+
+        # Default free plan
+        free_plan = plans_config.get("free", {})
+        free_plan_features = free_plan.get(
+            "features",
+            [
+                "Basic file processing",
+                f"Up to {free_plan.get('parallel', 1)} parallel uploads",
+                "Standard processing speed",
+                f"{free_plan.get('storage_per_day', 5)} GB daily storage",
+            ],
         )
+
+        # Default pro plan (may be stored as 'pro' or 'premium')
+        pro_plan = plans_config.get("pro") or plans_config.get("premium", {})
+        pro_plan_features = pro_plan.get(
+            "features",
+            [
+                "Priority processing queue",
+                f"Up to {pro_plan.get('parallel', 3)} parallel uploads",
+                "High-speed processing",
+                "Cloud storage upload",
+                "Custom metadata injection",
+                f"{pro_plan.get('storage_per_day', 50)} GB daily storage",
+                f"{pro_plan.get('dump_expiry_days', 30)} days file retention",
+                "24/7 Priority support",
+            ],
+        )
+
+        # Ensure we have proper data structure
+        plans = {
+            "free": {
+                "price": free_plan.get("price", 0),
+                "parallel": free_plan.get("parallel", 1),
+                "storage_per_day": free_plan.get("storage_per_day", 5),
+                "dump_expiry_days": free_plan.get("dump_expiry_days", 0),
+                "max_file_size_mb": free_plan.get("max_file_size_mb", 50),
+                "features": free_plan_features,
+            },
+            "pro": {
+                "price": pro_plan.get("price", 5),
+                "parallel": pro_plan.get("parallel", 3),
+                "storage_per_day": pro_plan.get("storage_per_day", 50),
+                "dump_expiry_days": pro_plan.get("dump_expiry_days", 30),
+                "max_file_size_mb": pro_plan.get("max_file_size_mb", 2000),
+                "features": pro_plan_features,
+            },
+        }
 
         settings = get_settings()
         bot_username = settings.BOT_USERNAME or "cc_leechbot"
 
-        return {"plans": plans, "bot_username": bot_username, "currency": "USD"}
+        logger.info(
+            f"✅ Public plans loaded: free=${plans['free']['price']}, pro=${plans['pro']['price']}"
+        )
+
+        return {
+            "plans": plans,
+            "bot_username": bot_username,
+            "currency": "USD",
+            "site_name": settings.SITE_NAME or "FileBot",
+            "site_description": settings.SITE_DESCRIPTION
+            or "Fast & reliable file processing bot",
+        }
+
     except Exception as e:
         logger.error(f"❌ Get public plans error: {e}", exc_info=True)
+        # Fallback with defaults
         return {
             "plans": {
                 "free": {
                     "price": 0,
                     "parallel": 1,
                     "storage_per_day": 5,
-                    "features": ["Basic processing"],
+                    "dump_expiry_days": 0,
+                    "features": ["Basic file processing", "Standard speed"],
                 },
                 "pro": {
                     "price": 5,
                     "parallel": 3,
                     "storage_per_day": 50,
-                    "features": ["Priority", "Cloud upload", "Batch"],
+                    "dump_expiry_days": 30,
+                    "features": [
+                        "Priority processing",
+                        "High speed",
+                        "Cloud upload",
+                        "Extended storage",
+                    ],
                 },
             },
             "bot_username": "cc_leechbot",
             "currency": "USD",
+            "site_name": "FileBot",
+            "site_description": "Fast & reliable file processing",
         }
 
 

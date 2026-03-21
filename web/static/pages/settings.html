@@ -427,7 +427,11 @@
                 if (res.ok) {
                     const data = await res.json();
                     botUsername = data.bot_username || 'cc_leechbot';
-                    const planData = userPlan === 'pro' ? (data.plans.pro || data.plans.premium) : data.plans.free;
+                    
+                    // Get the user's plan
+                    const planKey = (userPlan === 'pro' || userPlan === 'premium') ? 'pro' : 'free';
+                    const planData = data.plans[planKey] || data.plans.free;
+                    
                     if (planData) {
                         document.getElementById('plan-parallel').textContent = planData.parallel || '-';
                         document.getElementById('plan-storage').textContent = (planData.storage_per_day || '0') + ' GB';
