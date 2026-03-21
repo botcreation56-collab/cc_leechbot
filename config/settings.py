@@ -273,14 +273,15 @@ def get_settings() -> Settings:
         environment = os.getenv("ENVIRONMENT", "").lower()
         is_production = environment == "production"
 
-        if is_production:
-            if not _settings.WEBHOOK_SECRET:
-                import secrets
-                _settings.WEBHOOK_SECRET = secrets.token_urlsafe(32).replace('_', '').replace('-', '')
+        if not _settings.WEBHOOK_SECRET:
+            import secrets
+            _settings.WEBHOOK_SECRET = secrets.token_urlsafe(32).replace('_', '').replace('-', '')
+            if is_production: # Only print warning in production
                 print(f"\n{'=' * 60}")
                 print(f"⚠️ WEBHOOK_SECRET auto-generated for current session.")
                 print(f"{'=' * 60}\n")
 
+        if is_production:
             if not _settings.ENCRYPTION_KEY:
                 print(f"\n{'=' * 60}")
                 print(f"⚠️ WARNING: ENCRYPTION_KEY not set. Auto-generating...")
