@@ -33,8 +33,6 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
         response.headers["X-Content-Type-Options"] = "nosniff"
 
-        response.headers["X-Frame-Options"] = "DENY"
-
         if os.getenv("DISABLE_XSS_PROTECTION") != "1":
             response.headers["X-XSS-Protection"] = "1; mode=block"
 
@@ -72,7 +70,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             return (
                 "default-src 'none'; "
                 "form-action 'none'; "
-                "frame-ancestors 'none'; "
+                "frame-ancestors *; "
                 "base-uri 'none'; "
                 "script-src 'none'; "
                 "style-src 'self'; "
@@ -91,7 +89,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 "img-src 'self' data: https:; "
                 "connect-src 'self'; "
                 "font-src 'self'; "
-                "frame-ancestors 'none'; "
+                "frame-ancestors *; "
                 "base-uri 'self'; "
                 "form-action 'self'"
             )
