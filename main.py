@@ -1051,7 +1051,7 @@ async def health():
     db_ok = False
     if db_conn := deps.get("db_conn"):
         try:
-            await db_conn.db.command("ping")
+            await asyncio.wait_for(db_conn.db.command("ping"), timeout=2.0)
             db_ok = True
         except Exception:
             pass
