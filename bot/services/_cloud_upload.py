@@ -502,8 +502,6 @@ async def create_or_update_storage_message(
     except Exception as e:
         logger.error(f"Failed to post to storage channel: {e}", exc_info=True)
         return None
-        logger.error(f"Failed to post to storage channel: {e}", exc_info=True)
-        return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -649,11 +647,14 @@ async def upload_and_send_file(
             raise UploadError("Failed to send file")
 
         return {
+            "success": True,
+            "delivery_method": "fast_forward",
             "file_id": telegram_file_id,
             "filename": filename,
-            "method": "fast_forward",
-            "size": 0,
-            "url": None,
+            "cloud_url": None,
+            "message_id": dump_message.message_id if dump_message else None,
+            "expiry_date": expiry_date,
+            "retention_days": retention_days,
         }
 
     file_path = str(Path(file_path))

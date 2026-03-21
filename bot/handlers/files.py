@@ -1502,7 +1502,7 @@ class WizardHandler:
 
     @staticmethod
     async def process_session_background(
-        bot, user_id: int, session: Dict[str, Any], query=None
+        bot, user_id: int, session: Dict[str, Any], query=None, context=None
     ):
         """Core processing logic decoupled from UI callbacks, runnable by QueueWorker."""
         task_id = session.get("task_id")
@@ -1778,7 +1778,7 @@ class WizardHandler:
                 )
 
                 # Store metadata for destination forward
-                if dump_file_id:
+                if dump_file_id and context:
                     context.user_data[f"fwd_meta_{dump_file_id[-10:]}"] = {
                         "filename": custom_name,
                         "size": session.get("file_size", 0),
@@ -1991,7 +1991,7 @@ class WizardHandler:
             )
 
             # Store metadata for destination forward
-            if dump_file_id:
+            if dump_file_id and context:
                 context.user_data[f"fwd_meta_{dump_file_id[-10:]}"] = {
                     "filename": custom_name,
                     "size": session.get("file_size", 0),
@@ -2203,7 +2203,7 @@ class WizardHandler:
 
             asyncio.create_task(
                 WizardHandler.process_session_background(
-                    context.bot, user_id, session, query
+                    context.bot, user_id, session, query, context
                 )
             )
 
