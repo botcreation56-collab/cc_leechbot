@@ -46,9 +46,6 @@ from telegram.ext import (
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-    ],
 )
 logger = logging.getLogger("filebot.main")
 
@@ -737,6 +734,11 @@ async def build_bot_application(deps: dict) -> Application:
 
     await application.initialize()
     await application.start()
+
+    # Initialize Telegram log handler
+    from bot.utils import init_telegram_logging
+
+    await init_telegram_logging(application.bot)
 
     # Initialise Pyrogram clients
     from bot.pyrogram_client import init_pyrogram

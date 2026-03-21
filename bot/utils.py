@@ -28,6 +28,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from cryptography.fernet import Fernet, InvalidToken
 from telegram import Bot
+from telegram.error import TelegramError
 
 from config.settings import get_settings
 
@@ -36,6 +37,84 @@ from config.settings import get_settings
 # ============================================================
 
 logger = logging.getLogger("filebot")
+
+
+class TelegramLogHandler(logging.Handler):
+    """Custom logging handler that sends logs to a Telegram channel."""
+
+    _bot: Bot | None = None
+    _channel_id: int | None = None
+    _queue: asyncio.Queue = None
+    _worker_task: asyncio.Task | None = None
+
+    def __init__(self):
+        super().__init__()
+        self._queue = asyncio.Queue(maxsize=100)
+
+    @classmethod
+    async def initialize(cls, bot: Bot):
+        """Initialize the handler with a bot instance."""
+        cls._bot = bot
+        from bot.database import get_channel_id
+        from config.settings import get_settings
+
+        settings = get_settings()
+        db_log_channel = await get_channel_id("log")
+        cls._channel_id = db_log_channel if db_log_channel else settings.LOG_CHANNEL_ID
+
+        if cls._channel_id and cls._worker_task is None:
+            cls._worker_task = asyncio.create_task(cls._worker())
+
+    @classmethod
+    async def _worker(cls):
+        """Background worker to process log messages."""
+        while True:
+            try:
+                record = await cls._queue.get()
+                if cls._bot and cls._channel_id:
+                    await cls._send_message(record)
+                cls._queue.task_done()
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                pass
+
+    @classmethod
+    async def _send_message(cls, record: logging.LogRecord):
+        """Send formatted log message to Telegram."""
+        try:
+            emoji = {
+                "DEBUG": "🔍",
+                "INFO": "ℹ️",
+                "WARNING": "⚠️",
+                "ERROR": "❌",
+                "CRITICAL": "🚨",
+            }.get(record.levelname, "📝")
+
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            message = (
+                f"{emoji} *{record.levelname}*\n"
+                f"`{timestamp}` | `{record.name}`\n"
+                f"{record.getMessage()}"
+            )
+
+            await cls._bot.send_message(
+                chat_id=cls._channel_id,
+                text=message[:4096],
+                parse_mode="Markdown",
+                disable_web_page_preview=True,
+            )
+        except TelegramError:
+            pass
+
+    def emit(self, record: logging.LogRecord):
+        """Emit a log record to the queue."""
+        try:
+            if not self._queue.full():
+                self._queue.put_nowait(record)
+        except Exception:
+            pass
+
 
 # ============================================================
 # ENCRYPTION
@@ -116,9 +195,13 @@ def setup_logging() -> None:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[
             logging.FileHandler(settings.LOG_FILE, encoding="utf-8"),
-            logging.StreamHandler(),
         ],
     )
+
+    # Add Telegram log handler
+    telegram_handler = TelegramLogHandler()
+    telegram_handler.setLevel(logging.WARNING)  # Only send warnings/errors to channel
+    logging.getLogger().addHandler(telegram_handler)
 
     # Suppress noisy third-party loggers
     for lib in ("httpx", "urllib3", "motor", "passlib", "telegram"):
@@ -127,6 +210,11 @@ def setup_logging() -> None:
     logger.info(
         f"Logging initialized | Level: {settings.LOG_LEVEL} | File: {settings.LOG_FILE}"
     )
+
+
+async def init_telegram_logging(bot) -> None:
+    """Initialize Telegram log handler after bot is ready."""
+    await TelegramLogHandler.initialize(bot)
 
 
 # ============================================================
