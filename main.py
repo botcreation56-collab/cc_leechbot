@@ -780,11 +780,12 @@ async def configure_webhook(
     needed_max = min(100, 40 + extra_conns)
 
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(10.0, connect=5.0)
+        ) as client:
             info = (
                 await client.get(
                     f"https://api.telegram.org/bot{bot_token}/getWebhookInfo",
-                    timeout=10,
                 )
             ).json()
 
@@ -795,7 +796,9 @@ async def configure_webhook(
             logger.info("✅ Webhook already configured correctly: %s", webhook_url)
             return
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(15.0, connect=5.0)
+        ) as client:
             r = await client.post(
                 f"https://api.telegram.org/bot{bot_token}/setWebhook",
                 json={
@@ -810,7 +813,6 @@ async def configure_webhook(
                     "max_connections": needed_max,
                     "secret_token": secret,
                 },
-                timeout=15,
             )
         logger.info("SetWebhook → %d: %s", r.status_code, r.text[:200])
     except Exception as exc:
@@ -1016,16 +1018,25 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# ── Security Headers ──────────────────────────────────────────
+from web.utils.security_headers import SecurityHeadersMiddleware
+
+app.add_middleware(SecurityHeadersMiddleware)
+
 # ── CORS ─────────────────────────────────────────────────────
+# Build allow_origins safely - never include empty strings
+_frontend_url = os.getenv("FRONTEND_URL", "").strip()
+_allow_origins = ["https://localhost:3000", "http://localhost:3000"]
+if _frontend_url and _frontend_url.startswith(("http://", "https://")):
+    _allow_origins.append(_frontend_url)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://localhost:3000",
-        os.getenv("FRONTEND_URL", ""),
-    ],
+    allow_origins=_allow_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-CSRF-Token"],
+    expose_headers=["X-CSRF-Token"],
 )
 
 # ── Web routers ───────────────────────────────────────────────
@@ -1093,10 +1104,19 @@ async def telegram_webhook(request: Request):
 
     # Validate Telegram secret header
     secret = settings.WEBHOOK_SECRET or ""
-    if secret:
-        incoming = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
-        if incoming != secret:
-            raise HTTPException(status_code=403, detail="Invalid secret token")
+    if not secret:
+        logger.critical(
+            "🚨 WEBHOOK_SECRET is not configured! Rejecting webhook request."
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Webhook secret not configured. Set WEBHOOK_SECRET environment variable.",
+        )
+
+    incoming = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+    if incoming != secret:
+        logger.warning(f"🚫 Webhook rejected: invalid secret token")
+        raise HTTPException(status_code=403, detail="Invalid secret token")
 
     body = await request.body()
     try:

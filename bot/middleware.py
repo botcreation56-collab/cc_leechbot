@@ -83,8 +83,8 @@ def rate_limit(func: Callable) -> Callable:
                     await update.callback_query.answer(
                         "⏳ Already processing...", show_alert=False
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Callback answer skipped (duplicate): {e}")
             return
 
         # Check global cooldown
@@ -98,7 +98,7 @@ def rate_limit(func: Callable) -> Callable:
                             "⏳ Please wait a moment...", show_alert=False
                         )
                     except Exception as e:
-                        logger.debug(f"Rate-limit answer skipped: {e}")
+                        logger.debug(f"Callback answer skipped (rate-limit): {e}")
                 return
 
         # Acquire locks

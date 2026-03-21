@@ -36,6 +36,7 @@ logger = logging.getLogger("filebot.security")
 # Encryption
 # ---------------------------------------------------------------------------
 
+
 class EncryptionManager:
     """Fernet-based symmetric encryption for storing sensitive credentials.
 
@@ -55,13 +56,18 @@ class EncryptionManager:
         """Build from environment variable (raises ConfigurationError if missing)."""
         raw = os.getenv(env_var, "")
         if not raw:
-            raise ConfigurationError(env_var, "ENCRYPTION_KEY not set. Generate one with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"")
+            raise ConfigurationError(
+                env_var,
+                'ENCRYPTION_KEY not set. Generate one with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"',
+            )
         try:
             key_bytes = raw.encode() if isinstance(raw, str) else raw
             Fernet(key_bytes)  # validate key format before storing
             return cls(key_bytes)
         except Exception as exc:
-            raise ConfigurationError(env_var, f"Invalid Fernet key format: {exc}") from exc
+            raise ConfigurationError(
+                env_var, f"Invalid Fernet key format: {exc}"
+            ) from exc
 
     @classmethod
     def from_key(cls, key: str) -> "EncryptionManager":
@@ -116,9 +122,21 @@ def decrypt_credentials(token: str) -> Dict[str, Any]:
     return get_encryption_manager().decrypt(token)
 
 
+def encrypt_token(token: str) -> str:
+    """Encrypt a simple token string for URL-safe storage."""
+    return get_encryption_manager().encrypt({"token": token})
+
+
+def decrypt_token(encrypted: str) -> str:
+    """Decrypt an encrypted token string."""
+    data = get_encryption_manager().decrypt(encrypted)
+    return data.get("token", "")
+
+
 # ---------------------------------------------------------------------------
 # Token Generation
 # ---------------------------------------------------------------------------
+
 
 class TokenGenerator:
     """Factory for cryptographically secure tokens."""
@@ -137,7 +155,7 @@ class TokenGenerator:
     def otp(digits: int = 6) -> str:
         """Return a numeric OTP code of `digits` length."""
         range_start = 10 ** (digits - 1)
-        range_end = (10 ** digits) - 1
+        range_end = (10**digits) - 1
         return str(secrets.randbelow(range_end - range_start) + range_start)
 
 
@@ -147,20 +165,22 @@ class TokenGenerator:
 
 # RFC 1918 / RFC 4193 / RFC 5737 private ranges
 _PRIVATE_NETWORKS = [
-    ipaddress.ip_network("127.0.0.0/8"),    # loopback IPv4
-    ipaddress.ip_network("10.0.0.0/8"),     # RFC 1918
+    ipaddress.ip_network("127.0.0.0/8"),  # loopback IPv4
+    ipaddress.ip_network("10.0.0.0/8"),  # RFC 1918
     ipaddress.ip_network("172.16.0.0/12"),  # RFC 1918
-    ipaddress.ip_network("192.168.0.0/16"), # RFC 1918
-    ipaddress.ip_network("169.254.0.0/16"), # link-local
-    ipaddress.ip_network("0.0.0.0/8"),      # "this network"
-    ipaddress.ip_network("::1/128"),        # IPv6 loopback
-    ipaddress.ip_network("fc00::/7"),       # IPv6 unique-local
-    ipaddress.ip_network("fe80::/10"),      # IPv6 link-local
+    ipaddress.ip_network("192.168.0.0/16"),  # RFC 1918
+    ipaddress.ip_network("169.254.0.0/16"),  # link-local
+    ipaddress.ip_network("0.0.0.0/8"),  # "this network"
+    ipaddress.ip_network("::1/128"),  # IPv6 loopback
+    ipaddress.ip_network("fc00::/7"),  # IPv6 unique-local
+    ipaddress.ip_network("fe80::/10"),  # IPv6 link-local
     ipaddress.ip_network("100.64.0.0/10"),  # CGNAT (shared address space)
     ipaddress.ip_network("198.18.0.0/15"),  # Benchmark testing
 ]
 
-_BLOCKED_SCHEMES = frozenset({"javascript", "data", "file", "ftp", "gopher", "dict", "ldap", "sftp"})
+_BLOCKED_SCHEMES = frozenset(
+    {"javascript", "data", "file", "ftp", "gopher", "dict", "ldap", "sftp"}
+)
 _URL_RE = re.compile(r"^https://[^\s/$.?#][^\s]*$", re.IGNORECASE)
 
 
@@ -214,7 +234,10 @@ async def _async_ip_is_private(host: str) -> bool:
             timeout=_DNS_RESOLVE_TIMEOUT,
         )
     except asyncio.TimeoutError:
-        logger.warning("DNS resolution timed out for host %r — treating as private (fail-safe)", host)
+        logger.warning(
+            "DNS resolution timed out for host %r — treating as private (fail-safe)",
+            host,
+        )
         return True  # fail-secure: block on timeout
     except Exception as exc:
         logger.debug("DNS check failed for %r: %s — treating as routable", host, exc)
@@ -245,6 +268,7 @@ def validate_url(url: str) -> Tuple[bool, str]:
 
     try:
         from urllib.parse import urlparse
+
         parsed = urlparse(url)
         host = parsed.hostname or ""
     except Exception:
@@ -279,12 +303,16 @@ async def validate_url_async(url: str) -> Tuple[bool, str]:
 
     try:
         from urllib.parse import urlparse
+
         host = urlparse(url).hostname or ""
     except Exception:
         return False, "Could not parse URL"
 
     if await _async_ip_is_private(host):
-        return False, f"SSRF blocked: '{host}' resolves to a private or reserved address"
+        return (
+            False,
+            f"SSRF blocked: '{host}' resolves to a private or reserved address",
+        )
 
     return True, ""
 
@@ -311,7 +339,7 @@ def sanitize_filename(filename: str) -> str:
     clean = _SAFE_FILENAME_RE.sub("_", filename)
     # Collapse consecutive underscores and strip leading/trailing dots+underscores
     clean = re.sub(r"_+", "_", clean).strip("._")
-    return (clean[:255] or "unnamed_file")
+    return clean[:255] or "unnamed_file"
 
 
 def validate_filename(filename: str) -> None:
@@ -324,7 +352,9 @@ def validate_filename(filename: str) -> None:
         raise InvalidFilenameError(filename, "Filename length must be 1–255 characters")
     for seq in _DANGEROUS_SEQUENCES:
         if seq in filename:
-            raise InvalidFilenameError(filename, f"Forbidden sequence in filename: {repr(seq)}")
+            raise InvalidFilenameError(
+                filename, f"Forbidden sequence in filename: {repr(seq)}"
+            )
 
 
 def safe_path(base_dir: str, filename: str) -> str:
@@ -337,5 +367,7 @@ def safe_path(base_dir: str, filename: str) -> str:
     target = (base / filename).resolve()
     # target must start with base (be inside the tree) or equal base itself
     if base not in target.parents and base != target:
-        raise ValueError(f"Path traversal blocked: {filename!r} would escape {base_dir!r}")
+        raise ValueError(
+            f"Path traversal blocked: {filename!r} would escape {base_dir!r}"
+        )
     return str(target)

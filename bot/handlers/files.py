@@ -957,8 +957,10 @@ async def handle_us_thumbnail(update: Update, context: ContextTypes.DEFAULT_TYPE
                             chat_id=storage_channel, message_id=old_msg_id
                         )
                         logger.info(f"Vanished old ledger message {old_msg_id}")
-                    except:
-                        pass
+                    except Exception as e:
+                        logger.warning(
+                            f"⚠️ Failed to delete old ledger message {old_msg_id}: {e}"
+                        )
 
                 # Send new thumbnail to storage
                 backup_msg = await context.bot.send_photo(
@@ -995,8 +997,8 @@ async def handle_us_thumbnail(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Delete user's photo message to keep chat clean
         try:
             await update.message.delete()
-        except:
-            pass
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to delete user's photo message: {e}")
 
         # Return to settings menu in-place
         from bot.handlers import ussettings_command
@@ -1432,8 +1434,8 @@ class WizardHandler:
             logger.error(f"Wizard Handler Error: {e}", exc_info=True)
             try:
                 await update.callback_query.answer("❌ Error occurred", show_alert=True)
-            except:
-                pass
+            except Exception as cb_err:
+                logger.warning(f"⚠️ Failed to show error alert to user: {cb_err}")
 
     @staticmethod
     async def render_track_menu(query, session, track_type):
@@ -1495,8 +1497,8 @@ class WizardHandler:
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode="Markdown",
             )
-        except:
-            pass  # Ignore "same message" error
+        except Exception as e:
+            logger.debug(f"Track menu update skipped (likely same content): {e}")
 
     @staticmethod
     async def process_session_background(

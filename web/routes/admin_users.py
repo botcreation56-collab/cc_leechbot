@@ -249,8 +249,16 @@ async def update_user_endpoint(
     try:
         db = get_db()
         updates = {}
+
+        # Validate plan against allowed values
+        ALLOWED_PLANS = {"free", "premium", "pro"}
         if request.plan is not None:
-            updates["plan"] = request.plan
+            if request.plan.lower() not in ALLOWED_PLANS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid plan. Allowed values: {', '.join(ALLOWED_PLANS)}",
+                )
+            updates["plan"] = request.plan.lower()
         if request.parallel_slots is not None:
             updates["parallel_slots"] = request.parallel_slots
         if request.storage_limit_gb is not None:

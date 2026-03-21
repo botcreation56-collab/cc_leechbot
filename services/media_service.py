@@ -45,12 +45,15 @@ _FFMPEG_SEM = asyncio.Semaphore(3)
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _check_disk_space(path: str, min_gb: float = 1.0) -> bool:
     try:
         _, _, free = shutil.disk_usage(path)
-        free_gb = free / 1024 ** 3
+        free_gb = free / 1024**3
         if free_gb < min_gb:
-            logger.critical("❌ LOW DISK SPACE: %.2f GB free (min %.1f GB)", free_gb, min_gb)
+            logger.critical(
+                "❌ LOW DISK SPACE: %.2f GB free (min %.1f GB)", free_gb, min_gb
+            )
             return False
         return True
     except Exception as exc:
@@ -61,6 +64,7 @@ def _check_disk_space(path: str, min_gb: float = 1.0) -> bool:
 # ---------------------------------------------------------------------------
 # DownloadService
 # ---------------------------------------------------------------------------
+
 
 class DownloadService:
     """Orchestrates URL analysis and binary download via aria2c / mega.py."""
@@ -82,14 +86,17 @@ class DownloadService:
         """
         netloc = url.lower()
         if any(domain in netloc for domain in self._BLOCKED_DOMAINS):
-            raise UnsupportedURLError(url, "YouTube downloads are strictly disabled per policy")
+            raise UnsupportedURLError(
+                url, "YouTube downloads are strictly disabled per policy"
+            )
 
         cmd = [
             YTDLP_PATH,
             "--dump-json",
-            "-f", "bestvideo+bestaudio/best",
+            "-f",
+            "bestvideo+bestaudio/best",
             "--no-warnings",
-            "--",          # stop option parsing before URL — SECURITY CRITICAL
+            "--",  # stop option parsing before URL — SECURITY CRITICAL
             url,
         ]
 
@@ -166,14 +173,14 @@ class DownloadService:
                 last_error = exc
                 logger.warning("⚠️ Analysis attempt %d/3 failed: %s", attempt + 1, exc)
                 if attempt < 2:
-                    await asyncio.sleep(2 ** attempt)
+                    await asyncio.sleep(2**attempt)
 
         if not analysis:
             raise DownloadError(f"URL analysis failed after 3 attempts: {last_error}")
 
         if max_size_bytes and analysis.get("filesize", 0) > max_size_bytes:
             raise DownloadError(
-                f"File too large: {analysis['filesize']/(1024**3):.2f}GB exceeds allowed maximum"
+                f"File too large: {analysis['filesize'] / (1024**3):.2f}GB exceeds allowed maximum"
             )
 
         direct_url = analysis.get("direct_url")
@@ -196,7 +203,7 @@ class DownloadService:
                 last_error = exc
                 logger.warning("⚠️ Download attempt %d/3 failed: %s", attempt + 1, exc)
                 if attempt < 2:
-                    await asyncio.sleep(2 ** attempt)
+                    await asyncio.sleep(2**attempt)
 
         if not file_path:
             raise DownloadError(f"Download failed after 3 attempts: {last_error}")
@@ -232,9 +239,12 @@ class DownloadService:
 
         cmd = [
             ARIA2C_PATH,
-            "-x", str(ARIA2C_CONNECTIONS),
-            "-s", str(ARIA2C_SPLITS),
-            "-k", "1M",
+            "-x",
+            str(ARIA2C_CONNECTIONS),
+            "-s",
+            str(ARIA2C_SPLITS),
+            "-k",
+            "1M",
             "--file-allocation=none",
             "--continue=true",
             "--allow-overwrite=true",
@@ -275,13 +285,16 @@ class DownloadService:
         logger.info("✅ aria2c complete: %s (%d bytes)", filename, dest.stat().st_size)
         return str(dest)
 
-    async def _download_mega(self, url: str, user_id: int, task_id: str) -> Dict[str, Any]:
+    async def _download_mega(
+        self, url: str, user_id: int, task_id: str
+    ) -> Dict[str, Any]:
         """Download from Mega.nz using mega.py (executes in thread pool)."""
         user_dir = self._dl_dir / str(user_id)
         user_dir.mkdir(parents=True, exist_ok=True)
 
         def _sync_dl():
             import mega  # optional dependency
+
             m = mega.Mega().login()
             return m.download_url(url, dest_path=str(user_dir))
 
@@ -338,6 +351,7 @@ class DownloadService:
 # FFmpeg Service
 # ---------------------------------------------------------------------------
 
+
 class MediaProcessingService:
     """Wraps FFmpeg for probing and remuxing operations."""
 
@@ -345,8 +359,13 @@ class MediaProcessingService:
     async def probe(file_path: str) -> Dict[str, Any]:
         """Run ffprobe and return structured audio + subtitle track info."""
         cmd = [
-            "ffprobe", "-v", "error", "-print_format", "json",
-            "-show_streams", file_path,
+            "ffprobe",
+            "-v",
+            "error",
+            "-print_format",
+            "json",
+            "-show_streams",
+            file_path,
         ]
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -393,16 +412,45 @@ class MediaProcessingService:
         Returns the output_path on success. Raises FFmpegError on failure.
         """
         async with _FFMPEG_SEM:
+            probe = await MediaProcessingService.probe(input_path)
+            available_audio = probe.get("audio", [])
+            available_subs = probe.get("subtitle", [])
+
+            valid_audio_indices = {s["index"] for s in available_audio}
+            valid_sub_indices = {s["index"] for s in available_subs}
+
+            safe_audio = []
+            if selected_audio is not None:
+                for idx in selected_audio:
+                    if idx in valid_audio_indices:
+                        safe_audio.append(idx)
+                    else:
+                        logger.warning(
+                            "FFmpeg: Audio stream index %d not found, skipping", idx
+                        )
+                selected_audio = safe_audio if safe_audio else None
+
+            safe_subs = []
+            if selected_subs is not None:
+                for idx in selected_subs:
+                    if idx in valid_sub_indices:
+                        safe_subs.append(idx)
+                    else:
+                        logger.warning(
+                            "FFmpeg: Subtitle stream index %d not found, skipping", idx
+                        )
+                selected_subs = safe_subs if safe_subs else None
+
             if not _check_disk_space(str(Path(output_path).parent), min_gb=2.0):
                 raise FFmpegError("ffmpeg", 1, "Insufficient disk space for processing")
 
             cmd = ["ffmpeg", "-y", "-i", input_path]
 
             # Inject extra audio sources
-            for src in (injected_audio or []):
+            for src in injected_audio or []:
                 cmd += ["-i", src]
             # Inject extra subtitle sources
-            for src in (injected_subs or []):
+            for src in injected_subs or []:
                 cmd += ["-i", src]
 
             # Map selected streams
@@ -419,7 +467,9 @@ class MediaProcessingService:
             # Map injected streams (they are inputs 1, 2, 3…)
             for i, _ in enumerate(injected_audio or [], start=1):
                 cmd += ["-map", f"{i}:a"]
-            for j, _ in enumerate(injected_subs or [], start=len(injected_audio or []) + 1):
+            for j, _ in enumerate(
+                injected_subs or [], start=len(injected_audio or []) + 1
+            ):
                 cmd += ["-map", f"{j}:s"]
 
             # Copy all streams — no re-encode
@@ -430,7 +480,9 @@ class MediaProcessingService:
                 cmd += ["-metadata", f"{key}={val}"]
 
             cmd += ["-progress", "pipe:1", output_path]
-            logger.info("⚙️ FFmpeg: %s → %s", Path(input_path).name, Path(output_path).name)
+            logger.info(
+                "⚙️ FFmpeg: %s → %s", Path(input_path).name, Path(output_path).name
+            )
 
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -448,7 +500,9 @@ class MediaProcessingService:
                     try:
                         elapsed_ms = int(line.split("=")[1])
                         if duration_s > 0 and progress_callback:
-                            pct = min(int(elapsed_ms / 1_000_000 / duration_s * 100), 99)
+                            pct = min(
+                                int(elapsed_ms / 1_000_000 / duration_s * 100), 99
+                            )
                             await progress_callback(pct)
                     except (ValueError, IndexError):
                         pass

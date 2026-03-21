@@ -293,10 +293,34 @@ def get_settings() -> Settings:
     if _settings is None:
         _settings = Settings()
 
-        # Auto-generate encryption keys if not set.
-        # ALWAYS warn — secrets are per-process and sessions/encrypted data become
-        # invalid on every restart until these are set as permanent env vars.
+        # Check for required secrets in production
+        environment = os.getenv("ENVIRONMENT", "").lower()
+        is_production = environment == "production"
+
+        if is_production:
+            missing_secrets = []
+            if not _settings.ENCRYPTION_KEY:
+                missing_secrets.append("ENCRYPTION_KEY")
+            if not _settings.JWT_SECRET:
+                missing_secrets.append("JWT_SECRET")
+            if not _settings.WEBHOOK_SECRET:
+                missing_secrets.append("WEBHOOK_SECRET")
+
+            if missing_secrets:
+                error_msg = (
+                    f"🚨 CRITICAL: Missing required secrets in production: {', '.join(missing_secrets)}. "
+                    f"These must be set as permanent environment variables. "
+                    f"Set them in Render dashboard or your production .env file."
+                )
+                print(f"\n{'=' * 60}")
+                print(f"ERROR: {error_msg}")
+                print(f"{'=' * 60}\n")
+                raise RuntimeError(error_msg)
+
+        # Auto-generate only in development mode with explicit warnings
         if not _settings.ENCRYPTION_KEY or _settings.ENCRYPTION_KEY == "":
+            if is_production:
+                raise RuntimeError("ENCRYPTION_KEY must be set in production")
             try:
                 from cryptography.fernet import Fernet
 
@@ -306,6 +330,8 @@ def get_settings() -> Settings:
                 print(f"!!! Failed to generate ENCRYPTION_KEY: {e} !!!")
 
         if not _settings.JWT_SECRET or _settings.JWT_SECRET == "":
+            if is_production:
+                raise RuntimeError("JWT_SECRET must be set in production")
             import secrets as _secrets
 
             _settings.JWT_SECRET = _secrets.token_urlsafe(32)

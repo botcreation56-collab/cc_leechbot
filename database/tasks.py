@@ -19,15 +19,39 @@ async def create_task(
     task_type: str = "upload",
     metadata: Optional[Dict] = None,
 ) -> str:
-    """Create a new task for file processing/queueing."""
+    """Create a new task for file processing/queueing.
+
+    Returns empty string if concurrent limit is reached.
+    """
     try:
         db = get_db()
-        task_id = str(uuid.uuid4())
-        now = datetime.utcnow()
 
+        # Check concurrent task limit
         user = await get_user(user_id)
         plan = user.get("plan", "free") if user else "free"
-        priority = 10 if plan == "pro" else 0
+        parallel_slots = user.get("parallel_slots", 1) if user else 1
+        max_concurrent = 5 if plan in ("pro", "premium") else parallel_slots
+
+        active_statuses = [
+            "pending",
+            "queued",
+            "downloading",
+            "processing",
+            "uploading",
+        ]
+        active_count = await db.tasks.count_documents(
+            {"user_id": user_id, "status": {"$in": active_statuses}}
+        )
+
+        if active_count >= max_concurrent:
+            logger.warning(
+                f"❌ Task rejected: user {user_id} has {active_count} active tasks (max: {max_concurrent})"
+            )
+            return ""
+
+        task_id = str(uuid.uuid4())
+        now = datetime.utcnow()
+        priority = 10 if plan in ("pro", "premium") else 0
 
         task_doc: Dict[str, Any] = {
             "task_id": task_id,

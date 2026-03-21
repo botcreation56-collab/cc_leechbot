@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 from cachetools import TTLCache
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -299,8 +299,37 @@ class TaskRepository:
         file_id: str,
         task_type: str = "upload",
         metadata: Optional[Dict] = None,
-    ) -> str:
-        """Create a task and return its string ID."""
+        max_concurrent_per_user: int = 3,
+    ) -> Tuple[bool, str]:
+        """Create a task and return its string ID.
+
+        Returns (success, task_id_or_error_message).
+        Enforces concurrent task limits per user.
+        """
+        # Check concurrent tasks for this user
+        active_statuses = [
+            "pending",
+            "queued",
+            "downloading",
+            "processing",
+            "uploading",
+        ]
+        active_count = await self._col.count_documents(
+            {"user_id": user_id, "status": {"$in": active_statuses}}
+        )
+
+        if active_count >= max_concurrent_per_user:
+            logger.warning(
+                "TaskRepository.create rejected: user %d has %d active tasks (max: %d)",
+                user_id,
+                active_count,
+                max_concurrent_per_user,
+            )
+            return (
+                False,
+                f"Concurrent task limit reached ({max_concurrent_per_user}). Please wait.",
+            )
+
         import uuid
 
         task_id = str(uuid.uuid4())
@@ -318,10 +347,10 @@ class TaskRepository:
         }
         try:
             await self._col.insert_one(doc)
-            return task_id
+            return True, task_id
         except Exception as exc:
             logger.error("TaskRepository.create failed: %s", exc)
-            return ""
+            return False, "Database error"
 
     async def update(self, task_id: str, fields: Dict[str, Any]) -> bool:
         fields["updated_at"] = _utcnow()

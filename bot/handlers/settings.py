@@ -486,24 +486,23 @@ async def handle_edit_plan(update: Update, context: ContextTypes.DEFAULT_TYPE):
         plans = config.get("plans", {})
         plan_data = plans.get(plan_name, {})
 
-        if field in ("price", "daily", "expiry") or "parallel" in data:
-            # We want to prompt for a specific field
+        if field in ("price", "daily", "expiry", "max_size") or "parallel" in data:
             labels = {
-                "price": "💰 Plan Price ($)",
+                "price": "💰 Plan Price (₹)",
                 "plan_parallel": "⚡ Parallel Tasks",
                 "daily": "📦 Daily Limit (GB)",
                 "expiry": "📅 Dump Expiry (Days)",
+                "max_size": "📁 Max File Size (GB)",
             }
-            # Special case for parallel because it has 'plan' in parts[1]
             label_key = "plan_parallel" if "parallel" in data else field
             label = labels.get(label_key, field.title())
 
-            # Map callback field to internal plan_data key
             key_map = {
                 "price": "price",
                 "plan_parallel": "parallel",
                 "daily": "storage_per_day",
                 "expiry": "dump_expiry_days",
+                "max_size": "max_file_size_gb",
             }
             internal_key = key_map.get(label_key)
             current = plan_data.get(internal_key, "Not Set")
@@ -523,12 +522,12 @@ async def handle_edit_plan(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["awaiting_set_at"] = _time.time()
             return
 
-        # Default: Show the plan menu
         plan_text = (
             f"⭐ **Edit {plan_name.upper()} Plan**\n\n"
-            f"Price: ${plan_data.get('price', 0)}\n"
+            f"Price: ₹{plan_data.get('price', 0)}\n"
             f"Parallel: {plan_data.get('parallel', 1)}\n"
             f"Daily Limit: {plan_data.get('storage_per_day', 5)} GB\n"
+            f"Max File Size: {plan_data.get('max_file_size_gb', 5)} GB\n"
             f"Expiry: {plan_data.get('dump_expiry_days', 0)} days"
         )
 
@@ -543,6 +542,11 @@ async def handle_edit_plan(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [
                     InlineKeyboardButton(
                         "💰 Edit Price", callback_data=f"edit_price_{plan_name}"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "📁 Edit Max Size", callback_data=f"edit_max_size_{plan_name}"
                     )
                 ],
                 [
@@ -689,9 +693,14 @@ async def handle_config_edit_input(
                     "parallel",
                     "storage_per_day",
                     "dump_expiry_days",
+                    "max_file_size_gb",
                 ):
                     value = float(text)
-                    if field_key in ("parallel", "dump_expiry_days"):
+                    if field_key in (
+                        "parallel",
+                        "dump_expiry_days",
+                        "max_file_size_gb",
+                    ):
                         value = int(value)
                 else:
                     value = text

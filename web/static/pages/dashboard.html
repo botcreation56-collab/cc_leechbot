@@ -287,17 +287,17 @@
                 <div class="stat-card">
                     <div class="stat-label">Total Files</div>
                     <div class="stat-value" id="stat-files">-</div>
-                    <div class="stat-meta">Active uploads</div>
+                    <div class="stat-meta" id="stat-files-meta">Loading...</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">Storage Used</div>
                     <div class="stat-value" id="stat-storage">-</div>
-                    <div class="stat-meta">Of 5GB Limit</div>
+                    <div class="stat-meta" id="stat-storage-meta">Loading...</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-label">Views Today</div>
-                    <div class="stat-value">0</div>
-                    <div class="stat-meta">Across all links</div>
+                    <div class="stat-label">Plan</div>
+                    <div class="stat-value" id="stat-plan">-</div>
+                    <div class="stat-meta" id="stat-plan-meta">Loading...</div>
                 </div>
             </div>
 
@@ -337,7 +337,12 @@
     <script src="/static/js/auth.js"></script>
     <script src="/static/js/api.js"></script>
     <script>
-        // --- Mobile Sidebar Toggle ---
+        let filesObserver = null;
+        let statsLoaded = false;
+        const FILES_PER_PAGE = 10;
+        let currentPage = 0;
+        let hasMoreFiles = true;
+
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('open');
             document.getElementById('sidebar-backdrop').classList.toggle('show');
@@ -345,7 +350,6 @@
             if (btn) btn.classList.toggle('open');
         }
 
-        // Close sidebar on ESC
         document.addEventListener('keydown', e => {
             if (e.key === 'Escape') {
                 const sidebar = document.getElementById('sidebar');
@@ -361,7 +365,6 @@
             window.location.href = '../login.html';
         }
 
-        // Shared fetch helper
         async function apiFetch(path, opts = {}) {
             const r = await fetch(path, {
                 ...opts,
@@ -370,54 +373,128 @@
             return r;
         }
 
-        // ── Check admin role ─────────────────────────────────────────────────────
         async function checkAdminRole() {
             try {
                 const r = await apiFetch('/api/admin/dashboard');
                 if (r.status === 200) {
-                    // User is admin — show admin nav item
                     document.getElementById('admin-nav-item').style.display = 'block';
-                    // Optionally auto-redirect admins to admin panel:
-                    // window.location.href = '/admin.html';
                 }
-                // 403 = regular user, do nothing
-            } catch (e) { /* Network error — ignore */ }
+            } catch (e) { }
         }
 
-        // ── Load user files ──────────────────────────────────────────────────────
-        async function loadFiles() {
-            const tbody = document.getElementById('files-tbody');
+        async function loadStats() {
+            if (statsLoaded) return;
             try {
-                const r = await apiFetch('/api/admin/users/me/files');
-                let files = [];
-                if (r.ok) { files = await r.json(); }
-
-                tbody.innerHTML = '';
-                if (!files || files.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:40px;color:#8b949e;">No files yet. Send a file to the bot!</td></tr>`;
-                    return;
+                const r = await apiFetch('/api/user/settings/stats');
+                if (r.ok) {
+                    const stats = await r.json();
+                    statsLoaded = true;
+                    
+                    document.getElementById('stat-files').textContent = stats.total_files || 0;
+                    document.getElementById('stat-files-meta').textContent = 'Active uploads';
+                    
+                    const storageUsedGB = ((stats.storage_used || 0) / (1024 * 1024 * 1024)).toFixed(2);
+                    document.getElementById('stat-storage').textContent = storageUsedGB + ' GB';
+                    document.getElementById('stat-storage-meta').textContent = `Of ${stats.storage_limit_gb || 5} GB limit`;
+                    
+                    const planName = (stats.plan || 'free').toUpperCase();
+                    document.getElementById('stat-plan').textContent = planName;
+                    document.getElementById('stat-plan-meta').textContent = `Max file: ${stats.max_file_size_gb || 5} GB`;
                 }
-                files.forEach(f => {
-                    const expired = f.status === 'expired';
-                    const tr = document.createElement('tr');
-                    tr.innerHTML = `
-                        <td><div style="font-weight:500;color:white;">${f.filename || f.file_id || 'Unknown'}</div></td>
-                        <td>${f.file_size ? (f.file_size / 1048576).toFixed(1) + ' MB' : '-'}</td>
-                        <td>${f.created_at ? new Date(f.created_at).toLocaleDateString() : '-'}</td>
-                        <td><span class="status-badge ${expired ? 'status-expired' : 'status-active'}">${expired ? 'EXPIRED' : 'ACTIVE'}</span></td>
-                        <td><a href="/api/watch/${f.file_id}" style="color:#0096FF;text-decoration:none;font-size:13px;">View</a></td>
-                    `;
-                    tbody.appendChild(tr);
-                });
             } catch (e) {
-                tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:40px;color:#8b949e;">Failed to load files.</td></tr>`;
+                document.getElementById('stat-files').textContent = '?';
+                document.getElementById('stat-storage').textContent = '?';
+                document.getElementById('stat-plan').textContent = '?';
             }
         }
 
-        // ── Init ─────────────────────────────────────────────────────────────────
-        document.addEventListener('DOMContentLoaded', () => {
+        function formatFileSize(bytes) {
+            if (bytes >= 1024 * 1024 * 1024) return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+            if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+            return (bytes / 1024).toFixed(1) + ' KB';
+        }
+
+        function createFileRow(f) {
+            const expired = f.status === 'expired';
+            const tr = document.createElement('tr');
+            tr.className = 'file-row';
+            tr.innerHTML = `
+                <td><div style="font-weight:500;color:white;">${f.filename || f.file_id || 'Unknown'}</div></td>
+                <td>${f.file_size ? formatFileSize(f.file_size) : '-'}</td>
+                <td>${f.created_at ? new Date(f.created_at).toLocaleDateString() : '-'}</td>
+                <td><span class="status-badge ${expired ? 'status-expired' : 'status-active'}">${expired ? 'EXPIRED' : 'ACTIVE'}</span></td>
+                <td><a href="/api/watch/${f.file_id}" style="color:#0096FF;text-decoration:none;font-size:13px;">View</a></td>
+            `;
+            return tr;
+        }
+
+        async function loadFiles(reset = false) {
+            if (reset) {
+                currentPage = 0;
+                hasMoreFiles = true;
+                document.getElementById('files-tbody').innerHTML = '';
+            }
+
+            if (!hasMoreFiles) return;
+
+            const tbody = document.getElementById('files-tbody');
+            const loadingRow = document.createElement('tr');
+            loadingRow.id = 'loading-row';
+            loadingRow.innerHTML = `<td colspan="5" style="text-align:center;padding:20px;color:#8b949e;">Loading more...</td>`;
+            tbody.appendChild(loadingRow);
+
+            try {
+                const r = await apiFetch('/api/user/settings/myfiles');
+                if (r.ok) {
+                    const allFiles = await r.json();
+                    const start = currentPage * FILES_PER_PAGE;
+                    const pageFiles = allFiles.slice(start, start + FILES_PER_PAGE);
+                    
+                    document.getElementById('loading-row')?.remove();
+                    
+                    if (pageFiles.length === 0 && currentPage === 0) {
+                        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:40px;color:#8b949e;">No files yet. Send a file to the bot!</td></tr>`;
+                        hasMoreFiles = false;
+                        return;
+                    }
+                    
+                    pageFiles.forEach(f => {
+                        tbody.appendChild(createFileRow(f));
+                    });
+                    
+                    currentPage++;
+                    if (start + FILES_PER_PAGE >= allFiles.length) {
+                        hasMoreFiles = false;
+                    }
+                }
+            } catch (e) {
+                document.getElementById('loading-row')?.remove();
+            }
+        }
+
+        function setupLazyLoading() {
+            const tbody = document.getElementById('files-tbody');
+            
+            filesObserver = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting && hasMoreFiles && !document.getElementById('loading-row')) {
+                        loadFiles();
+                    }
+                });
+            }, { rootMargin: '100px' });
+            
+            const sentinel = document.createElement('tr');
+            sentinel.id = 'lazy-sentinel';
+            sentinel.style.height = '1px';
+            tbody.parentNode.appendChild(sentinel);
+            filesObserver.observe(sentinel);
+        }
+
+        document.addEventListener('DOMContentLoaded', async () => {
             checkAdminRole();
-            loadFiles();
+            await loadStats();
+            await loadFiles(true);
+            setupLazyLoading();
         });
     </script>
 </body>

@@ -831,6 +831,15 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await handle_rem_meta(update, context)
             elif data == "rem_inject":
                 await handle_rem_inject(update, context)
+            elif data == "start":
+                await start_command(update, context)
+            elif data == "support":
+                await support_command(update, context)
+            elif data == "us_remove":
+                await handle_us_remove_confirm(update, context)
+            elif data == "retry_last":
+                await query.answer("🔄 Retrying...", show_alert=False)
+                await handle_callback_retry(update, context)
             else:
                 logger.warning(f"⚠️ UNHANDLED callback: {data}")
 
@@ -2593,15 +2602,6 @@ async def send_progress_message(
         logger.error(
             f"send_progress_message failed for task {task_id}: {e}", exc_info=True
         )
-        # Silent fallback — never crash the bot
-        try:
-            await bot.send_message(
-                chat_id=user_id,
-                text=f"⚠️ Warning: Progress update failed — but your file is still processing!\n🆔 Task: `{task_id}`",
-                parse_mode="Markdown",
-            )
-        except:
-            pass
 
 
 async def finalize_progress(
@@ -2932,15 +2932,22 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 for aid in get_admin_ids():
                     try:
                         await context.bot.send_message(
-                            aid,
-                            f"💬 **New Support Message**\n\n"
-                            f"User: `{user_id}`\n"
-                            f"Message: {text}\n\n"
-                            f"Reply using /admin -> Chatbox",
+                            chat_id=aid,
+                            text=(
+                                "💬 **New Support Message**\n\n"
+                                f"User: `{user_id}`\n"
+                                f"Message: {text}\n\n"
+                                "Reply using /admin -> Chatbox"
+                            ),
                             parse_mode="Markdown",
                         )
-                    except:
-                        pass
+                    except Exception as e:
+                        logger.error(
+                            f"❌ Failed to notify admin {aid} about support message from user {user_id}: {e}"
+                        )
+                        await log_admin_action(
+                            aid, "notify_admin", {"error": str(e), "user_id": user_id}
+                        )
             else:
                 await send_auto_delete_msg(
                     context.bot,
@@ -4304,3 +4311,49 @@ async def handle_start_support_chat(update: Update, context: ContextTypes.DEFAUL
     except Exception as e:
         logger.error(f"❌ Error in handle_start_support_chat: {e}")
         await update.callback_query.answer("❌ Error initiating chat", show_alert=True)
+
+
+async def handle_callback_retry(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle retry_last button - retry last failed operation"""
+    try:
+        query = update.callback_query
+        await query.answer("🔄 Retrying...")
+
+        user_id = update.effective_user.id
+        task_id = context.user_data.get("last_failed_task_id")
+
+        if task_id:
+            db = get_db()
+            task = await db.tasks.find_one({"task_id": task_id})
+            if task and task.get("status") == "failed":
+                await db.tasks.update_one(
+                    {"task_id": task_id},
+                    {
+                        "$set": {
+                            "status": "queued",
+                            "retry_count": task.get("retry_count", 0) + 1,
+                        }
+                    },
+                )
+                await query.message.edit_text(
+                    "🔄 **Retrying task...**\n\nYour file processing will start shortly.",
+                    parse_mode="Markdown",
+                )
+                logger.info(f"🔄 User {user_id} retrying task {task_id}")
+            else:
+                await query.message.edit_text(
+                    "ℹ️ **Task not available**\n\nPlease upload your file again.",
+                    parse_mode="Markdown",
+                )
+        else:
+            await query.message.edit_text(
+                "ℹ️ **Session expired**\n\nPlease start fresh with /start or upload your file again.",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("🔙 Main Menu", callback_data="start")]]
+                ),
+            )
+            logger.info(f"⚠️ Retry attempted but no task_id found for user {user_id}")
+    except Exception as e:
+        logger.error(f"❌ Error in handle_callback_retry: {e}")
+        await update.callback_query.answer("❌ Retry failed", show_alert=True)

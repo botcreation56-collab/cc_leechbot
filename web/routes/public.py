@@ -276,6 +276,7 @@ async def stream_file_endpoint(
     """
     Actual File Stream / Redirect with clean URL.
     Token is validated via secure HTTP-only cookie.
+    Uses atomic token consumption to prevent replay attacks.
     """
     try:
         db = get_db()
@@ -284,29 +285,29 @@ async def stream_file_endpoint(
         if not file_doc:
             raise HTTPException(status_code=404, detail="File not found")
 
-        # --- COOKIE VALIDATION (must happen before visibility check) ---
+        # --- COOKIE VALIDATION with ATOMIC CONSUMPTION ---
         if not stream_auth_token:
             raise HTTPException(
                 status_code=401, detail="Unauthorized. Missing streaming cookie."
             )
 
-        # Fix 5: enforce used=False so replayed cookies are rejected
-        token_doc = await db.one_time_keys.find_one(
+        # Atomic token consumption - find AND mark as used in single operation
+        from pymongo import ReturnDocument
+
+        token_doc = await db.one_time_keys.find_one_and_update(
             {
                 "otp": stream_auth_token,
                 "used": False,
                 "expires_at": {"$gt": datetime.utcnow()},
-            }
+            },
+            {"$set": {"used": True}},
+            return_document=ReturnDocument.AFTER,
         )
+
         if not token_doc:
             raise HTTPException(
                 status_code=401, detail="Invalid or expired stream session"
             )
-
-        # Mark token as consumed (find_one already confirmed used=False, so always mark now)
-        await db.one_time_keys.update_one(
-            {"_id": token_doc["_id"]}, {"$set": {"used": True}}
-        )
         # --- END COOKIE VALIDATION ---
 
         # Visibility check — owners can always access their own private files
@@ -592,15 +593,17 @@ async def get_public_plans():
                 "parallel": free_plan.get("parallel", 1),
                 "storage_per_day": free_plan.get("storage_per_day", 5),
                 "dump_expiry_days": free_plan.get("dump_expiry_days", 0),
-                "max_file_size_mb": free_plan.get("max_file_size_mb", 50),
+                "max_file_size_gb": free_plan.get("max_file_size_gb", 5),
+                "max_file_size_mb": free_plan.get("max_file_size_gb", 5) * 1024,
                 "features": free_plan_features,
             },
             "pro": {
-                "price": pro_plan.get("price", 5),
+                "price": pro_plan.get("price", 499),
                 "parallel": pro_plan.get("parallel", 3),
                 "storage_per_day": pro_plan.get("storage_per_day", 50),
                 "dump_expiry_days": pro_plan.get("dump_expiry_days", 30),
-                "max_file_size_mb": pro_plan.get("max_file_size_mb", 2000),
+                "max_file_size_gb": pro_plan.get("max_file_size_gb", 10),
+                "max_file_size_mb": pro_plan.get("max_file_size_gb", 10) * 1024,
                 "features": pro_plan_features,
             },
         }
@@ -609,13 +612,14 @@ async def get_public_plans():
         bot_username = settings.BOT_USERNAME or "cc_leechbot"
 
         logger.info(
-            f"✅ Public plans loaded: free=${plans['free']['price']}, pro=${plans['pro']['price']}"
+            f"✅ Public plans loaded: free=₹{plans['free']['price']}, pro=₹{plans['pro']['price']}"
         )
 
         return {
             "plans": plans,
             "bot_username": bot_username,
-            "currency": "USD",
+            "currency": "INR",
+            "currency_symbol": "₹",
             "site_name": settings.SITE_NAME or "FileBot",
             "site_description": settings.SITE_DESCRIPTION
             or "Fast & reliable file processing bot",
@@ -623,7 +627,6 @@ async def get_public_plans():
 
     except Exception as e:
         logger.error(f"❌ Get public plans error: {e}", exc_info=True)
-        # Fallback with defaults
         return {
             "plans": {
                 "free": {
@@ -647,7 +650,8 @@ async def get_public_plans():
                 },
             },
             "bot_username": "cc_leechbot",
-            "currency": "USD",
+            "currency": "INR",
+            "currency_symbol": "₹",
             "site_name": "FileBot",
             "site_description": "Fast & reliable file processing",
         }
@@ -756,7 +760,9 @@ async def rclone_callback(
 
         redirect_uri = f"{base_url}/api/rclone/callback"
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(10.0, connect=5.0)
+        ) as client:
             resp = await client.post(
                 "https://oauth2.googleapis.com/token",
                 data={

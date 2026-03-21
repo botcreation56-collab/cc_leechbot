@@ -742,8 +742,8 @@
         let botUsername = 'cc_leechbot';
         let currentPlan = 'free';
         let isLoggedIn = false;
+        let currencySymbol = '₹';
 
-        // Check if user is logged in
         async function checkAuth() {
             const token = localStorage.getItem('filebot_token');
             if (token) {
@@ -791,8 +791,8 @@
                 const data = await res.json();
                 
                 botUsername = data.bot_username || 'cc_leechbot';
+                currencySymbol = data.currency_symbol || '₹';
                 
-                // Update site info if provided
                 if (data.site_name) {
                     document.title = data.site_name + ' - Pricing';
                     document.querySelector('.logo span:last-child').textContent = data.site_name;
@@ -812,7 +812,7 @@
                         features: ['Basic file processing', 'Single file uploads', 'Standard speed']
                     },
                     pro: {
-                        price: 5,
+                        price: 499,
                         parallel: 3,
                         storage_per_day: 50,
                         features: ['Priority processing', 'Batch uploads', 'High speed', 'Cloud upload', 'Custom metadata', 'Extended storage']
@@ -822,28 +822,27 @@
         }
 
         function generateFeatures(planData, planType) {
-            // If features are explicitly defined, use them
             if (planData.features && planData.features.length > 0) {
                 return planData.features;
             }
             
-            // Otherwise, generate features based on plan settings
             const features = [];
             const parallel = planData.parallel || 1;
             const storage = planData.storage_per_day || 5;
             const expiry = planData.dump_expiry_days || 0;
             const maxSize = planData.max_file_size_mb || 50;
+            const maxFileSizeGB = planData.max_file_size_gb || (maxSize / 1024).toFixed(1);
             
             if (planType === 'free') {
                 features.push('Basic file processing');
                 if (parallel > 1) features.push(`${parallel} parallel uploads`);
                 features.push(`${storage} GB daily storage`);
-                if (maxSize > 50) features.push(`Up to ${maxSize}MB per file`);
+                features.push(`${maxFileSizeGB} GB max file size`);
                 features.push('Standard processing speed');
             } else {
                 features.push('Priority processing queue');
                 features.push(`${parallel} parallel uploads`);
-                features.push(`Up to ${maxSize}MB per file`);
+                features.push(`${maxFileSizeGB} GB max file size`);
                 features.push('High-speed processing');
                 features.push(`${storage} GB daily storage`);
                 if (expiry > 0) features.push(`${expiry} days file retention`);
@@ -864,13 +863,12 @@
             const proFeatures = generateFeatures(proPlan, 'pro');
 
             grid.innerHTML = `
-                <!-- Free Plan -->
                 <div class="pricing-card">
                     <div class="plan-icon">📁</div>
                     <div class="plan-name">Free</div>
                     <div class="plan-desc">Perfect for getting started with basic file processing</div>
                     <div class="plan-price">
-                        <span class="price-amount">${freePlan.price || 0}</span>
+                        <span class="price-amount">${currencySymbol}${freePlan.price || 0}</span>
                         <span class="price-period">${freePlan.price ? '/month' : 'Forever'}</span>
                     </div>
                     <ul class="plan-features">
@@ -902,14 +900,13 @@
                     `}
                 </div>
 
-                <!-- Pro Plan -->
                 <div class="pricing-card popular">
                     <div class="popular-badge">Most Popular</div>
                     <div class="plan-icon">⚡</div>
                     <div class="plan-name">Pro</div>
                     <div class="plan-desc">For power users who need more speed, storage and features</div>
                     <div class="plan-price">
-                        <span class="price-amount">$${proPlan.price || 5}</span>
+                        <span class="price-amount">${currencySymbol}${proPlan.price || 499}</span>
                         <span class="price-period">/month</span>
                     </div>
                     <ul class="plan-features">
@@ -943,11 +940,9 @@
                 }, 1500);
                 return;
             }
-            // Open Telegram bot with upgrade command
             window.open(`https://t.me/${botUsername}?start=upgrade_pro`, '_blank');
         }
 
-        // Initialize
         document.addEventListener('DOMContentLoaded', async () => {
             await checkAuth();
             loadPricing();

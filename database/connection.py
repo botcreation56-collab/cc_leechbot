@@ -69,13 +69,20 @@ class DatabaseConnection:
 
         return self
 
-    async def close(self) -> None:
-        """Gracefully close the MongoDB connection pool."""
+    async def close(self, timeout: float = 5.0) -> None:
+        """Gracefully close the MongoDB connection pool.
+
+        Args:
+            timeout: Maximum seconds to wait for pending operations.
+        """
         if self._client:
-            self._client.close()
-            self._client = None
-            self._db = None
-            logger.info("🛑 MongoDB connection closed")
+            try:
+                self._client.close(timeout=timeout)
+                logger.info("🛑 MongoDB connection closed gracefully")
+            except Exception as e:
+                logger.warning(f"MongoDB close error (forced): {e}")
+                self._client = None
+                self._db = None
 
     @property
     def db(self) -> AsyncIOMotorDatabase:
@@ -137,6 +144,27 @@ class DatabaseConnection:
                 [("expires_at", ASCENDING)],
                 expireAfterSeconds=0,
                 name="otk_ttl",
+            )
+
+            await db.sessions.create_index(
+                [("expires_at", ASCENDING)],
+                expireAfterSeconds=0,
+                name="sessions_ttl",
+            )
+            await db.sessions.create_index(
+                [("token_hash", ASCENDING)],
+                unique=True,
+                name="sessions_token_hash_uq",
+            )
+
+            await db.rate_limits.create_index(
+                [("key", ASCENDING), ("window_start", ASCENDING)],
+                name="rate_limits_key_window",
+            )
+            await db.rate_limits.create_index(
+                [("last_seen", ASCENDING)],
+                expireAfterSeconds=3600,
+                name="rate_limits_ttl",
             )
 
             await db.rclone_configs.create_index(

@@ -1,15 +1,35 @@
 /**
- * Authentication Flow
- * Handles login with one-time codes for:
- * - Admin panel
- * - My Files (user side)
+ * Authentication Flow - Secure Version
+ * Uses httpOnly cookies for session storage and CSRF tokens for protection.
  */
 
 class Auth {
     constructor() {
         this.adminApiUrl = '/auth';
         this.userApiUrl = '/api/user';
-        this.token = localStorage.getItem('filebot_token');
+        this.csrfToken = null;
+    }
+
+    /**
+     * Get CSRF token for requests
+     */
+    async getCsrfToken() {
+        if (this.csrfToken) return this.csrfToken;
+        
+        try {
+            const response = await fetch(`${this.adminApiUrl}/csrf-token`, {
+                method: 'GET',
+                credentials: 'include'
+            });
+            if (response.ok) {
+                const data = await response.json();
+                this.csrfToken = data.csrf_token;
+                return this.csrfToken;
+            }
+        } catch (e) {
+            console.error('Failed to get CSRF token:', e);
+        }
+        return null;
     }
 
     /**
@@ -17,9 +37,14 @@ class Auth {
      */
     async requestAdminCode(userId) {
         try {
+            const csrf = await this.getCsrfToken();
             const response = await fetch(`${this.adminApiUrl}/request-code`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': csrf || ''
+                },
+                credentials: 'include',
                 body: JSON.stringify({ user_id: parseInt(userId, 10) })
             });
             const data = await response.json();
@@ -34,13 +59,18 @@ class Auth {
     }
 
     /**
-     * Verify admin code and get JWT token
+     * Verify admin code and get JWT token (stored in httpOnly cookie)
      */
     async verifyAdminCode(userId, code) {
         try {
+            const csrf = await this.getCsrfToken();
             const response = await fetch(`${this.adminApiUrl}/verify-code`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': csrf || ''
+                },
+                credentials: 'include',
                 body: JSON.stringify({
                     user_id: parseInt(userId, 10),
                     code: (code || '').trim()
@@ -51,9 +81,11 @@ class Auth {
                 throw new Error(data.detail || 'Admin verification failed');
             }
 
-            // Save token for admin APIs
-            localStorage.setItem('filebot_token', data.token);
-            this.token = data.token;
+            // Session token is now in httpOnly cookie (set by server)
+            // We store user_id in localStorage for convenience
+            localStorage.setItem('filebot_user_id', data.user_id);
+            this.csrfToken = data.csrf_token;
+            
             return data;
         } catch (error) {
             console.error('❌ Verify admin code error:', error);
@@ -66,9 +98,14 @@ class Auth {
      */
     async requestMyFilesOtp(userId) {
         try {
-            const response = await fetch(`/api/auth/request-login-link`, {  // FIX: Changed from /api/user to /api/auth
+            const csrf = await this.getCsrfToken();
+            const response = await fetch(`/api/auth/request-login-link`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': csrf || ''
+                },
+                credentials: 'include',
                 body: JSON.stringify({ user_id: parseInt(userId, 10) })
             });
             const data = await response.json();
@@ -83,14 +120,14 @@ class Auth {
     }
 
     /**
-     * Verify Magic Token and create session
+     * Verify Magic Token and create session (uses httpOnly cookie)
      */
     async verifyMagicToken(token) {
         try {
-            const response = await fetch(`/api/auth/verify-magic-token`, {  // FIX: Changed from /api/user to /api/auth
+            const response = await fetch(`/api/auth/verify-magic-token`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
+                credentials: 'include',  // Important: send cookies
                 body: JSON.stringify({ token: token })
             });
             const data = await response.json();
@@ -98,11 +135,9 @@ class Auth {
                 throw new Error(data.detail || 'Link verification failed');
             }
 
-            // FIX: Store session token for authenticated requests
-            if (data.token) {
-                localStorage.setItem('filebot_token', data.token);
-                this.token = data.token;
-            }
+            // Session stored in httpOnly cookie by server
+            localStorage.setItem('filebot_user_id', data.user_id);
+            this.csrfToken = data.csrf_token;
 
             return data;
         } catch (error) {
@@ -112,38 +147,75 @@ class Auth {
     }
 
     /**
-     * Verify OTP for My Files and create session (usually via cookie)
-     * @deprecated Kept for backward compatibility or admin flows if needed
+     * Check if user is authenticated (has valid session cookie)
      */
-    async verifyMyFilesOtp(userId, code) {
-        // ... (existing logic if needed, but we are moving away from OTP)
-        throw new Error("OTP verification is deprecated.");
+    async isAuthenticated() {
+        try {
+            // Check with server if session is valid
+            const csrf = await this.getCsrfToken();
+            const response = await fetch(`${this.adminApiUrl}/csrf-token`, {
+                method: 'GET',
+                credentials: 'include',
+                headers: { 'X-CSRF-Token': csrf || '' }
+            });
+            return response.ok;
+        } catch (e) {
+            return false;
+        }
     }
 
     /**
-     * Check if admin is authenticated
+     * Logout user
      */
-    isAuthenticated() {
-        return !!this.token;
-    }
-
-    /**
-     * Logout admin
-     */
-    logout() {
+    async logout() {
+        try {
+            const csrf = await this.getCsrfToken();
+            await fetch(`${this.adminApiUrl}/logout`, {
+                method: 'POST',
+                headers: { 'X-CSRF-Token': csrf || '' },
+                credentials: 'include'
+            });
+        } catch (e) {
+            console.error('Logout error:', e);
+        }
         localStorage.removeItem('filebot_token');
-        this.token = null;
+        localStorage.removeItem('filebot_user_id');
+        this.csrfToken = null;
         window.location.href = '/login.html';
     }
 
     /**
-     * Get authorization header for admin APIs
+     * Get authorization header for API calls (fallback for non-browser clients)
+     * Prefer using cookies for browser requests
      */
     getAuthHeader() {
+        const token = localStorage.getItem('filebot_token');
+        if (token) {
+            return {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': this.csrfToken || ''
+            };
+        }
         return {
-            'Authorization': `Bearer ${this.token}`,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': this.csrfToken || ''
         };
+    }
+
+    /**
+     * Make authenticated API request
+     */
+    async apiRequest(url, options = {}) {
+        const csrf = await this.getCsrfToken();
+        const defaultOptions = {
+            credentials: 'include',  // Send cookies
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrf || ''
+            }
+        };
+        return fetch(url, { ...defaultOptions, ...options });
     }
 }
 
@@ -154,23 +226,40 @@ const auth = new Auth();
 document.addEventListener('DOMContentLoaded', () => {
     const path = window.location.pathname;
 
-    // Check for Magic Token in URL
+    // Check for Token Signature in URL (secure magic login)
     const urlParams = new URLSearchParams(window.location.search);
-    const magicToken = urlParams.get('magic_token');
+    const tokenSig = urlParams.get('token_sig');
 
-    if (magicToken) {
-        handleMagicLogin(magicToken);
+    if (tokenSig) {
+        // Use signature-based login (doesn't expose actual token in URL)
+        handleMagicLogin(tokenSig);
+        return;
     }
 
-    // Admin pages (protect if not login.html or public)
+    // Also support legacy token format for backwards compat
+    const magicToken = urlParams.get('magic_token');
+    if (magicToken) {
+        handleMagicLogin(magicToken);
+        return;
+    }
+
+    // Admin pages protection
     if (!path.includes('login') && path.startsWith('/dashboard')) {
-        if (!auth.isAuthenticated()) {
-            window.location.href = '/login.html';
-            return;
-        }
+        checkAuthAndRedirect();
     }
 
     // Wire login.html elements if present
+    wireLoginPage();
+});
+
+async function checkAuthAndRedirect() {
+    const isAuth = await auth.isAuthenticated();
+    if (!isAuth) {
+        window.location.href = '/login.html';
+    }
+}
+
+function wireLoginPage() {
     const adminUserIdInput = document.getElementById('admin-user-id');
     const adminRequestCodeBtn = document.getElementById('admin-request-code');
     const adminOtpInput = document.getElementById('admin-otp');
@@ -179,8 +268,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const myFilesUserIdInput = document.getElementById('myfiles-user-id');
     const myFilesRequestOtpBtn = document.getElementById('myfiles-request-otp');
-    // myFilesOtpInput removed
-    // myFilesVerifyBtn removed
     const myFilesMessage = document.getElementById('myfiles-login-message');
 
     // Admin login events
@@ -239,30 +326,26 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-});
+}
 
 async function handleMagicLogin(token) {
-    // Show a loading overlay or simple message if possible, strictly referencing UI elements that exist
-    // But we are likely on login.html or index.html
+    const msgEl = document.getElementById('myfiles-login-message') || document.getElementById('admin-login-message');
+    if (msgEl) msgEl.innerText = "Verifying...";
 
-    // Attempt verification
     try {
-        // If we are on login page, show status
-        const msgEl = document.getElementById('myfiles-login-message');
-        if (msgEl) msgEl.innerText = "Verifying Magic Link...";
-
         const data = await auth.verifyMagicToken(token);
-
         if (msgEl) msgEl.innerText = "Success! Redirecting...";
-
-        // Redirect to dashboard (consistent path)
+        
+        // Clear URL parameters for security
+        window.history.replaceState({}, document.title, window.location.pathname);
+        
         setTimeout(() => {
             window.location.href = '/dashboard.html';
         }, 500);
     } catch (e) {
         console.error(e);
-        const msgEl = document.getElementById('myfiles-login-message') || document.body;
-        if (msgEl.innerText !== undefined) msgEl.innerText = "Login failed: " + e.message;
-        else alert("Login failed: " + e.message);
+        if (msgEl) msgEl.innerText = "Login failed: " + (e.message || 'Unknown error');
+        // Also clear URL on error
+        window.history.replaceState({}, document.title, window.location.pathname);
     }
 }

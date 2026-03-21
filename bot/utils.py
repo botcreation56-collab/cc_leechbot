@@ -26,7 +26,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from cryptography.fernet import Fernet, InvalidToken
 from telegram import Bot
 from telegram.error import TelegramError
 
@@ -117,88 +116,25 @@ class TelegramLogHandler(logging.Handler):
 
 
 # ============================================================
-# ENCRYPTION
+# ENCRYPTION - Consolidated from core.security
 # ============================================================
+# Re-export from core.security to maintain backwards compatibility
 
+from core.security import (
+    encrypt_credentials,
+    decrypt_credentials,
+    encrypt_token,
+    decrypt_token,
+    TokenGenerator,
+)
 
-class EncryptionManager:
-    """Manages Fernet encryption/decryption of sensitive credentials."""
-
-    def __init__(self, encryption_key: str = None):
-        try:
-            if not encryption_key:
-                encryption_key = os.getenv("ENCRYPTION_KEY")
-            if not encryption_key:
-                raise ValueError("ENCRYPTION_KEY not set in environment")
-            key_bytes = (
-                encryption_key.encode()
-                if isinstance(encryption_key, str)
-                else encryption_key
-            )
-            self.cipher = Fernet(key_bytes)
-        except Exception as e:
-            logger.error(f"Encryption initialization failed: {e}")
-            raise
-
-    def encrypt(self, data: Dict[str, Any]) -> str:
-        """Encrypt a dict → base64 string."""
-        try:
-            return self.cipher.encrypt(json.dumps(data).encode()).decode()
-        except Exception as e:
-            logger.error(f"Encryption failed: {e}")
-            raise
-
-    def decrypt(self, encrypted_str: str) -> Dict[str, Any]:
-        """Decrypt a base64 string → dict."""
-        try:
-            return json.loads(self.cipher.decrypt(encrypted_str.encode()).decode())
-        except InvalidToken:
-            logger.error("Decryption failed: invalid token or corrupted data")
-            raise
-        except Exception as e:
-            logger.error(f"Decryption failed: {e}")
-            raise
-
-
-_encryption_manager: Optional[EncryptionManager] = None
-
-
-def get_encryption_manager() -> EncryptionManager:
-    global _encryption_manager
-    if not _encryption_manager:
-        _encryption_manager = EncryptionManager()
-    return _encryption_manager
-
-
-def encrypt_credentials(credentials: Dict[str, Any]) -> str:
-    return get_encryption_manager().encrypt(credentials)
-
-
-def decrypt_credentials(encrypted: str) -> Dict[str, Any]:
-    return get_encryption_manager().decrypt(encrypted)
-
-
-def encrypt_token(token: str) -> str:
-    """Encrypt a simple token string for URL-safe storage."""
-    try:
-        manager = get_encryption_manager()
-        return manager.cipher.encrypt(token.encode()).decode()
-    except Exception as e:
-        logger.error(f"Token encryption failed: {e}")
-        raise
-
-
-def decrypt_token(encrypted: str) -> str:
-    """Decrypt an encrypted token string."""
-    try:
-        manager = get_encryption_manager()
-        return manager.cipher.decrypt(encrypted.encode()).decode()
-    except InvalidToken:
-        logger.error("Token decryption failed: invalid token")
-        raise
-    except Exception as e:
-        logger.error(f"Token decryption failed: {e}")
-        raise
+__all__ = [
+    "encrypt_credentials",
+    "decrypt_credentials",
+    "encrypt_token",
+    "decrypt_token",
+    "TokenGenerator",
+]
 
 
 # ============================================================
