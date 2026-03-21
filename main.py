@@ -1097,6 +1097,12 @@ async def health():
 WEBHOOK_PATH = "/webhook/telegram"
 
 
+@app.get("/health", include_in_schema=False)
+async def health_check():
+    """Health check endpoint for Render deployment."""
+    return {"status": "ok", "service": "filebot"}
+
+
 @app.post(WEBHOOK_PATH, include_in_schema=False)
 async def telegram_webhook(request: Request):
     if bot_application is None:

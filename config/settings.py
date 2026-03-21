@@ -299,10 +299,6 @@ def get_settings() -> Settings:
 
         if is_production:
             missing_secrets = []
-            if not _settings.ENCRYPTION_KEY:
-                missing_secrets.append("ENCRYPTION_KEY")
-            if not _settings.JWT_SECRET:
-                missing_secrets.append("JWT_SECRET")
             if not _settings.WEBHOOK_SECRET:
                 missing_secrets.append("WEBHOOK_SECRET")
 
@@ -316,6 +312,31 @@ def get_settings() -> Settings:
                 print(f"ERROR: {error_msg}")
                 print(f"{'=' * 60}\n")
                 raise RuntimeError(error_msg)
+
+            if not _settings.ENCRYPTION_KEY:
+                print(f"\n{'=' * 60}")
+                print(f"⚠️ WARNING: ENCRYPTION_KEY not set. Auto-generating...")
+                print(f"{'=' * 60}\n")
+                try:
+                    from cryptography.fernet import Fernet
+
+                    _settings.ENCRYPTION_KEY = Fernet.generate_key().decode()
+                    print(
+                        f"Generated ENCRYPTION_KEY (will reset on restart): {_settings.ENCRYPTION_KEY}"
+                    )
+                except Exception as e:
+                    raise RuntimeError(f"Failed to generate ENCRYPTION_KEY: {e}")
+
+            if not _settings.JWT_SECRET:
+                print(f"\n{'=' * 60}")
+                print(f"⚠️ WARNING: JWT_SECRET not set. Auto-generating...")
+                print(f"{'=' * 60}\n")
+                import secrets as _secrets
+
+                _settings.JWT_SECRET = _secrets.token_urlsafe(32)
+                print(
+                    f"Generated JWT_SECRET (will reset on restart): {_settings.JWT_SECRET}"
+                )
 
         # Auto-generate only in development mode with explicit warnings
         if not _settings.ENCRYPTION_KEY or _settings.ENCRYPTION_KEY == "":
