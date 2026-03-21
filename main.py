@@ -735,15 +735,18 @@ async def build_bot_application(deps: dict) -> Application:
     await application.initialize()
     await application.start()
 
-    # Initialize Telegram log handler
-    from bot.utils import init_telegram_logging
+    # Initialize Telegram log handler (non-blocking)
+    try:
+        from bot.utils import init_telegram_logging
 
-    await init_telegram_logging(application.bot)
+        await init_telegram_logging(application.bot)
+    except Exception as e:
+        logger.warning(f"⚠️ Telegram log handler init failed: {e}")
 
-    # Initialise Pyrogram clients
-    from bot.pyrogram_client import init_pyrogram
+    # Initialize Pyrogram clients (non-blocking, background task)
+    import asyncio as _asyncio
 
-    pyrogram_ok = await init_pyrogram()
+    _asyncio.create_task(_init_pyrogram_bg())
 
     # Share services + repos via bot_data — handlers read from here
     application.bot_data.update(
@@ -811,6 +814,50 @@ async def configure_webhook(
         logger.error("❌ Webhook setup failed: %s", exc, exc_info=True)
 
 
+# ============================================================
+# BACKGROUND SETUP HELPERS
+# ============================================================
+
+
+async def _init_pyrogram_bg():
+    """Background Pyrogram initialization."""
+    try:
+        from bot.pyrogram_client import init_pyrogram
+
+        ok = await init_pyrogram()
+        if ok:
+            logger.info("✅ Pyrogram clients ready")
+        else:
+            logger.info("ℹ️ Pyrogram not configured")
+    except Exception as e:
+        logger.warning(f"⚠️ Pyrogram init failed: {e}")
+
+
+async def _setup_gdrive():
+    """Background GDrive setup."""
+    try:
+        from bot.services import GDriveService
+
+        is_configured = await GDriveService.is_configured()
+        if is_configured:
+            await GDriveService.setup_folders()
+            logger.info("✅ GDrive folders ready")
+    except Exception as e:
+        logger.warning(f"⚠️ GDrive setup failed: {e}")
+
+
+async def _setup_rclone():
+    """Background Rclone setup."""
+    try:
+        from bot.services._cloud_upload import ensure_rclone_binary
+
+        rclone_path = await ensure_rclone_binary()
+        if rclone_path:
+            logger.info("✅ Rclone binary ready")
+    except Exception as e:
+        logger.warning(f"⚠️ Rclone setup failed: {e}")
+
+
 async def cleanup_bot(application: Application, db_conn) -> None:
     """Gracefully stop PTB application and DB connection."""
     from bot.pyrogram_client import stop_pyrogram
@@ -834,6 +881,7 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 FastAPI startup")
     validate_environment()
 
+    deps = None
     try:
         deps = await build_dependency_graph()
         app.state.deps = deps
@@ -841,76 +889,58 @@ async def lifespan(app: FastAPI):
         bot_application = await build_bot_application(deps)
         app.state.bot = bot_application.bot
 
-        # Start background workers
+        # Start background workers (non-blocking)
         try:
             import asyncio as _asyncio
             from bot.services import QueueWorker
 
             worker = QueueWorker(bot_application.bot)
             _asyncio.create_task(worker.start())
-            logger.info("🚀 QueueWorker started in background")
+            logger.info("🚀 QueueWorker started")
         except Exception as e:
-            import traceback
+            logger.warning(f"⚠️ QueueWorker skipped: {e}")
 
-            logger.error(
-                f"❌ Failed to start QueueWorker: {e}\n{traceback.format_exc()}"
-            )
-
-        # Setup GDrive folder structure
+        # GDrive setup (non-blocking)
         try:
             from bot.services import GDriveService
 
-            is_gdrive_configured = await GDriveService.is_configured()
-            if is_gdrive_configured:
-                await GDriveService.setup_folders()
-                logger.info("🚀 GDrive folder structure initialized")
-            else:
-                logger.info("ℹ️ GDrive not configured - set GDRIVE_* env vars to enable")
+            _asyncio.create_task(_setup_gdrive())
+            logger.info("🚀 GDrive setup started")
         except Exception as e:
             logger.warning(f"⚠️ GDrive setup skipped: {e}")
 
-        # Ensure rclone binary is downloaded
+        # Rclone setup (non-blocking)
         try:
             from bot.services._cloud_upload import ensure_rclone_binary
 
-            rclone_path = await ensure_rclone_binary()
-            if rclone_path:
-                logger.info("🚀 Rclone binary ready at %s", rclone_path)
-            else:
-                logger.warning("⚠️ Rclone binary not available")
+            _asyncio.create_task(_setup_rclone())
+            logger.info("🚀 Rclone setup started")
         except Exception as e:
             logger.warning(f"⚠️ Rclone setup skipped: {e}")
-        except Exception as e:
-            logger.warning(f"⚠️ Rclone setup skipped: {e}")
-
-        # Fetch bot identity for display
-        try:
-            me = await bot_application.bot.get_me()
-            settings.BOT_USERNAME = me.username
-            settings.BOT_LINK = f"https://t.me/{me.username}"
-            logger.info("🤖 @%s ready", me.username)
-        except Exception as exc:
-            logger.warning("Could not fetch bot identity: %s", exc)
 
         # Configure webhook
         if settings.WEBHOOK_URL:
-            user_count = await deps["user_repo"]._col.count_documents({})
-            await configure_webhook(
-                get_bot_token(),
-                settings.WEBHOOK_URL,
-                settings.WEBHOOK_SECRET or "",
-                user_count,
-            )
+            try:
+                user_count = await deps["user_repo"]._col.count_documents({})
+                await configure_webhook(
+                    get_bot_token(),
+                    settings.WEBHOOK_URL,
+                    settings.WEBHOOK_SECRET or "",
+                    user_count,
+                )
+            except Exception as e:
+                logger.warning(f"⚠️ Webhook setup skipped: {e}")
 
     except Exception as exc:
         logger.error("❌ Startup error: %s", exc, exc_info=True)
-        logger.warning("⚠️ Degraded mode — bot unavailable, web serving continues")
+        logger.warning("⚠️ Degraded mode — web serving continues")
 
     yield
 
     logger.info("🛑 FastAPI shutdown")
     if bot_application is not None:
-        await cleanup_bot(bot_application, deps.get("db_conn"))
+        if deps:
+            await cleanup_bot(bot_application, deps.get("db_conn"))
 
 
 # ============================================================
