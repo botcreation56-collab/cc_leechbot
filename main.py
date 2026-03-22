@@ -953,24 +953,27 @@ async def _startup_tasks(app: FastAPI):
 
     asyncio.create_task(_setup_rclone_bg())
 
-    try:
-        if settings.WEBHOOK_URL:
-            logger.info("🔧 Configuring webhook...")
-            # Default to None to avoid blocking on count_documents
-            await configure_webhook(
-                get_bot_token(),
-                settings.WEBHOOK_URL,
-                settings.WEBHOOK_SECRET or "",
-                None
-            )
-            logger.info("✅ Webhook configured")
-        else:
-            logger.info("⚠️ No WEBHOOK_URL. Starting long polling...")
-            if bot_application and bot_application.updater:
-                await bot_application.updater.start_polling(drop_pending_updates=True)
-                logger.info("✅ Polling started")
-    except Exception as e:
-        logger.warning(f"⚠️ Webhook/Polling startup error: {e}")
+    async def _setup_webhook_bg():
+        try:
+            if settings.WEBHOOK_URL:
+                logger.info("🔧 Configuring webhook in background...")
+                # Default to None to avoid blocking on count_documents
+                await configure_webhook(
+                    get_bot_token(),
+                    settings.WEBHOOK_URL,
+                    settings.WEBHOOK_SECRET or "",
+                    None
+                )
+                logger.info("✅ Webhook configured")
+            else:
+                logger.info("⚠️ No WEBHOOK_URL. Starting long polling in background...")
+                if bot_application and bot_application.updater:
+                    await bot_application.updater.start_polling(drop_pending_updates=True)
+                    logger.info("✅ Polling started")
+        except Exception as e:
+            logger.warning(f"⚠️ Webhook/Polling startup error: {e}")
+
+    asyncio.create_task(_setup_webhook_bg())
 
     # Finally, run the heavy indexing at the absolute end.
     # We use a task so the bot signals 'Complete' to Render immediately.
