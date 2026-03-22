@@ -74,8 +74,10 @@ async def ensure_rclone_binary() -> str:
     try:
         import httpx
 
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, follow_redirects=True, timeout=60)
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            # timeout=(connect, read, write, pool) - ensure we don't hang on read
+            logger.info(f"⏳ Downloading Rclone binary (18MB)...")
+            response = await client.get(url, timeout=httpx.Timeout(90.0, connect=10.0))
             response.raise_for_status()
 
             content = io.BytesIO(response.content)

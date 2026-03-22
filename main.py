@@ -939,27 +939,19 @@ async def _startup_tasks(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️ Pyrogram check: {e}")
 
-    has_rclone = False
-    try:
-        logger.info("🔧 Checking Rclone status...")
-        from bot.services._cloud_upload import ensure_rclone_binary
-        # Use a task for this too if it might take time
-        path = await ensure_rclone_binary()
-        has_rclone = bool(path)
-    except Exception as e:
-        logger.warning(f"⚠️ Rclone setup: {e}")
+    async def _setup_rclone_bg():
+        try:
+            from bot.services._cloud_upload import ensure_rclone_binary
+            logger.info("🔧 Checking/Downloading Rclone status in background...")
+            path = await ensure_rclone_binary()
+            if path:
+                logger.info("✅ Rclone ready")
+            else:
+                logger.info("⚠️ Rclone NOT configured.")
+        except Exception as e:
+            logger.warning(f"⚠️ Rclone setup failed: {e}")
 
-    try:
-        from bot.database import get_rclone_configs
-        rclone_configs = await get_rclone_configs()
-        has_rclone = has_rclone or bool(rclone_configs)
-    except Exception:
-        pass
-
-    if has_rclone:
-        logger.info("✅ Rclone ready")
-    else:
-        logger.info("⚠️ Rclone NOT configured. Run /admin → Rclone → Add Remote")
+    asyncio.create_task(_setup_rclone_bg())
 
     try:
         if settings.WEBHOOK_URL:
