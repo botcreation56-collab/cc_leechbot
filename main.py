@@ -98,7 +98,11 @@ async def build_dependency_graph():
         max_pool=30,
     )
     await db_conn.connect()
-    await db_conn.create_indexes()
+    
+    # Run index creation in background to prevent startup freezing on huge databases
+    import asyncio
+    asyncio.create_task(db_conn.create_indexes())
+    
     db = db_conn.db
 
     user_repo = UserRepository(db)
