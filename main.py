@@ -803,27 +803,28 @@ async def build_bot_application(deps: dict) -> Application:
 async def configure_webhook(
     bot_token: str, webhook_url: str, secret: str, user_count: Optional[int] = None
 ) -> None:
-    """Configure Telegram webhook."""
-    try:
-        needed_max = 40
-        if user_count:
-            needed_max = min(100, 40 + (user_count // 1000) * 20)
+    """Configure Telegram webhook with explicit timeouts."""
+    needed_max = 40
+    if user_count:
+        needed_max = min(100, 40 + (user_count // 1000) * 20)
 
-        # Check current webhook
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            info = (
-                await client.get(
-                    f"https://api.telegram.org/bot{bot_token}/getWebhookInfo"
-                )
-            ).json()
+    try:
+        # Check current webhook (5 second timeout)
+        async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=3.0)) as client:
+            info_response = await client.get(
+                f"https://api.telegram.org/bot{bot_token}/getWebhookInfo"
+            )
+            info = info_response.json()
 
         current_url = info.get("result", {}).get("url", "")
         if current_url == webhook_url:
             logger.info("✅ Webhook already set: %s", webhook_url)
             return
 
-        # Set webhook
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        # Set webhook (10 second timeout)
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(10.0, connect=3.0)
+        ) as client:
             r = await client.post(
                 f"https://api.telegram.org/bot{bot_token}/setWebhook",
                 json={
@@ -923,20 +924,25 @@ async def _full_startup(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️ QueueWorker: {e}")
 
-    # Step 4: Configure webhook
+    # Step 4: Configure webhook (with timeout to prevent hanging)
     try:
         if settings.WEBHOOK_URL:
             logger.info("🔧 Configuring webhook...")
             user_count = await deps["user_repo"]._col.count_documents({})
-            await configure_webhook(
-                get_bot_token(),
-                settings.WEBHOOK_URL,
-                settings.WEBHOOK_SECRET or "",
-                user_count,
+            await asyncio.wait_for(
+                configure_webhook(
+                    get_bot_token(),
+                    settings.WEBHOOK_URL,
+                    settings.WEBHOOK_SECRET or "",
+                    user_count,
+                ),
+                timeout=15.0,
             )
             logger.info("✅ Webhook configured")
         else:
             logger.warning("⚠️ No WEBHOOK_URL")
+    except asyncio.TimeoutError:
+        logger.warning("⚠️ Webhook config timed out (will retry on next startup)")
     except Exception as e:
         logger.warning(f"⚠️ Webhook error: {e}")
 
