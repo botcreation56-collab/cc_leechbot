@@ -807,6 +807,7 @@ async def configure_webhook(
         needed_max = min(100, 40 + extra_conns)
 
     try:
+        print(f"🔧 configure_webhook: Checking current webhook info...", flush=True)
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(10.0, connect=5.0)
         ) as client:
@@ -818,11 +819,19 @@ async def configure_webhook(
 
         current_url = info.get("result", {}).get("url", "")
         current_max = info.get("result", {}).get("max_connections", 40)
+        print(
+            f"🔧 configure_webhook: Current URL = {current_url}, Current max = {current_max}",
+            flush=True,
+        )
 
         if current_url == webhook_url and needed_max <= current_max:
             logger.info("✅ Webhook already configured correctly: %s", webhook_url)
+            print(
+                "✅ configure_webhook: Webhook already configured correctly", flush=True
+            )
             return
 
+        print(f"🔧 configure_webhook: Setting webhook to {webhook_url}...", flush=True)
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(15.0, connect=5.0)
         ) as client:
@@ -841,9 +850,14 @@ async def configure_webhook(
                     "secret_token": secret,
                 },
             )
+        print(
+            f"🔧 configure_webhook: SetWebhook response = {r.status_code}, {r.text[:100]}",
+            flush=True,
+        )
         logger.info("SetWebhook → %d: %s", r.status_code, r.text[:200])
     except Exception as exc:
         logger.error("❌ Webhook setup failed: %s", exc, exc_info=True)
+        print(f"❌ configure_webhook: Webhook setup failed: {exc}", flush=True)
 
 
 # ============================================================
@@ -883,24 +897,30 @@ async def _setup_rclone_bg():
 
 async def _setup_webhook_bg():
     """Background Webhook/Polling setup. HIGH PRIORITY."""
+    print("🔧 _setup_webhook_bg: Task started", flush=True)
     try:
-        # Give the server a tiny bit of time to bind
-        await asyncio.sleep(2)
+        # Give the server minimal time to bind
+        await asyncio.sleep(0.5)
+        print("🔧 _setup_webhook_bg: After initial sleep", flush=True)
 
         # CRITICAL: Ensure bot_application is ready
         if bot_application is None:
             logger.error("❌ Bot application not initialized when setting up webhook!")
+            print("❌ _setup_webhook_bg: bot_application is None!", flush=True)
             return
 
         if settings.WEBHOOK_URL:
-            print("🔧 Configuring webhook...", flush=True)
-            await configure_webhook(
+            print(
+                f"🔧 _setup_webhook_bg: Configuring webhook to {settings.WEBHOOK_URL}...",
+                flush=True,
+            )
+            result = await configure_webhook(
                 get_bot_token(),
                 settings.WEBHOOK_URL,
                 settings.WEBHOOK_SECRET or "",
                 None,
             )
-            print("✅ Webhook configured", flush=True)
+            print(f"✅ _setup_webhook_bg: Webhook configured successfully", flush=True)
         else:
             # Fallback to webhook with self URL for local development
             print("⚠️ WEBHOOK_URL not set, attempting to auto-detect...", flush=True)
@@ -940,7 +960,12 @@ async def _setup_webhook_bg():
 
     except Exception as e:
         logger.error(f"❌ Webhook setup error: {e}", exc_info=True)
-        print(f"❌ Webhook background error: {e}", flush=True)
+        print(f"❌ _setup_webhook_bg: Error: {e}", flush=True)
+        import traceback
+
+        print(f"   Full traceback:\n{traceback.format_exc()}", flush=True)
+    finally:
+        print("🔧 _setup_webhook_bg: Function completed", flush=True)
 
 
 async def _background_indexing_job(db_conn):
@@ -1045,22 +1070,37 @@ async def _startup_tasks(app: FastAPI):
 
     logger.info("✅ Bot application built and ready!")
     print("✅ _startup_tasks: Bot application built and ready!", flush=True)
+    sys.stdout.flush()
 
     try:
+        print("🔧 _startup_tasks: About to import QueueWorker...", flush=True)
         from bot.services import QueueWorker
 
+        print("🔧 _startup_tasks: QueueWorker imported successfully", flush=True)
+
+        print("🔧 _startup_tasks: Creating QueueWorker instance...", flush=True)
         logger.info("🔧 Initializing QueueWorker...")
-        print("🔧 _startup_tasks: Initializing QueueWorker...", flush=True)
         worker = QueueWorker(bot_application.bot)
+        print("🔧 _startup_tasks: QueueWorker instance created", flush=True)
+
+        print("🔧 _startup_tasks: Creating QueueWorker task...", flush=True)
         asyncio.create_task(worker.start())
         print("✅ _startup_tasks: QueueWorker task created", flush=True)
     except Exception as e:
         logger.warning(f"⚠️ QueueWorker: {e}")
         print(f"⚠️ _startup_tasks: QueueWorker error: {e}", flush=True)
+        import traceback
+
+        print(f"   Full traceback:\n{traceback.format_exc()}", flush=True)
+
+    print("🔧 _startup_tasks: About to create webhook task...", flush=True)
+    sys.stdout.flush()
 
     # Fire off all background tasks (Singleton pattern)
     # 1. Webhook first (Priority 1)
+    print("🔧 _startup_tasks: Creating webhook setup task...", flush=True)
     asyncio.create_task(_setup_webhook_bg())
+    print("✅ _startup_tasks: Webhook task created", flush=True)
 
     # 2. Rclone (Priority 2)
     asyncio.create_task(_setup_rclone_bg())
