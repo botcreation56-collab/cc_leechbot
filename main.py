@@ -834,7 +834,7 @@ async def _init_pyrogram_bg():
     """Background Pyrogram initialization."""
     try:
         from bot.pyrogram_client import init_pyrogram
-
+        logger.info("🔧 Starting Pyrogram clients in background...")
         ok = await init_pyrogram()
         if ok:
             logger.info("✅ Pyrogram clients ready")
@@ -844,16 +844,53 @@ async def _init_pyrogram_bg():
         logger.warning(f"⚠️ Pyrogram init failed: {e}")
 
 
-async def _setup_rclone():
+async def _setup_rclone_bg():
     """Background Rclone setup."""
     try:
         from bot.services._cloud_upload import ensure_rclone_binary
-
-        rclone_path = await ensure_rclone_binary()
-        if rclone_path:
-            logger.info("✅ Rclone binary ready")
+        logger.info("🔧 Checking/Downloading Rclone status in background...")
+        path = await ensure_rclone_binary()
+        if path:
+            logger.info("✅ Rclone ready")
+        else:
+            logger.info("⚠️ Rclone not configured or failed.")
     except Exception as e:
         logger.warning(f"⚠️ Rclone setup failed: {e}")
+
+
+async def _setup_webhook_bg():
+    """Background Webhook/Polling setup."""
+    try:
+        # Give the server 3 seconds to bind and stabilize before network calls
+        await asyncio.sleep(3)
+        if settings.WEBHOOK_URL:
+            logger.info("🔧 Configuring webhook in background...")
+            await configure_webhook(
+                get_bot_token(),
+                settings.WEBHOOK_URL,
+                settings.WEBHOOK_SECRET or "",
+                None
+            )
+            logger.info("✅ Webhook configured")
+        else:
+            logger.info("⚠️ No WEBHOOK_URL. Starting long polling in background...")
+            if bot_application and bot_application.updater:
+                await bot_application.updater.start_polling(drop_pending_updates=True)
+                logger.info("✅ Polling started")
+    except Exception as e:
+        logger.warning(f"⚠️ Webhook/Polling startup error: {e}")
+
+
+async def _background_indexing_job(db_conn):
+    """Heavy indexing job deferred further."""
+    try:
+        # Wait 10 seconds before starting heavy indexing to let bot come online first
+        await asyncio.sleep(10)
+        logger.info("🔧 Starting background index building...")
+        await db_conn.create_indexes()
+        logger.info("✅ Background index building complete")
+    except Exception as e:
+        logger.warning(f"⚠️ Indexing job failed: {e}")
 
 
 async def cleanup_bot(application: Application, db_conn) -> None:
@@ -924,63 +961,19 @@ async def _startup_tasks(app: FastAPI):
     
     try:
         from bot.services import QueueWorker
-        logger.info("🔧 Starting QueueWorker...")
+        logger.info("🔧 Initializing QueueWorker...")
         worker = QueueWorker(bot_application.bot)
         asyncio.create_task(worker.start())
-        logger.info("✅ QueueWorker initialized in background")
     except Exception as e:
         logger.warning(f"⚠️ QueueWorker: {e}")
 
-    try:
-        from bot.pyrogram_client import init_pyrogram
-        logger.info("🔧 Starting Pyrogram clients...")
-        # init_pyrogram internally backgrounds itself in build_bot_application anyway 
-        # but the startup task path still exists as fallback
-    except Exception as e:
-        logger.warning(f"⚠️ Pyrogram check: {e}")
-
-    async def _setup_rclone_bg():
-        try:
-            from bot.services._cloud_upload import ensure_rclone_binary
-            logger.info("🔧 Checking/Downloading Rclone status in background...")
-            path = await ensure_rclone_binary()
-            if path:
-                logger.info("✅ Rclone ready")
-            else:
-                logger.info("⚠️ Rclone NOT configured.")
-        except Exception as e:
-            logger.warning(f"⚠️ Rclone setup failed: {e}")
-
+    # Fire off all background tasks
+    asyncio.create_task(_init_pyrogram_bg())
     asyncio.create_task(_setup_rclone_bg())
-
-    async def _setup_webhook_bg():
-        try:
-            if settings.WEBHOOK_URL:
-                logger.info("🔧 Configuring webhook in background...")
-                # Default to None to avoid blocking on count_documents
-                await configure_webhook(
-                    get_bot_token(),
-                    settings.WEBHOOK_URL,
-                    settings.WEBHOOK_SECRET or "",
-                    None
-                )
-                logger.info("✅ Webhook configured")
-            else:
-                logger.info("⚠️ No WEBHOOK_URL. Starting long polling in background...")
-                if bot_application and bot_application.updater:
-                    await bot_application.updater.start_polling(drop_pending_updates=True)
-                    logger.info("✅ Polling started")
-        except Exception as e:
-            logger.warning(f"⚠️ Webhook/Polling startup error: {e}")
-
     asyncio.create_task(_setup_webhook_bg())
+    asyncio.create_task(_background_indexing_job(deps["db_conn"]))
 
-    # Finally, run the heavy indexing at the absolute end.
-    # We use a task so the bot signals 'Complete' to Render immediately.
-    logger.info("🔧 Starting background index building and maintenance...")
-    asyncio.create_task(deps["db_conn"].create_indexes())
-
-    logger.info("🎉 All startup tasks complete!")
+    logger.info("🎉 All startup tasks complete! (Server is online, finishing setup in background...)")
 
 
 # ============================================================
