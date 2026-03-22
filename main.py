@@ -1145,8 +1145,12 @@ async def _startup_tasks(app: FastAPI):
     # Fire off all background tasks (Singleton pattern)
     # 1. Webhook first (Priority 1)
     print("🔧 _startup_tasks: Creating webhook setup task...", flush=True)
-    asyncio.create_task(_setup_webhook_bg())
-    print("✅ _startup_tasks: Webhook task created", flush=True)
+    sys.stdout.flush()
+    webhook_task = asyncio.create_task(_setup_webhook_bg())
+    print(
+        f"✅ _startup_tasks: Webhook task created (id={id(webhook_task)})", flush=True
+    )
+    sys.stdout.flush()
 
     # 2. Rclone (Priority 2)
     asyncio.create_task(_setup_rclone_bg())
@@ -1177,6 +1181,8 @@ async def _startup_tasks(app: FastAPI):
         "🔔 NOTE: Webhook setup is running in background - check logs for 'configure_webhook' or 'Webhook configured'",
         flush=True,
     )
+    sys.stdout.flush()
+    sys.stderr.flush()
 
 
 # ============================================================
