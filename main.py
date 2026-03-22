@@ -752,7 +752,7 @@ async def build_bot_application(deps: dict) -> Application:
     # Initialize Pyrogram clients (non-blocking, background task)
     import asyncio as _asyncio
 
-    _asyncio.create_task(_init_pyrogram_bg())
+    # Pyrogram clients are now started ONLY in _startup_tasks to ensure singleton execution
 
     # Share services + repos via bot_data — handlers read from here
     application.bot_data.update(
@@ -848,37 +848,37 @@ async def _setup_rclone_bg():
     """Background Rclone setup."""
     try:
         from bot.services._cloud_upload import ensure_rclone_binary
-        logger.info("🔧 Checking/Downloading Rclone status in background...")
+        print("🔧 Checking Rclone status...", flush=True)
         path = await ensure_rclone_binary()
         if path:
-            logger.info("✅ Rclone ready")
+            print("✅ Rclone ready", flush=True)
         else:
-            logger.info("⚠️ Rclone not configured or failed.")
+            print("⚠️ Rclone not configured", flush=True)
     except Exception as e:
-        logger.warning(f"⚠️ Rclone setup failed: {e}")
+        print(f"❌ Rclone background error: {e}", flush=True)
 
 
 async def _setup_webhook_bg():
-    """Background Webhook/Polling setup."""
+    """Background Webhook/Polling setup. HIGH PRIORITY."""
     try:
-        # Give the server 3 seconds to bind and stabilize before network calls
-        await asyncio.sleep(3)
+        # Give the server a tiny bit of time to bind
+        await asyncio.sleep(1)
         if settings.WEBHOOK_URL:
-            logger.info("🔧 Configuring webhook in background...")
+            print("🔧 Configuring webhook...", flush=True)
             await configure_webhook(
                 get_bot_token(),
                 settings.WEBHOOK_URL,
                 settings.WEBHOOK_SECRET or "",
                 None
             )
-            logger.info("✅ Webhook configured")
+            print("✅ Webhook configured", flush=True)
         else:
-            logger.info("⚠️ No WEBHOOK_URL. Starting long polling in background...")
+            print("🔧 Starting long polling...", flush=True)
             if bot_application and bot_application.updater:
                 await bot_application.updater.start_polling(drop_pending_updates=True)
-                logger.info("✅ Polling started")
+                print("✅ Polling started", flush=True)
     except Exception as e:
-        logger.warning(f"⚠️ Webhook/Polling startup error: {e}")
+        print(f"❌ Webhook background error: {e}", flush=True)
 
 
 async def _background_indexing_job(db_conn):
@@ -968,12 +968,26 @@ async def _startup_tasks(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️ QueueWorker: {e}")
 
-    # Fire off all background tasks
-    asyncio.create_task(_init_pyrogram_bg())
-    asyncio.create_task(_setup_rclone_bg())
+    # Fire off all background tasks (Singleton pattern)
+    # 1. Webhook first (Priority 1)
     asyncio.create_task(_setup_webhook_bg())
+    
+    # 2. Rclone (Priority 2)
+    asyncio.create_task(_setup_rclone_bg())
+    
+    # 3. Pyrogram (Priority 3 - heavy, so we delay it slightly)
+    async def _init_pyrogram_delayed():
+        await asyncio.sleep(5)
+        await _init_pyrogram_bg()
+    asyncio.create_task(_init_pyrogram_delayed())
+    
+    # 4. Heavy indexing (Priority 4 - absolute last)
     asyncio.create_task(_background_indexing_job(deps["db_conn"]))
 
+    sys.stdout.flush()
+    sys.stderr.flush()
+
+    print("🎉 All startup tasks complete! Service is now online.", flush=True)
     logger.info("🎉 All startup tasks complete! (Server is online, finishing setup in background...)")
 
 
