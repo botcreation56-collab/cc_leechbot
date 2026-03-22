@@ -952,21 +952,26 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"⚠️ QueueWorker: {e}")
 
-        # Configure webhook SYNCHRONOUSLY before yield
+        # Configure webhook with TIMEOUT so port can bind
         if settings.WEBHOOK_URL:
             try:
                 logger.info("🔧 Configuring webhook...")
-                await configure_webhook(
-                    get_bot_token(),
-                    settings.WEBHOOK_URL,
-                    settings.WEBHOOK_SECRET or "",
-                    None,
+                await asyncio.wait_for(
+                    configure_webhook(
+                        get_bot_token(),
+                        settings.WEBHOOK_URL,
+                        settings.WEBHOOK_SECRET or "",
+                        None,
+                    ),
+                    timeout=5.0,
                 )
                 logger.info("✅ Webhook configured successfully")
+            except asyncio.TimeoutError:
+                logger.warning("⚠️ Webhook config timed out - continuing anyway")
             except Exception as e:
-                logger.error(f"❌ Webhook configuration failed: {e}")
+                logger.error(f"❌ Webhook config failed: {e}")
         else:
-            logger.warning("⚠️ WEBHOOK_URL not set - bot may not receive updates")
+            logger.warning("⚠️ WEBHOOK_URL not set")
 
     except Exception as e:
         logger.error(f"❌ Bot app failed: {e}")
