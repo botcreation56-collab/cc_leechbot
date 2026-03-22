@@ -174,6 +174,10 @@ def deduce_webhook_url() -> str:
         return f"https://{domain}"
     if domain := os.getenv("VERCEL_URL"):
         return f"https://{domain}"
+    if domain := os.getenv("DOMAIN"):
+        if not domain.startswith(("http://", "https://")):
+            return f"https://{domain}"
+        return domain
     return ""
 
 
@@ -185,13 +189,13 @@ def validate_environment() -> None:
         "🔍 ENV RENDER_EXTERNAL_URL: %s", os.getenv("RENDER_EXTERNAL_URL") or "None"
     )
 
-    # Auto-deduce webhook only if explicitly requested (not auto-detected)
-    # To use webhook, set WEBHOOK_URL explicitly in Render env vars
-    if not settings.WEBHOOK_URL and os.getenv("USE_WEBHOOK") == "true":
-        deduced = deduce_webhook_url()
-        if deduced:
-            settings.WEBHOOK_URL = deduced.rstrip("/") + "/webhook/telegram"
-            logger.info("🔍 Auto webhook URL: %s", settings.WEBHOOK_URL)
+    # Auto-deduce webhook if requested OR if running on Render/with a DOMAIN
+    if not settings.WEBHOOK_URL:
+        if os.getenv("USE_WEBHOOK") == "true" or os.getenv("RENDER_SERVICE_URL") or os.getenv("DOMAIN"):
+            deduced = deduce_webhook_url()
+            if deduced:
+                settings.WEBHOOK_URL = deduced.rstrip("/") + "/webhook/telegram"
+                logger.info("🔍 Auto webhook URL: %s", settings.WEBHOOK_URL)
 
     required = {"BOT_TOKEN", "MONGODB_URI"}
     missing = []
@@ -942,13 +946,12 @@ async def _full_startup(app: FastAPI):
             logger.info("✅ Webhook configured")
         else:
             logger.info("🔧 Starting long polling (no WEBHOOK_URL set)...")
-            asyncio.create_task(
-                bot_application.start_polling(drop_pending_updates=True)
-            )
+            # Updater.start_polling starts the polling loop in its own thread/task
+            await bot_application.updater.start_polling(drop_pending_updates=True)
             logger.info("✅ Long polling started")
     except asyncio.TimeoutError:
         logger.warning("⚠️ Webhook timed out - falling back to long polling")
-        asyncio.create_task(bot_application.start_polling(drop_pending_updates=True))
+        await bot_application.updater.start_polling(drop_pending_updates=True)
         logger.info("✅ Long polling started (fallback)")
     except Exception as e:
         logger.warning(f"⚠️ Webhook/long-poll error: {e}")
