@@ -70,6 +70,14 @@ settings = get_settings()
 
 bot_application: Application | None = None
 
+# Webhook status tracker
+_webhook_status = {
+    "configured": False,
+    "url": None,
+    "error": None,
+    "last_check": None,
+}
+
 
 async def build_dependency_graph():
     """Create and wire all infrastructure and service objects.
@@ -800,6 +808,8 @@ async def configure_webhook(
     bot_token: str, webhook_url: str, secret: str, user_count: Optional[int] = None
 ) -> None:
     """Auto-scale and (re-)configure Telegram webhook."""
+    global _webhook_status
+
     if user_count is None:
         needed_max = 40
     else:
@@ -809,13 +819,17 @@ async def configure_webhook(
     try:
         print(f"🔧 configure_webhook: Checking current webhook info...", flush=True)
         async with httpx.AsyncClient(
-            timeout=httpx.Timeout(10.0, connect=5.0)
+            timeout=httpx.Timeout(30.0, connect=10.0)
         ) as client:
+            print(
+                f"🔧 configure_webhook: Making request to Telegram API...", flush=True
+            )
             info = (
                 await client.get(
                     f"https://api.telegram.org/bot{bot_token}/getWebhookInfo",
                 )
             ).json()
+            print(f"🔧 configure_webhook: Got response from Telegram API", flush=True)
 
         current_url = info.get("result", {}).get("url", "")
         current_max = info.get("result", {}).get("max_connections", 40)
@@ -829,12 +843,18 @@ async def configure_webhook(
             print(
                 "✅ configure_webhook: Webhook already configured correctly", flush=True
             )
+            _webhook_status["configured"] = True
+            _webhook_status["url"] = webhook_url
             return
 
         print(f"🔧 configure_webhook: Setting webhook to {webhook_url}...", flush=True)
         async with httpx.AsyncClient(
-            timeout=httpx.Timeout(15.0, connect=5.0)
+            timeout=httpx.Timeout(30.0, connect=10.0)
         ) as client:
+            print(
+                f"🔧 configure_webhook: Sending setWebhook request to Telegram...",
+                flush=True,
+            )
             r = await client.post(
                 f"https://api.telegram.org/bot{bot_token}/setWebhook",
                 json={
@@ -855,9 +875,28 @@ async def configure_webhook(
             flush=True,
         )
         logger.info("SetWebhook → %d: %s", r.status_code, r.text[:200])
+
+        # Update status
+        _webhook_status["configured"] = r.status_code == True
+        _webhook_status["url"] = webhook_url
+
+        # Check if webhook was set successfully
+        if r.status_code == 200 or r.json().get("result", False):
+            _webhook_status["configured"] = True
+            print("✅ configure_webhook: SUCCESS - Webhook configured!", flush=True)
+        else:
+            _webhook_status["configured"] = False
+            _webhook_status["error"] = r.text[:200]
+            print(
+                f"⚠️ configure_webhook: Webhook may not be configured. Response: {r.text[:100]}",
+                flush=True,
+            )
+
     except Exception as exc:
         logger.error("❌ Webhook setup failed: %s", exc, exc_info=True)
         print(f"❌ configure_webhook: Webhook setup failed: {exc}", flush=True)
+        _webhook_status["configured"] = False
+        _webhook_status["error"] = str(exc)[:200]
 
 
 # ============================================================
@@ -897,7 +936,13 @@ async def _setup_rclone_bg():
 
 async def _setup_webhook_bg():
     """Background Webhook/Polling setup. HIGH PRIORITY."""
+    global _webhook_status
+
     print("🔧 _setup_webhook_bg: Task started", flush=True)
+    _webhook_status["url"] = settings.WEBHOOK_URL
+    _webhook_status["configured"] = False
+    _webhook_status["error"] = None
+
     try:
         # Give the server minimal time to bind
         await asyncio.sleep(0.5)
@@ -907,6 +952,7 @@ async def _setup_webhook_bg():
         if bot_application is None:
             logger.error("❌ Bot application not initialized when setting up webhook!")
             print("❌ _setup_webhook_bg: bot_application is None!", flush=True)
+            _webhook_status["error"] = "Bot application not initialized"
             return
 
         if settings.WEBHOOK_URL:
@@ -914,7 +960,7 @@ async def _setup_webhook_bg():
                 f"🔧 _setup_webhook_bg: Configuring webhook to {settings.WEBHOOK_URL}...",
                 flush=True,
             )
-            result = await configure_webhook(
+            await configure_webhook(
                 get_bot_token(),
                 settings.WEBHOOK_URL,
                 settings.WEBHOOK_SECRET or "",
@@ -1127,6 +1173,10 @@ async def _startup_tasks(app: FastAPI):
     print(f"   - Webhook URL: {settings.WEBHOOK_URL or 'Not configured'}", flush=True)
     print(f"   - WEBHOOK_SECRET set: {bool(settings.WEBHOOK_SECRET)}", flush=True)
     print(f"   - Database: {deps.get('db_conn') is not None}", flush=True)
+    print(
+        "🔔 NOTE: Webhook setup is running in background - check logs for 'configure_webhook' or 'Webhook configured'",
+        flush=True,
+    )
 
 
 # ============================================================
@@ -1252,22 +1302,15 @@ async def health():
         db_ok = False
 
     status = "healthy" if db_ok else "indexing_or_busy"
+
     return {
         "status": status,
         "bot_ready": bot_application is not None,
         "bot_username": settings.BOT_USERNAME,
         "db_connected": True,
-    }
-
-    # Debug: Check admin access stats or logs if needed
-    admin_ids = get_admin_ids()
-
-    return {
-        "status": status,
-        "bot_ready": bot_application is not None,
-        "bot_username": settings.BOT_USERNAME,
-        "bot_link": settings.BOT_LINK,
-        "admin_count": len(admin_ids),
+        "webhook_configured": _webhook_status.get("configured", False),
+        "webhook_url": _webhook_status.get("url") or settings.WEBHOOK_URL or None,
+        "webhook_error": _webhook_status.get("error"),
     }
 
 
