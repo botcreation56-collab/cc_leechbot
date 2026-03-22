@@ -61,6 +61,7 @@ class QueueWorker:
     async def start(self):
         """Start the worker loop."""
         self.running = True
+        print(f"🚀 QueueWorker: Starting background tasks (limit={self.limit})...", flush=True)
         logger.info(f"🚀 Queue Worker Started. Limit: {self.limit}")
         # Run recovery in background so it doesn't block the main startup flow
         asyncio.create_task(self.recover_stale_tasks())
@@ -79,6 +80,7 @@ class QueueWorker:
 
     async def recover_stale_tasks(self):
         """Reset tasks that were 'processing' or 'waiting_user_input' when the bot crashed."""
+        print("🔄 QueueWorker: Running stale task recovery...", flush=True)
         try:
             db = get_db()
             result = await db.tasks.update_many(

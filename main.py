@@ -876,12 +876,12 @@ async def configure_webhook(
         )
         logger.info("SetWebhook → %d: %s", r.status_code, r.text[:200])
 
-        # Update status
-        _webhook_status["configured"] = r.status_code == True
+        # Update status (correctly set based on response)
         _webhook_status["url"] = webhook_url
 
         # Check if webhook was set successfully
-        if r.status_code == 200 or r.json().get("result", False):
+        is_ok = r.status_code == 200 or r.json().get("result", False)
+        if is_ok:
             _webhook_status["configured"] = True
             print("✅ configure_webhook: SUCCESS - Webhook configured!", flush=True)
         else:
@@ -946,9 +946,12 @@ async def _setup_webhook_bg():
     try:
         # Give the server minimal time to bind
         await asyncio.sleep(0.5)
-        print("🔧 _setup_webhook_bg: After initial sleep", flush=True)
+        print("🔧 _setup_webhook_bg: After initial sleep (0.5s)", flush=True)
 
-        # CRITICAL: Ensure bot_application is ready
+        from bot.database import get_config
+        print("🔧 _setup_webhook_bg: Fetching config from database...", flush=True)
+        config = await get_config() or {}
+        print(f"🔧 _setup_webhook_bg: Config loaded ({len(config)} keys)", flush=True)
         if bot_application is None:
             logger.error("❌ Bot application not initialized when setting up webhook!")
             print("❌ _setup_webhook_bg: bot_application is None!", flush=True)
@@ -1126,10 +1129,17 @@ async def _startup_tasks(app: FastAPI):
 
         print("🔧 _startup_tasks: Creating QueueWorker instance...", flush=True)
         logger.info("🔧 Initializing QueueWorker...")
-        worker = QueueWorker(bot_application.bot)
-        print("🔧 _startup_tasks: QueueWorker instance created", flush=True)
+        print("🔧 _startup_tasks: Building bot application...", flush=True)
+        global bot_application
+        bot_application = await build_bot()
+        print("✅ _startup_tasks: Bot application built", flush=True)
 
-        print("🔧 _startup_tasks: Creating QueueWorker task...", flush=True)
+        from bot.services import QueueWorker
+        print("🔧 _startup_tasks: Initializing QueueWorker...", flush=True)
+        worker = QueueWorker(bot_application.bot)
+        print("✅ _startup_tasks: QueueWorker initialized", flush=True)
+
+        print("🔧 _startup_tasks: Starting QueueWorker background task...", flush=True)
         asyncio.create_task(worker.start())
         print("✅ _startup_tasks: QueueWorker task created", flush=True)
     except Exception as e:
@@ -1355,6 +1365,7 @@ async def telegram_webhook(request: Request):
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
     update = Update.de_json(data, bot_application.bot)
+    logger.info(f"📥 Received webhook update (id={update.update_id})")
     await bot_application.process_update(update)
     return JSONResponse({"ok": True})
 
