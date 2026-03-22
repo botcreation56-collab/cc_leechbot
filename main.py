@@ -99,9 +99,8 @@ async def build_dependency_graph():
     )
     await db_conn.connect()
     
-    # Run index creation in background to prevent startup freezing on huge databases
-    import asyncio
-    asyncio.create_task(db_conn.create_indexes())
+    # All database indexing and migrations will be moved to the end of _startup_tasks
+    # to prevent startup hangs during the critical Render health check window.
     
     db = db_conn.db
 
@@ -131,11 +130,9 @@ async def build_dependency_graph():
     )
 
     _set_shared_db(db)
-    try:
-        await ensure_channel_schema(db)
-        await migrate_flat_to_nested(db)
-    except Exception as e:
-        logger.warning("⚠️ Migration step failed (non-fatal): %s", e)
+    # Background migrations to avoid blocking port binding / startup
+    asyncio.create_task(ensure_channel_schema(db))
+    asyncio.create_task(migrate_flat_to_nested(db))
 
     return {
         "db_conn": db_conn,
@@ -779,11 +776,14 @@ async def build_bot_application(deps: dict) -> Application:
 
 
 async def configure_webhook(
-    bot_token: str, webhook_url: str, secret: str, user_count: int
+    bot_token: str, webhook_url: str, secret: str, user_count: Optional[int] = None
 ) -> None:
     """Auto-scale and (re-)configure Telegram webhook."""
-    extra_conns = (user_count // 1000) * 20
-    needed_max = min(100, 40 + extra_conns)
+    if user_count is None:
+        needed_max = 40
+    else:
+        extra_conns = (user_count // 1000) * 20
+        needed_max = min(100, 40 + extra_conns)
 
     try:
         async with httpx.AsyncClient(
@@ -964,12 +964,12 @@ async def _startup_tasks(app: FastAPI):
     try:
         if settings.WEBHOOK_URL:
             logger.info("🔧 Configuring webhook...")
-            user_count = await deps["user_repo"]._col.count_documents({})
+            # Default to None to avoid blocking on count_documents
             await configure_webhook(
                 get_bot_token(),
                 settings.WEBHOOK_URL,
                 settings.WEBHOOK_SECRET or "",
-                user_count,
+                None
             )
             logger.info("✅ Webhook configured")
         else:
@@ -979,6 +979,11 @@ async def _startup_tasks(app: FastAPI):
                 logger.info("✅ Polling started")
     except Exception as e:
         logger.warning(f"⚠️ Webhook/Polling startup error: {e}")
+
+    # Finally, run the heavy indexing at the absolute end.
+    # We use a task so the bot signals 'Complete' to Render immediately.
+    logger.info("🔧 Starting background index building and maintenance...")
+    asyncio.create_task(deps["db_conn"].create_indexes())
 
     logger.info("🎉 All startup tasks complete!")
 
