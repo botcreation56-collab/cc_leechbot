@@ -178,30 +178,20 @@ def deduce_webhook_url() -> str:
 
 
 def validate_environment() -> None:
-    """Check required settings and auto-deduce webhook URL where possible."""
-    print(
-        f"🔍 validate_environment: Initial WEBHOOK_URL = '{settings.WEBHOOK_URL}'",
-        flush=True,
-    )
-    print(
-        f"🔍 validate_environment: RENDER_EXTERNAL_URL = '{os.getenv('RENDER_EXTERNAL_URL')}'",
-        flush=True,
-    )
-    print(
-        f"🔍 validate_environment: RENDER_SERVICE_URL = '{os.getenv('RENDER_SERVICE_URL')}'",
-        flush=True,
+    """Check required settings and log environment info."""
+    logger.info("🔍 ENV BOT_TOKEN set: %s", bool(settings.BOT_TOKEN))
+    logger.info("🔍 ENV WEBHOOK_URL set: %s", bool(settings.WEBHOOK_URL))
+    logger.info(
+        "🔍 ENV RENDER_EXTERNAL_URL: %s", os.getenv("RENDER_EXTERNAL_URL") or "None"
     )
 
-    if not settings.WEBHOOK_URL:
+    # Auto-deduce webhook only if explicitly requested (not auto-detected)
+    # To use webhook, set WEBHOOK_URL explicitly in Render env vars
+    if not settings.WEBHOOK_URL and os.getenv("USE_WEBHOOK") == "true":
         deduced = deduce_webhook_url()
-        print(f"🔍 validate_environment: Deduced URL = '{deduced}'", flush=True)
         if deduced:
             settings.WEBHOOK_URL = deduced.rstrip("/") + "/webhook/telegram"
-            logger.info("🔍 Deduced Webhook URL: %s", settings.WEBHOOK_URL)
-            print(
-                f"🔍 validate_environment: Set WEBHOOK_URL = '{settings.WEBHOOK_URL}'",
-                flush=True,
-            )
+            logger.info("🔍 Auto webhook URL: %s", settings.WEBHOOK_URL)
 
     required = {"BOT_TOKEN", "MONGODB_URI"}
     missing = []
@@ -910,6 +900,17 @@ async def _full_startup(app: FastAPI):
         global bot_application
         bot_application = bot_app
         logger.info("✅ Bot application built")
+
+        # Process any updates that arrived during startup
+        if _pending_updates:
+            logger.info(f"📥 Processing {_pending_updates.__len__()} queued updates...")
+            for data in _pending_updates:
+                try:
+                    update = Update.de_json(data, bot_application.bot)
+                    asyncio.create_task(bot_application.process_update(update))
+                except Exception:
+                    pass
+            _pending_updates.clear()
     except Exception as e:
         logger.error(f"❌ Bot app failed: {e}\n{tb.format_exc()}")
         return
@@ -924,7 +925,7 @@ async def _full_startup(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️ QueueWorker: {e}")
 
-    # Step 4: Configure webhook (with timeout to prevent hanging)
+    # Step 4: Configure webhook OR start long polling
     try:
         if settings.WEBHOOK_URL:
             logger.info("🔧 Configuring webhook...")
@@ -940,11 +941,17 @@ async def _full_startup(app: FastAPI):
             )
             logger.info("✅ Webhook configured")
         else:
-            logger.warning("⚠️ No WEBHOOK_URL")
+            logger.info("🔧 Starting long polling (no WEBHOOK_URL set)...")
+            asyncio.create_task(
+                bot_application.start_polling(drop_pending_updates=True)
+            )
+            logger.info("✅ Long polling started")
     except asyncio.TimeoutError:
-        logger.warning("⚠️ Webhook config timed out (will retry on next startup)")
+        logger.warning("⚠️ Webhook timed out - falling back to long polling")
+        asyncio.create_task(bot_application.start_polling(drop_pending_updates=True))
+        logger.info("✅ Long polling started (fallback)")
     except Exception as e:
-        logger.warning(f"⚠️ Webhook error: {e}")
+        logger.warning(f"⚠️ Webhook/long-poll error: {e}")
 
     # Step 5: Initialize Pyrogram (after webhook)
     await asyncio.sleep(2)
@@ -1104,26 +1111,37 @@ async def health():
 
 WEBHOOK_PATH = "/webhook/telegram"
 
+_pending_updates: list = []
+
+
+@app.get(WEBHOOK_PATH, include_in_schema=False)
+async def telegram_webhook_get(request: Request):
+    """Telegram webhook verification - must return 200 for setWebhook to work."""
+    return JSONResponse({"ok": True})
+
 
 @app.post(WEBHOOK_PATH, include_in_schema=False)
 async def telegram_webhook(request: Request):
     if bot_application is None:
-        raise HTTPException(status_code=503, detail="Bot not initialised")
+        body = await request.body()
+        try:
+            data = json.loads(body)
+            update_id = data.get("update_id", "?")
+            logger.info(f"📥 Queued update during startup: {update_id}")
+            _pending_updates.append(data)
+            if len(_pending_updates) > 100:
+                _pending_updates.pop(0)
+        except Exception:
+            pass
+        return JSONResponse({"ok": True})
 
-    # Validate Telegram secret header
-    secret = settings.WEBHOOK_SECRET or ""
-    if not secret:
-        logger.critical(
-            "🚨 WEBHOOK_SECRET is not configured! Rejecting webhook request."
-        )
-        raise HTTPException(
-            status_code=500,
-            detail="Webhook secret not configured. Set WEBHOOK_SECRET environment variable.",
-        )
+    if not settings.WEBHOOK_SECRET:
+        logger.critical("🚨 WEBHOOK_SECRET not configured!")
+        raise HTTPException(status_code=500, detail="Webhook secret not configured")
 
     incoming = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
-    if incoming != secret:
-        logger.warning(f"🚫 Webhook rejected: invalid secret token")
+    if incoming != settings.WEBHOOK_SECRET:
+        logger.warning("🚫 Webhook rejected: invalid secret token")
         raise HTTPException(status_code=403, detail="Invalid secret token")
 
     body = await request.body()
