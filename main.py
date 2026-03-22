@@ -23,6 +23,7 @@ import time
 from contextlib import asynccontextmanager
 from functools import wraps
 from pathlib import Path
+from typing import Optional
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
@@ -840,60 +841,8 @@ async def configure_webhook(
 
 
 # ============================================================
-# BACKGROUND SETUP HELPERS
+# CLEANUP
 # ============================================================
-
-
-async def _init_pyrogram_bg():
-    """Background Pyrogram initialization."""
-    try:
-        from bot.pyrogram_client import init_pyrogram
-
-        logger.info("🔧 Starting Pyrogram clients in background...")
-        ok = await init_pyrogram()
-        if ok:
-            logger.info("✅ Pyrogram clients ready")
-        else:
-            logger.info("ℹ️ Pyrogram not configured")
-    except Exception as e:
-        logger.warning(f"⚠️ Pyrogram init failed: {e}")
-
-
-async def _setup_rclone_bg():
-    """Background Rclone setup."""
-    try:
-        from bot.services._cloud_upload import ensure_rclone_binary
-
-        print("🔧 Checking Rclone status...", flush=True)
-        path = await ensure_rclone_binary()
-        if path:
-            print("✅ Rclone ready", flush=True)
-        else:
-            print("⚠️ Rclone not configured", flush=True)
-    except Exception as e:
-        print(f"❌ Rclone background error: {e}", flush=True)
-
-
-async def _setup_webhook_bg():
-    """Background webhook check (webhook is now configured synchronously in lifespan)."""
-    # Webhook is already configured in lifespan. This is just for logging.
-    if settings.WEBHOOK_URL:
-        logger.info("📡 Webhook endpoint ready: %s", settings.WEBHOOK_URL)
-    else:
-        logger.warning("⚠️ WEBHOOK_URL not configured")
-
-
-async def _background_indexing_job(db_conn):
-    """Heavy indexing job deferred much further."""
-    try:
-        # Wait 30 seconds before starting heavy indexing
-        # to ensure the web layer and health checks are stable
-        await asyncio.sleep(30)
-        logger.info("🔧 Starting background index building...")
-        await db_conn.create_indexes()
-        logger.info("✅ Background index building complete")
-    except Exception as e:
-        logger.warning(f"⚠️ Indexing job failed: {e}")
 
 
 async def cleanup_bot(application: Application, db_conn) -> None:
@@ -903,7 +852,8 @@ async def cleanup_bot(application: Application, db_conn) -> None:
     await application.stop()
     await application.shutdown()
     await stop_pyrogram()
-    await db_conn.close()
+    if db_conn:
+        await db_conn.close()
     logger.info("🛑 Cleanup complete")
 
 
@@ -914,77 +864,17 @@ async def cleanup_bot(application: Application, db_conn) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifespan - web layer ALWAYS starts, bot configured if possible."""
+    """Lifespan - port binds IMMEDIATELY, all heavy work runs in background."""
     global bot_application
 
-    logger.info("🚀 Starting up...")
+    logger.info("🚀 Starting up (port will bind immediately)...")
 
-    # Validate environment (non-critical, just log)
-    try:
-        validate_environment()
-    except Exception as e:
-        logger.warning(f"⚠️ Env validation: {e}")
+    validate_environment()
 
-    # Build dependencies (critical for web layer)
-    try:
-        deps = await build_dependency_graph()
-        app.state.deps = deps
-        logger.info("✅ Dependencies ready")
-    except Exception as e:
-        logger.error(f"❌ Dependencies failed: {e}")
-        # Still yield to keep web layer running
-        yield
-        return
+    asyncio.create_task(_full_startup(app))
 
-    # Build bot application (optional - web layer works without it)
-    try:
-        bot_application = await build_bot_application(deps)
-        app.state.bot = bot_application.bot
-        logger.info("✅ Bot application built")
+    yield  # PORT BINDS HERE - Render health check will succeed
 
-        # Start QueueWorker in background
-        try:
-            from bot.services import QueueWorker
-
-            worker = QueueWorker(bot_application.bot)
-            asyncio.create_task(worker.start())
-            logger.info("✅ QueueWorker started")
-        except Exception as e:
-            logger.warning(f"⚠️ QueueWorker: {e}")
-
-        # Configure webhook with TIMEOUT so port can bind
-        if settings.WEBHOOK_URL:
-            try:
-                logger.info("🔧 Configuring webhook...")
-                await asyncio.wait_for(
-                    configure_webhook(
-                        get_bot_token(),
-                        settings.WEBHOOK_URL,
-                        settings.WEBHOOK_SECRET or "",
-                        None,
-                    ),
-                    timeout=5.0,
-                )
-                logger.info("✅ Webhook configured successfully")
-            except asyncio.TimeoutError:
-                logger.warning("⚠️ Webhook config timed out - continuing anyway")
-            except Exception as e:
-                logger.error(f"❌ Webhook config failed: {e}")
-        else:
-            logger.warning("⚠️ WEBHOOK_URL not set")
-
-    except Exception as e:
-        logger.error(f"❌ Bot app failed: {e}")
-        logger.warning("⚠️ Continuing in degraded mode - web layer will work")
-        bot_application = None
-
-    # Schedule background tasks
-    asyncio.create_task(_startup_tasks(app))
-
-    # CRITICAL: Always yield to start web layer
-    yield
-
-    # Shutdown
     logger.info("🛑 Shutting down...")
     if bot_application:
         try:
@@ -995,32 +885,85 @@ async def lifespan(app: FastAPI):
     logger.info("🛑 Shutdown complete")
 
 
-async def _startup_tasks(app: FastAPI):
-    """Run HEAVY background tasks after port binds (Pyrogram, Rclone, indexing)."""
-    logger.info("🚀 Running background startup tasks...")
+async def _full_startup(app: FastAPI):
+    """Run ALL startup tasks in background after port binds."""
+    import traceback as tb
 
+    logger.info("🚀 Full startup beginning...")
+
+    # Step 1: Build dependency graph (DB connection)
     try:
-        deps = getattr(app.state, "deps", {})
-        db_conn = deps.get("db_conn") if deps else None
-
-        # Rclone setup
-        asyncio.create_task(_setup_rclone_bg())
-
-        # Pyrogram (delayed slightly)
-        async def _init_pyrogram_delayed():
-            await asyncio.sleep(5)
-            await _init_pyrogram_bg()
-
-        asyncio.create_task(_init_pyrogram_delayed())
-
-        # Heavy indexing
-        if db_conn:
-            asyncio.create_task(_background_indexing_job(db_conn))
-
-        logger.info("✅ Background tasks scheduled")
-        logger.info("🎉 All startup tasks complete! Bot is online.")
+        logger.info("🔧 Connecting to database...")
+        deps = await build_dependency_graph()
+        app.state.deps = deps
+        logger.info("✅ Dependencies ready")
     except Exception as e:
-        logger.warning(f"⚠️ Background tasks error: {e}")
+        logger.error(f"❌ Dependencies failed: {e}\n{tb.format_exc()}")
+        return
+
+    # Step 2: Build bot application (handlers)
+    try:
+        logger.info("🔧 Building bot application...")
+        bot_app = await build_bot_application(deps)
+        app.state.bot = bot_app.bot
+        global bot_application
+        bot_application = bot_app
+        logger.info("✅ Bot application built")
+    except Exception as e:
+        logger.error(f"❌ Bot app failed: {e}\n{tb.format_exc()}")
+        return
+
+    # Step 3: Start QueueWorker
+    try:
+        from bot.services import QueueWorker
+
+        worker = QueueWorker(bot_application.bot)
+        asyncio.create_task(worker.start())
+        logger.info("✅ QueueWorker started")
+    except Exception as e:
+        logger.warning(f"⚠️ QueueWorker: {e}")
+
+    # Step 4: Configure webhook
+    try:
+        if settings.WEBHOOK_URL:
+            logger.info("🔧 Configuring webhook...")
+            user_count = await deps["user_repo"]._col.count_documents({})
+            await configure_webhook(
+                get_bot_token(),
+                settings.WEBHOOK_URL,
+                settings.WEBHOOK_SECRET or "",
+                user_count,
+            )
+            logger.info("✅ Webhook configured")
+        else:
+            logger.warning("⚠️ No WEBHOOK_URL")
+    except Exception as e:
+        logger.warning(f"⚠️ Webhook error: {e}")
+
+    # Step 5: Initialize Pyrogram (after webhook)
+    await asyncio.sleep(2)
+    try:
+        from bot.pyrogram_client import init_pyrogram
+
+        await init_pyrogram()
+        logger.info("✅ Pyrogram started")
+    except Exception as e:
+        logger.warning(f"⚠️ Pyrogram: {e}")
+
+    # Step 6: Rclone setup
+    await asyncio.sleep(1)
+    try:
+        from bot.services._cloud_upload import ensure_rclone_binary
+
+        path = await ensure_rclone_binary()
+        if path:
+            logger.info("✅ Rclone ready")
+        else:
+            logger.info("⚠️ Rclone not configured")
+    except Exception as e:
+        logger.warning(f"⚠️ Rclone: {e}")
+
+    logger.info("🎉 ALL STARTUP COMPLETE - Bot is fully operational!")
 
 
 # ============================================================
