@@ -81,23 +81,29 @@ async def ensure_rclone_binary() -> str:
             content = io.BytesIO(response.content)
 
             if system == "windows":
-                with zipfile.ZipFile(content) as z:
-                    # Find rclone.exe in the zip (it's usually in a subfolder like rclone-v1.66.0-windows-amd64/)
-                    for info in z.infolist():
-                        if info.filename.endswith("rclone.exe"):
-                            with z.open(info) as src, open(local_path, "wb") as dst:
-                                shutil.copyfileobj(src, dst)
-                            break
+                def _extract_zip(content_bytes, dest_path):
+                    with zipfile.ZipFile(io.BytesIO(content_bytes)) as z:
+                        # Find rclone.exe in the zip
+                        for info in z.infolist():
+                            if info.filename.endswith("rclone.exe"):
+                                with z.open(info) as src, open(dest_path, "wb") as dst:
+                                    shutil.copyfileobj(src, dst)
+                                break
+                
+                await asyncio.to_thread(_extract_zip, response.content, local_path)
             else:
-                with tarfile.open(fileobj=content, mode="r:gz") as tar:
-                    for member in tar.getmembers():
-                        if member.name.endswith("/rclone") and member.isfile():
-                            f = tar.extractfile(member)
-                            if f:
-                                with open(local_path, "wb") as dst:
-                                    shutil.copyfileobj(f, dst)
-                                os.chmod(local_path, 0o755)
-                            break
+                def _extract_tar(content_bytes, dest_path):
+                    with tarfile.open(fileobj=io.BytesIO(content_bytes), mode="r:gz") as tar:
+                        for member in tar.getmembers():
+                            if member.name.endswith("/rclone") and member.isfile():
+                                f = tar.extractfile(member)
+                                if f:
+                                    with open(dest_path, "wb") as dst:
+                                        shutil.copyfileobj(f, dst)
+                                    os.chmod(dest_path, 0o755)
+                                break
+                
+                await asyncio.to_thread(_extract_tar, response.content, local_path)
 
             if local_path.exists():
                 logger.info(f"✅ Rclone binary downloaded to {local_path}")
