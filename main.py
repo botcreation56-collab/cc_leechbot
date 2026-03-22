@@ -802,69 +802,41 @@ async def build_bot_application(deps: dict) -> Application:
 async def configure_webhook(
     bot_token: str, webhook_url: str, secret: str, user_count: Optional[int] = None
 ) -> None:
-    """Auto-scale and (re-)configure Telegram webhook."""
-    global _webhook_status
-
-    if user_count is None:
-        needed_max = 40
-    else:
-        extra_conns = (user_count // 1000) * 20
-        needed_max = min(100, 40 + extra_conns)
-
+    """Configure Telegram webhook."""
     try:
-        print(f"🔧 configure_webhook: Checking current webhook info...", flush=True)
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(30.0, connect=10.0)
-        ) as client:
-            print(
-                f"🔧 configure_webhook: Making request to Telegram API...", flush=True
-            )
+        needed_max = 40
+        if user_count:
+            needed_max = min(100, 40 + (user_count // 1000) * 20)
+
+        # Check current webhook
+        async with httpx.AsyncClient(timeout=10.0) as client:
             info = (
                 await client.get(
-                    f"https://api.telegram.org/bot{bot_token}/getWebhookInfo",
+                    f"https://api.telegram.org/bot{bot_token}/getWebhookInfo"
                 )
             ).json()
-            print(f"🔧 configure_webhook: Got response from Telegram API", flush=True)
 
         current_url = info.get("result", {}).get("url", "")
-        current_max = info.get("result", {}).get("max_connections", 40)
-        print(
-            f"🔧 configure_webhook: Current URL = {current_url}, Current max = {current_max}",
-            flush=True,
-        )
-
-        if current_url == webhook_url and needed_max <= current_max:
-            logger.info("✅ Webhook already configured correctly: %s", webhook_url)
+        if current_url == webhook_url:
+            logger.info("✅ Webhook already set: %s", webhook_url)
             return
 
-        logger.info("🔧 Setting webhook to %s...", webhook_url)
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(30.0, connect=10.0)
-        ) as client:
+        # Set webhook
+        async with httpx.AsyncClient(timeout=15.0) as client:
             r = await client.post(
                 f"https://api.telegram.org/bot{bot_token}/setWebhook",
                 json={
                     "url": webhook_url,
                     "drop_pending_updates": False,
-                    "allowed_updates": [
-                        "message",
-                        "callback_query",
-                        "inline_query",
-                        "chat_join_request",
-                    ],
                     "max_connections": needed_max,
                     "secret_token": secret,
                 },
             )
-        logger.info("SetWebhook → %d: %s", r.status_code, r.text[:200])
-
+        logger.info("SetWebhook → %d: %s", r.status_code, r.text[:100])
         if r.status_code == 200:
-            logger.info("✅ Webhook configured successfully!")
-        else:
-            logger.error("⚠️ Webhook may not be configured: %s", r.text[:100])
-
+            logger.info("✅ Webhook configured!")
     except Exception as exc:
-        logger.error("❌ Webhook setup failed: %s", exc, exc_info=True)
+        logger.error("❌ Webhook failed: %s", exc)
 
 
 # ============================================================
@@ -942,61 +914,69 @@ async def cleanup_bot(application: Application, db_conn) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifespan - configure webhook synchronously, then run heavy tasks in background."""
+    """Lifespan - web layer ALWAYS starts, bot configured if possible."""
     global bot_application
 
     logger.info("🚀 Starting up...")
 
+    # Validate environment (non-critical, just log)
     try:
         validate_environment()
-        logger.info("✅ Environment validated")
     except Exception as e:
-        logger.error(f"❌ Lifespan: Environment validation failed: {e}")
-        return
+        logger.warning(f"⚠️ Env validation: {e}")
 
+    # Build dependencies (critical for web layer)
     try:
         deps = await build_dependency_graph()
         app.state.deps = deps
         logger.info("✅ Dependencies ready")
     except Exception as e:
         logger.error(f"❌ Dependencies failed: {e}")
+        # Still yield to keep web layer running
+        yield
         return
 
+    # Build bot application (optional - web layer works without it)
     try:
         bot_application = await build_bot_application(deps)
         app.state.bot = bot_application.bot
         logger.info("✅ Bot application built")
+
+        # Start QueueWorker in background
+        try:
+            from bot.services import QueueWorker
+
+            worker = QueueWorker(bot_application.bot)
+            asyncio.create_task(worker.start())
+            logger.info("✅ QueueWorker started")
+        except Exception as e:
+            logger.warning(f"⚠️ QueueWorker: {e}")
+
+        # Configure webhook SYNCHRONOUSLY before yield
+        if settings.WEBHOOK_URL:
+            try:
+                logger.info("🔧 Configuring webhook...")
+                await configure_webhook(
+                    get_bot_token(),
+                    settings.WEBHOOK_URL,
+                    settings.WEBHOOK_SECRET or "",
+                    None,
+                )
+                logger.info("✅ Webhook configured successfully")
+            except Exception as e:
+                logger.error(f"❌ Webhook configuration failed: {e}")
+        else:
+            logger.warning("⚠️ WEBHOOK_URL not set - bot may not receive updates")
+
     except Exception as e:
         logger.error(f"❌ Bot app failed: {e}")
-        return
+        logger.warning("⚠️ Continuing in degraded mode - web layer will work")
+        bot_application = None
 
-    # Start QueueWorker in background
-    try:
-        from bot.services import QueueWorker
+    # Schedule background tasks
+    asyncio.create_task(_startup_tasks(app))
 
-        worker = QueueWorker(bot_application.bot)
-        asyncio.create_task(worker.start())
-        logger.info("✅ QueueWorker started in background")
-    except Exception as e:
-        logger.warning(f"⚠️ QueueWorker: {e}")
-
-    # Configure webhook SYNCHRONOUSLY before yield (critical for bot to work!)
-    if settings.WEBHOOK_URL:
-        try:
-            logger.info("🔧 Configuring webhook...")
-            await configure_webhook(
-                get_bot_token(),
-                settings.WEBHOOK_URL,
-                settings.WEBHOOK_SECRET or "",
-                None,
-            )
-            logger.info("✅ Webhook configured successfully")
-        except Exception as e:
-            logger.error(f"❌ Webhook configuration failed: {e}")
-    else:
-        logger.warning("⚠️ WEBHOOK_URL not set")
-
-    # Now yield to bind the port
+    # CRITICAL: Always yield to start web layer
     yield
 
     # Shutdown
@@ -1016,11 +996,7 @@ async def _startup_tasks(app: FastAPI):
 
     try:
         deps = getattr(app.state, "deps", {})
-        if not deps:
-            logger.warning("⚠️ No deps available for background tasks")
-            return
-
-        db_conn = deps.get("db_conn")
+        db_conn = deps.get("db_conn") if deps else None
 
         # Rclone setup
         asyncio.create_task(_setup_rclone_bg())
@@ -1037,24 +1013,9 @@ async def _startup_tasks(app: FastAPI):
             asyncio.create_task(_background_indexing_job(db_conn))
 
         logger.info("✅ Background tasks scheduled")
+        logger.info("🎉 All startup tasks complete! Bot is online.")
     except Exception as e:
         logger.warning(f"⚠️ Background tasks error: {e}")
-
-    print("🎉 All startup tasks complete! Service is now online.", flush=True)
-    logger.info(
-        "🎉 All startup tasks complete! (Server is online, finishing setup in background...)"
-    )
-    print("📋 Startup Summary:", flush=True)
-    print(f"   - Bot ready: {bot_application is not None}", flush=True)
-    print(f"   - Webhook URL: {settings.WEBHOOK_URL or 'Not configured'}", flush=True)
-    print(f"   - WEBHOOK_SECRET set: {bool(settings.WEBHOOK_SECRET)}", flush=True)
-    print(f"   - Database: {deps.get('db_conn') is not None}", flush=True)
-    print(
-        "🔔 NOTE: Webhook setup is running in background - check logs for 'configure_webhook' or 'Webhook configured'",
-        flush=True,
-    )
-    sys.stdout.flush()
-    sys.stderr.flush()
 
 
 # ============================================================
