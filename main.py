@@ -882,10 +882,11 @@ async def _setup_webhook_bg():
 
 
 async def _background_indexing_job(db_conn):
-    """Heavy indexing job deferred further."""
+    """Heavy indexing job deferred much further."""
     try:
-        # Wait 10 seconds before starting heavy indexing to let bot come online first
-        await asyncio.sleep(10)
+        # Wait 30 seconds before starting heavy indexing 
+        # to ensure the web layer and health checks are stable
+        await asyncio.sleep(30)
         logger.info("🔧 Starting background index building...")
         await db_conn.create_indexes()
         logger.info("✅ Background index building complete")
@@ -989,10 +990,37 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ── Security Headers ──────────────────────────────────────────
-from web.utils.security_headers import SecurityHeadersMiddleware
-
 app.add_middleware(SecurityHeadersMiddleware)
+
+# ── Activity & Error Logging Middleware ───────────────────────
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    import time
+    start_time = time.time()
+    try:
+        response = await call_next(request)
+        process_time = (time.time() - start_time) * 1000
+        # Only log successes if not static assets to avoid noise
+        if not request.url.path.startswith("/static"):
+            logger.info(f"🌐 {request.method} {request.url.path} - {response.status_code} ({process_time:.2f}ms)")
+        return response
+    except Exception as e:
+        import traceback
+        process_time = (time.time() - start_time) * 1000
+        logger.error(f"💥 REQUEST FAILED: {request.method} {request.url.path}\nError: {e}\n{traceback.format_exc()}")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal Server Error", "error": str(e)}
+        )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    import traceback
+    logger.error(f"🔥 UNHANDLED ERROR: {exc}\n{traceback.format_exc()}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Something went wrong", "error": str(exc)}
+    )
 
 # ── CORS ─────────────────────────────────────────────────────
 # Build allow_origins safely - never include empty strings
