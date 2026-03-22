@@ -888,26 +888,26 @@ async def _full_startup(app: FastAPI):
 
     # Step 1: Build dependency graph (DB connection)
     try:
-        logger.info("🔧 Connecting to database...")
-        deps = await build_dependency_graph()
+        logger.info("[STARTUP-1] Connecting to database...")
+        deps = await asyncio.wait_for(build_dependency_graph(), timeout=30.0)
         app.state.deps = deps
-        logger.info("✅ Dependencies ready")
+        logger.info("[STARTUP-1] ✅ Dependencies ready")
     except Exception as e:
-        logger.error(f"❌ Dependencies failed: {e}\n{tb.format_exc()}")
+        logger.error(f"[STARTUP-1] ❌ Dependencies failed: {e}\n{tb.format_exc()}")
         return
 
     # Step 2: Build bot application (handlers)
     try:
-        logger.info("🔧 Building bot application...")
-        bot_app = await build_bot_application(deps)
+        logger.info("[STARTUP-2] Building bot application...")
+        bot_app = await asyncio.wait_for(build_bot_application(deps), timeout=45.0)
         app.state.bot = bot_app.bot
         global bot_application
         bot_application = bot_app
-        logger.info("✅ Bot application built")
+        logger.info("[STARTUP-2] ✅ Bot application built")
 
         # Process any updates that arrived during startup
         if _pending_updates:
-            logger.info(f"📥 Processing {_pending_updates.__len__()} queued updates...")
+            logger.info(f"[STARTUP-2] 📥 Processing {_pending_updates.__len__()} queued updates...")
             for data in _pending_updates:
                 try:
                     update = Update.de_json(data, bot_application.bot)
@@ -916,23 +916,25 @@ async def _full_startup(app: FastAPI):
                     pass
             _pending_updates.clear()
     except Exception as e:
-        logger.error(f"❌ Bot app failed: {e}\n{tb.format_exc()}")
+        logger.error(f"[STARTUP-2] ❌ Bot app failed: {e}\n{tb.format_exc()}")
         return
 
     # Step 3: Start QueueWorker
     try:
+        logger.info("[STARTUP-3] Starting QueueWorker...")
         from bot.services import QueueWorker
 
         worker = QueueWorker(bot_application.bot)
         asyncio.create_task(worker.start())
-        logger.info("✅ QueueWorker started")
+        logger.info("[STARTUP-3] ✅ QueueWorker started")
     except Exception as e:
-        logger.warning(f"⚠️ QueueWorker: {e}")
+        logger.warning(f"[STARTUP-3] ⚠️ QueueWorker: {e}")
 
     # Step 4: Configure webhook OR start long polling
     try:
         if settings.WEBHOOK_URL:
-            logger.info("🔧 Configuring webhook...")
+            logger.info(f"[STARTUP-4] 🔧 Webhook logic triggered: {settings.WEBHOOK_URL}")
+            # user_count is fast, no need for timeout here
             user_count = await deps["user_repo"]._col.count_documents({})
             await asyncio.wait_for(
                 configure_webhook(
@@ -943,41 +945,63 @@ async def _full_startup(app: FastAPI):
                 ),
                 timeout=15.0,
             )
-            logger.info("✅ Webhook configured")
+            logger.info("[STARTUP-4] ✅ Webhook configured and verified")
         else:
-            logger.info("🔧 Starting long polling (no WEBHOOK_URL set)...")
-            # Updater.start_polling starts the polling loop in its own thread/task
+            logger.info("[STARTUP-4] 🔧 No WEBHOOK_URL - Starting long polling as fallback...")
+            # updater.start_polling starts background tasks.
+            # In some environments, awaiting this might take a moment, so we log before/after.
+            # If it's PTB 20.x, this is a coroutine.
             await bot_application.updater.start_polling(drop_pending_updates=True)
-            logger.info("✅ Long polling started")
+            logger.info("[STARTUP-4] ✅ Long polling tasks initiated")
     except asyncio.TimeoutError:
-        logger.warning("⚠️ Webhook timed out - falling back to long polling")
+        logger.warning("[STARTUP-4] ⚠️ Webhook setup timed out - falling back to polling...")
         await bot_application.updater.start_polling(drop_pending_updates=True)
-        logger.info("✅ Long polling started (fallback)")
+        logger.info("[STARTUP-4] ✅ Long polling started (timeout fallback)")
     except Exception as e:
-        logger.warning(f"⚠️ Webhook/long-poll error: {e}")
+        logger.error(f"[STARTUP-4] ❌ Webhook/Polling initialization failed: {e}")
+        # Last ditch effort to ensure bot is at least trying to poll if webhook failed
+        try:
+            if not bot_application.updater.running:
+                await bot_application.updater.start_polling(drop_pending_updates=True)
+                logger.info("[STARTUP-4] ✅ Long polling started (critical recovery)")
+        except:
+            pass
 
     # Step 5: Initialize Pyrogram (after webhook)
+    logger.info("[STARTUP-5] Waiting 2s before starting Pyrogram...")
     await asyncio.sleep(2)
     try:
         from bot.pyrogram_client import init_pyrogram
 
-        await init_pyrogram()
-        logger.info("✅ Pyrogram started")
+        logger.info("[STARTUP-5] 🔧 Starting Pyrogram clients...")
+        # Pyrogram start can hang if session is invalid, so we use a strict timeout here
+        success = await asyncio.wait_for(init_pyrogram(), timeout=60.0)
+        if success:
+            logger.info("[STARTUP-5] ✅ Pyrogram started")
+        else:
+            logger.info("[STARTUP-5] ⚠️ Pyrogram initialization skipped or failed")
+    except asyncio.TimeoutError:
+        logger.error("[STARTUP-5] ❌ Pyrogram startup TIMED OUT (60s) - skipping Pyrogram to avoid total hang")
     except Exception as e:
-        logger.warning(f"⚠️ Pyrogram: {e}")
+        logger.warning(f"[STARTUP-5] ⚠️ Pyrogram error: {e}")
 
     # Step 6: Rclone setup
+    logger.info("[STARTUP-6] Waiting 1s before rclone check...")
     await asyncio.sleep(1)
     try:
         from bot.services._cloud_upload import ensure_rclone_binary
 
-        path = await ensure_rclone_binary()
+        logger.info("[STARTUP-6] 🔧 Checking rclone binary...")
+        # Downloading rclone can take time, but let's put a generous timeout
+        path = await asyncio.wait_for(ensure_rclone_binary(), timeout=120.0)
         if path:
-            logger.info("✅ Rclone ready")
+            logger.info("[STARTUP-6] ✅ Rclone ready")
         else:
-            logger.info("⚠️ Rclone not configured")
+            logger.info("[STARTUP-6] ⚠️ Rclone not configured")
+    except asyncio.TimeoutError:
+        logger.error("[STARTUP-6] ❌ Rclone binary download/check TIMED OUT (120s)")
     except Exception as e:
-        logger.warning(f"⚠️ Rclone: {e}")
+        logger.warning(f"[STARTUP-6] ⚠️ Rclone error: {e}")
 
     logger.info("🎉 ALL STARTUP COMPLETE - Bot is fully operational!")
 
@@ -1094,17 +1118,24 @@ async def health():
         )
 
     db_ok = True
+    db_status = "connected"
     try:
-        await asyncio.wait_for(db_conn.db.command("ping"), timeout=1.0)
-    except Exception:
+        if db_conn:
+            await asyncio.wait_for(db_conn.db.command("ping"), timeout=1.0)
+        else:
+            db_ok = False
+            db_status = "disconnected"
+    except Exception as e:
         db_ok = False
+        db_status = f"ping_failed: {str(e)[:50]}"
 
     return {
         "status": "healthy" if db_ok else "degraded",
         "bot_ready": bot_application is not None,
-        "bot_username": settings.BOT_USERNAME,
-        "db_connected": db_ok,
-        "webhook_url": settings.WEBHOOK_URL or None,
+        "bot_username": settings.BOT_USERNAME or "unknown",
+        "db_status": db_status,
+        "webhook_url": settings.WEBHOOK_URL or "polling_mode",
+        "timestamp": time.time(),
     }
 
 

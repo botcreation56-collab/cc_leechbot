@@ -35,7 +35,8 @@ async def init_pyrogram():
         return False
 
     try:
-        # Bot token client (useful for generic API functions > 50MB, up to 2GB via local server, or stream extraction)
+        # Bot token client
+        logger.info("  - Starting Pyrogram Bot Client...")
         app = Client(
             "filebot_pyro",
             api_id=api_id,
@@ -43,10 +44,11 @@ async def init_pyrogram():
             bot_token=bot_token,
         )
         await app.start()
-        logger.info("✅ Pyrogram Bot Client Started")
+        logger.info("  - ✅ Pyrogram Bot Client Started")
 
-        # Premium Userbot client (Required for uploading > 2GB)
+        # Premium Userbot client
         if user_session:
+            logger.info("  - Starting Pyrogram Userbot Client...")
             user_app = Client(
                 "filebot_user",
                 api_id=api_id,
@@ -54,15 +56,15 @@ async def init_pyrogram():
                 session_string=user_session,
             )
             await user_app.start()
-            logger.info("✅ Pyrogram Userbot Client Started (Premium Uploads Enabled)")
+            logger.info("  - ✅ Pyrogram Userbot Client Started")
         else:
             logger.info(
-                "ℹ️ No USERBOT_SESSION found. Files > 2GB will be bounced to Rclone."
+                "  - ℹ️ No USERBOT_SESSION found. Files > 2GB will be bounced to Rclone."
             )
 
         return True
     except Exception as e:
-        logger.error(f"❌ Failed to start Pyrogram: {e}")
+        logger.error(f"  - ❌ Failed to start Pyrogram: {e}")
         return False
 
 
