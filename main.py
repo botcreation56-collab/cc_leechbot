@@ -1080,7 +1080,9 @@ async def lifespan(app: FastAPI):
 
 async def _startup_tasks(app: FastAPI):
     """Run ALL startup tasks in background (port already bound)."""
+    global bot_application
     import traceback as tb
+    import sys
 
     logger.info("🚀 Running startup tasks...")
     print("🔧 _startup_tasks: Beginning startup sequence...", flush=True)
@@ -1109,7 +1111,6 @@ async def _startup_tasks(app: FastAPI):
     try:
         bot_app = await build_bot_application(deps)
         app.state.bot = bot_app.bot
-        global bot_application
         bot_application = bot_app
         print("✅ _startup_tasks: Bot application built", flush=True)
     except Exception as e:
@@ -1122,18 +1123,6 @@ async def _startup_tasks(app: FastAPI):
     sys.stdout.flush()
 
     try:
-        print("🔧 _startup_tasks: About to import QueueWorker...", flush=True)
-        from bot.services import QueueWorker
-
-        print("🔧 _startup_tasks: QueueWorker imported successfully", flush=True)
-
-        print("🔧 _startup_tasks: Creating QueueWorker instance...", flush=True)
-        logger.info("🔧 Initializing QueueWorker...")
-        print("🔧 _startup_tasks: Building bot application...", flush=True)
-        global bot_application
-        bot_application = await build_bot()
-        print("✅ _startup_tasks: Bot application built", flush=True)
-
         from bot.services import QueueWorker
         print("🔧 _startup_tasks: Initializing QueueWorker...", flush=True)
         worker = QueueWorker(bot_application.bot)
@@ -1145,9 +1134,7 @@ async def _startup_tasks(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️ QueueWorker: {e}")
         print(f"⚠️ _startup_tasks: QueueWorker error: {e}", flush=True)
-        import traceback
-
-        print(f"   Full traceback:\n{traceback.format_exc()}", flush=True)
+        print(f"   Full traceback:\n{tb.format_exc()}", flush=True)
 
     print("🔧 _startup_tasks: About to create webhook task...", flush=True)
     sys.stdout.flush()
