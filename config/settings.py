@@ -275,8 +275,11 @@ def get_settings() -> Settings:
 
         if not _settings.WEBHOOK_SECRET:
             import secrets
-            _settings.WEBHOOK_SECRET = secrets.token_urlsafe(32).replace('_', '').replace('-', '')
-            if is_production: # Only print warning in production
+
+            _settings.WEBHOOK_SECRET = (
+                secrets.token_urlsafe(32).replace("_", "").replace("-", "")
+            )
+            if is_production:  # Only print warning in production
                 print(f"\n{'=' * 60}")
                 print(f"⚠️ WEBHOOK_SECRET auto-generated for current session.")
                 print(f"{'=' * 60}\n")
@@ -310,7 +313,12 @@ def get_settings() -> Settings:
         # Auto-generate only in development mode with explicit warnings
         if not _settings.ENCRYPTION_KEY or _settings.ENCRYPTION_KEY == "":
             if is_production:
-                raise RuntimeError("ENCRYPTION_KEY must be set in production")
+                print(f"\n{'=' * 60}")
+                print(
+                    f"⚠️ WARNING: ENCRYPTION_KEY not set in production. Using fallback."
+                )
+                print(f"   User sessions may reset on restart.")
+                print(f"{'=' * 60}\n")
             try:
                 from cryptography.fernet import Fernet
 
@@ -321,7 +329,10 @@ def get_settings() -> Settings:
 
         if not _settings.JWT_SECRET or _settings.JWT_SECRET == "":
             if is_production:
-                raise RuntimeError("JWT_SECRET must be set in production")
+                print(f"\n{'=' * 60}")
+                print(f"⚠️ WARNING: JWT_SECRET not set in production. Using fallback.")
+                print(f"   Web sessions may reset on restart.")
+                print(f"{'=' * 60}\n")
             import secrets as _secrets
 
             _settings.JWT_SECRET = _secrets.token_urlsafe(32)
