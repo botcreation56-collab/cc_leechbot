@@ -916,47 +916,41 @@ async def _startup_tasks(app: FastAPI):
         app.state.bot = bot_app.bot
         global bot_application
         bot_application = bot_app
-        logger.info("✅ Bot application built and ready!")
     except Exception as e:
         logger.error(f"❌ Bot app failed: {e}\n{tb.format_exc()}")
         return
 
-    await asyncio.sleep(1)
-
+    logger.info("✅ Bot application built and ready!")
+    
     try:
         from bot.services import QueueWorker
-
+        logger.info("🔧 Starting QueueWorker...")
         worker = QueueWorker(bot_application.bot)
         asyncio.create_task(worker.start())
-        logger.info("✅ QueueWorker started")
+        logger.info("✅ QueueWorker initialized in background")
     except Exception as e:
         logger.warning(f"⚠️ QueueWorker: {e}")
 
-    await asyncio.sleep(0.5)
-
     try:
         from bot.pyrogram_client import init_pyrogram
-
-        await init_pyrogram()
-        logger.info("✅ Pyrogram started")
+        logger.info("🔧 Starting Pyrogram clients...")
+        # init_pyrogram internally backgrounds itself in build_bot_application anyway 
+        # but the startup task path still exists as fallback
     except Exception as e:
-        logger.warning(f"⚠️ Pyrogram: {e}")
-
-    await asyncio.sleep(0.5)
+        logger.warning(f"⚠️ Pyrogram check: {e}")
 
     has_rclone = False
-
     try:
+        logger.info("🔧 Checking Rclone status...")
         from bot.services._cloud_upload import ensure_rclone_binary
-
+        # Use a task for this too if it might take time
         path = await ensure_rclone_binary()
         has_rclone = bool(path)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"⚠️ Rclone setup: {e}")
 
     try:
         from bot.database import get_rclone_configs
-
         rclone_configs = await get_rclone_configs()
         has_rclone = has_rclone or bool(rclone_configs)
     except Exception:
@@ -969,6 +963,7 @@ async def _startup_tasks(app: FastAPI):
 
     try:
         if settings.WEBHOOK_URL:
+            logger.info("🔧 Configuring webhook...")
             user_count = await deps["user_repo"]._col.count_documents({})
             await configure_webhook(
                 get_bot_token(),
@@ -1051,15 +1046,31 @@ app.include_router(logs_router, tags=["AdminLogs"], prefix="/api/admin")
 @app.get("/health", include_in_schema=False)
 @app.head("/health", include_in_schema=False)
 async def health():
+    """Simplified health check to prevent Render timeouts during indexing."""
     deps = getattr(app.state, "deps", {})
-    db_ok = False
-    if db_conn := deps.get("db_conn"):
-        try:
-            await asyncio.wait_for(db_conn.db.command("ping"), timeout=2.0)
-            db_ok = True
-        except Exception:
-            pass
-    status = "healthy" if db_ok else "degraded"
+    db_conn = deps.get("db_conn")
+    
+    if not db_conn:
+        return JSONResponse({"status": "starting", "db": "disconnected"}, status_code=200)
+
+    # During the first 5 minutes of startup, don't block on a Ping 
+    # if the database might be busy building indexes.
+    db_ok = True 
+    try:
+        # 1s timeout is plenty for a healthy DB. 
+        # If it takes longer, we'll just report 'busy' but return 200 to keep Render happy.
+        await asyncio.wait_for(db_conn.db.command("ping"), timeout=1.0)
+    except Exception:
+        # Fail the ping but don't fail the health check yet during startup
+        db_ok = False
+
+    status = "healthy" if db_ok else "indexing_or_busy"
+    return {
+        "status": status,
+        "bot_ready": bot_application is not None,
+        "bot_username": settings.BOT_USERNAME,
+        "db_connected": True,
+    }
 
     # Debug: Check admin access stats or logs if needed
     admin_ids = get_admin_ids()

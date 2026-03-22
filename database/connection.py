@@ -97,6 +97,7 @@ class DatabaseConnection:
         logger.info("🔧 Creating/verifying MongoDB indexes…")
 
         try:
+            logger.info("  - Indexing: users...")
             await db.users.create_index(
                 [("telegram_id", ASCENDING)], unique=True, name="users_telegram_id_uq"
             )
@@ -107,6 +108,7 @@ class DatabaseConnection:
             await db.users.create_index([("banned", ASCENDING)], name="users_banned")
             await db.users.create_index([("plan", ASCENDING)], name="users_plan")
 
+            logger.info("  - Indexing: tasks...")
             await db.tasks.create_index(
                 [("user_id", ASCENDING), ("created_at", DESCENDING)],
                 name="tasks_user_created",
@@ -118,6 +120,7 @@ class DatabaseConnection:
                 name="tasks_ttl",
             )
 
+            logger.info("  - Indexing: cloud_files...")
             await db.cloud_files.create_index(
                 [("file_id", ASCENDING)], unique=True, name="cloud_files_file_id_uq"
             )
@@ -134,6 +137,7 @@ class DatabaseConnection:
                 name="cloud_files_expires_ttl",
             )
 
+            logger.info("  - Indexing: one_time_keys...")
             await db.one_time_keys.create_index(
                 [("otp", ASCENDING)], unique=True, name="otk_otp_uq"
             )
@@ -146,6 +150,7 @@ class DatabaseConnection:
                 name="otk_ttl",
             )
 
+            logger.info("  - Indexing: sessions...")
             await db.sessions.create_index(
                 [("expires_at", ASCENDING)],
                 expireAfterSeconds=0,
@@ -157,6 +162,7 @@ class DatabaseConnection:
                 name="sessions_token_hash_uq",
             )
 
+            logger.info("  - Indexing: rate_limits...")
             await db.rate_limits.create_index(
                 [("key", ASCENDING), ("window_start", ASCENDING)],
                 name="rate_limits_key_window",
@@ -167,6 +173,7 @@ class DatabaseConnection:
                 name="rate_limits_ttl",
             )
 
+            logger.info("  - Indexing: rclone_configs...")
             await db.rclone_configs.create_index(
                 [("plan", ASCENDING)], name="rclone_plan"
             )
@@ -174,6 +181,7 @@ class DatabaseConnection:
                 [("is_active", ASCENDING)], name="rclone_active"
             )
 
+            logger.info("  - Indexing: audit_log...")
             await db.audit_log.create_index(
                 [("admin_id", ASCENDING), ("timestamp", DESCENDING)],
                 name="audit_admin_ts",

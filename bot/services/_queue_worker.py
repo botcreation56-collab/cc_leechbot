@@ -62,7 +62,8 @@ class QueueWorker:
         """Start the worker loop."""
         self.running = True
         logger.info(f"🚀 Queue Worker Started. Limit: {self.limit}")
-        await self.recover_stale_tasks()
+        # Run recovery in background so it doesn't block the main startup flow
+        asyncio.create_task(self.recover_stale_tasks())
         asyncio.create_task(self._loop())
 
     async def stop(self):
