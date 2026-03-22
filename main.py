@@ -990,6 +990,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# ── Security Headers ──────────────────────────────────────────
+from web.utils.security_headers import SecurityHeadersMiddleware
 app.add_middleware(SecurityHeadersMiddleware)
 
 # ── Activity & Error Logging Middleware ───────────────────────
