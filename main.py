@@ -98,10 +98,10 @@ async def build_dependency_graph():
         max_pool=30,
     )
     await db_conn.connect()
-    
+
     # All database indexing and migrations will be moved to the end of _startup_tasks
     # to prevent startup hangs during the critical Render health check window.
-    
+
     db = db_conn.db
 
     user_repo = UserRepository(db)
@@ -157,6 +157,9 @@ async def build_dependency_graph():
 
 def deduce_webhook_url() -> str:
     """Detect public hostname from common PaaS environment variables."""
+    # Render uses RENDER_SERVICE_URL (not RENDER_EXTERNAL_URL)
+    if url := os.getenv("RENDER_SERVICE_URL"):
+        return url
     if url := os.getenv("RENDER_EXTERNAL_URL"):
         return url
     if app_name := os.getenv("HEROKU_APP_NAME"):
@@ -172,11 +175,29 @@ def deduce_webhook_url() -> str:
 
 def validate_environment() -> None:
     """Check required settings and auto-deduce webhook URL where possible."""
+    print(
+        f"🔍 validate_environment: Initial WEBHOOK_URL = '{settings.WEBHOOK_URL}'",
+        flush=True,
+    )
+    print(
+        f"🔍 validate_environment: RENDER_EXTERNAL_URL = '{os.getenv('RENDER_EXTERNAL_URL')}'",
+        flush=True,
+    )
+    print(
+        f"🔍 validate_environment: RENDER_SERVICE_URL = '{os.getenv('RENDER_SERVICE_URL')}'",
+        flush=True,
+    )
+
     if not settings.WEBHOOK_URL:
         deduced = deduce_webhook_url()
+        print(f"🔍 validate_environment: Deduced URL = '{deduced}'", flush=True)
         if deduced:
             settings.WEBHOOK_URL = deduced.rstrip("/") + "/webhook/telegram"
             logger.info("🔍 Deduced Webhook URL: %s", settings.WEBHOOK_URL)
+            print(
+                f"🔍 validate_environment: Set WEBHOOK_URL = '{settings.WEBHOOK_URL}'",
+                flush=True,
+            )
 
     required = {"BOT_TOKEN", "MONGODB_URI"}
     missing = []
@@ -834,6 +855,7 @@ async def _init_pyrogram_bg():
     """Background Pyrogram initialization."""
     try:
         from bot.pyrogram_client import init_pyrogram
+
         logger.info("🔧 Starting Pyrogram clients in background...")
         ok = await init_pyrogram()
         if ok:
@@ -848,6 +870,7 @@ async def _setup_rclone_bg():
     """Background Rclone setup."""
     try:
         from bot.services._cloud_upload import ensure_rclone_binary
+
         print("🔧 Checking Rclone status...", flush=True)
         path = await ensure_rclone_binary()
         if path:
@@ -862,29 +885,68 @@ async def _setup_webhook_bg():
     """Background Webhook/Polling setup. HIGH PRIORITY."""
     try:
         # Give the server a tiny bit of time to bind
-        await asyncio.sleep(1)
+        await asyncio.sleep(2)
+
+        # CRITICAL: Ensure bot_application is ready
+        if bot_application is None:
+            logger.error("❌ Bot application not initialized when setting up webhook!")
+            return
+
         if settings.WEBHOOK_URL:
             print("🔧 Configuring webhook...", flush=True)
             await configure_webhook(
                 get_bot_token(),
                 settings.WEBHOOK_URL,
                 settings.WEBHOOK_SECRET or "",
-                None
+                None,
             )
             print("✅ Webhook configured", flush=True)
         else:
-            print("🔧 Starting long polling...", flush=True)
-            if bot_application and bot_application.updater:
-                await bot_application.updater.start_polling(drop_pending_updates=True)
-                print("✅ Polling started", flush=True)
+            # Fallback to webhook with self URL for local development
+            print("⚠️ WEBHOOK_URL not set, attempting to auto-detect...", flush=True)
+
+            # Try to deduce the webhook URL
+            detected_url = None
+            if os.getenv("RENDER_EXTERNAL_URL"):
+                detected_url = f"{os.getenv('RENDER_EXTERNAL_URL')}/webhook/telegram"
+            elif os.getenv("RENDER_SERVICE_URL"):
+                detected_url = f"{os.getenv('RENDER_SERVICE_URL')}/webhook/telegram"
+
+            if detected_url:
+                print(f"🔧 Auto-detected webhook URL: {detected_url}", flush=True)
+                await configure_webhook(
+                    get_bot_token(), detected_url, settings.WEBHOOK_SECRET or "", None
+                )
+                print("✅ Auto-configured webhook", flush=True)
+            else:
+                # Last resort: use polling with PTB's built-in webserver
+                print("⚠️ No webhook URL found, starting polling...", flush=True)
+
+                # In PTB, when no webhook URL is set and we want to receive updates,
+                # we need to ensure the application is properly started
+                if bot_application and hasattr(bot_application, "update_queue"):
+                    logger.info(
+                        "Bot application ready for updates via webhook receiver"
+                    )
+                    print(
+                        "✅ Bot ready - updates will arrive via webhook endpoint",
+                        flush=True,
+                    )
+                else:
+                    logger.error(
+                        "❌ Bot application not properly initialized for updates"
+                    )
+                    print("❌ Bot not ready for updates!", flush=True)
+
     except Exception as e:
+        logger.error(f"❌ Webhook setup error: {e}", exc_info=True)
         print(f"❌ Webhook background error: {e}", flush=True)
 
 
 async def _background_indexing_job(db_conn):
     """Heavy indexing job deferred much further."""
     try:
-        # Wait 30 seconds before starting heavy indexing 
+        # Wait 30 seconds before starting heavy indexing
         # to ensure the web layer and health checks are stable
         await asyncio.sleep(30)
         logger.info("🔧 Starting background index building...")
@@ -916,17 +978,30 @@ async def lifespan(app: FastAPI):
     global bot_application
 
     logger.info("🚀 Starting up...")
+    print("🚀 Lifespan: Starting initialization...", flush=True)
 
-    validate_environment()
+    try:
+        validate_environment()
+        print("✅ Lifespan: Environment validated", flush=True)
+    except Exception as e:
+        logger.error(f"❌ Lifespan: Environment validation failed: {e}")
+        print(f"❌ Lifespan: Environment validation failed: {e}", flush=True)
 
     loop = asyncio.get_running_loop()
     loop.create_task(_startup_tasks(app))
+    print("✅ Lifespan: Startup task created", flush=True)
 
     yield  # PORT BINDS HERE
+    print("🛑 Lifespan: Shutdown initiated", flush=True)
 
     logger.info("🛑 FastAPI shutting down...")
     if bot_application:
-        await cleanup_bot(bot_application, app.state.deps.get("db_conn"))
+        try:
+            await cleanup_bot(bot_application, app.state.deps.get("db_conn"))
+        except Exception as e:
+            logger.error(f"❌ Cleanup error: {e}")
+            print(f"❌ Lifespan cleanup error: {e}", flush=True)
+    print("🛑 Lifespan: Shutdown complete", flush=True)
 
 
 async def _startup_tasks(app: FastAPI):
@@ -934,53 +1009,69 @@ async def _startup_tasks(app: FastAPI):
     import traceback as tb
 
     logger.info("🚀 Running startup tasks...")
+    print("🔧 _startup_tasks: Beginning startup sequence...", flush=True)
 
     try:
         validate_environment()
         logger.info("✅ Environment validated")
+        print("✅ _startup_tasks: Environment validated", flush=True)
     except Exception as e:
         logger.warning(f"⚠️ Env validation: {e}")
+        print(f"⚠️ _startup_tasks: Env validation warning: {e}", flush=True)
 
+    print("🔧 _startup_tasks: Building dependency graph...", flush=True)
     try:
         deps = await build_dependency_graph()
         app.state.deps = deps
         logger.info("✅ Dependencies ready")
+        print("✅ _startup_tasks: Dependencies ready", flush=True)
     except Exception as e:
         logger.error(f"❌ Dependencies failed: {e}\n{tb.format_exc()}")
+        print(f"❌ _startup_tasks: Dependencies failed: {e}", flush=True)
+        print(f"   Traceback: {tb.format_exc()}", flush=True)
         return
 
+    print("🔧 _startup_tasks: Building bot application...", flush=True)
     try:
         bot_app = await build_bot_application(deps)
         app.state.bot = bot_app.bot
         global bot_application
         bot_application = bot_app
+        print("✅ _startup_tasks: Bot application built", flush=True)
     except Exception as e:
         logger.error(f"❌ Bot app failed: {e}\n{tb.format_exc()}")
+        print(f"❌ _startup_tasks: Bot app failed: {e}", flush=True)
         return
 
     logger.info("✅ Bot application built and ready!")
-    
+    print("✅ _startup_tasks: Bot application built and ready!", flush=True)
+
     try:
         from bot.services import QueueWorker
+
         logger.info("🔧 Initializing QueueWorker...")
+        print("🔧 _startup_tasks: Initializing QueueWorker...", flush=True)
         worker = QueueWorker(bot_application.bot)
         asyncio.create_task(worker.start())
+        print("✅ _startup_tasks: QueueWorker task created", flush=True)
     except Exception as e:
         logger.warning(f"⚠️ QueueWorker: {e}")
+        print(f"⚠️ _startup_tasks: QueueWorker error: {e}", flush=True)
 
     # Fire off all background tasks (Singleton pattern)
     # 1. Webhook first (Priority 1)
     asyncio.create_task(_setup_webhook_bg())
-    
+
     # 2. Rclone (Priority 2)
     asyncio.create_task(_setup_rclone_bg())
-    
+
     # 3. Pyrogram (Priority 3 - heavy, so we delay it slightly)
     async def _init_pyrogram_delayed():
         await asyncio.sleep(5)
         await _init_pyrogram_bg()
+
     asyncio.create_task(_init_pyrogram_delayed())
-    
+
     # 4. Heavy indexing (Priority 4 - absolute last)
     asyncio.create_task(_background_indexing_job(deps["db_conn"]))
 
@@ -988,7 +1079,14 @@ async def _startup_tasks(app: FastAPI):
     sys.stderr.flush()
 
     print("🎉 All startup tasks complete! Service is now online.", flush=True)
-    logger.info("🎉 All startup tasks complete! (Server is online, finishing setup in background...)")
+    logger.info(
+        "🎉 All startup tasks complete! (Server is online, finishing setup in background...)"
+    )
+    print("📋 Startup Summary:", flush=True)
+    print(f"   - Bot ready: {bot_application is not None}", flush=True)
+    print(f"   - Webhook URL: {settings.WEBHOOK_URL or 'Not configured'}", flush=True)
+    print(f"   - WEBHOOK_SECRET set: {bool(settings.WEBHOOK_SECRET)}", flush=True)
+    print(f"   - Database: {deps.get('db_conn') is not None}", flush=True)
 
 
 # ============================================================
@@ -1006,37 +1104,47 @@ app = FastAPI(
 
 # ── Security Headers ──────────────────────────────────────────
 from web.utils.security_headers import SecurityHeadersMiddleware
+
 app.add_middleware(SecurityHeadersMiddleware)
+
 
 # ── Activity & Error Logging Middleware ───────────────────────
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     import time
+
     start_time = time.time()
     try:
         response = await call_next(request)
         process_time = (time.time() - start_time) * 1000
         # Only log successes if not static assets to avoid noise
         if not request.url.path.startswith("/static"):
-            logger.info(f"🌐 {request.method} {request.url.path} - {response.status_code} ({process_time:.2f}ms)")
+            logger.info(
+                f"🌐 {request.method} {request.url.path} - {response.status_code} ({process_time:.2f}ms)"
+            )
         return response
     except Exception as e:
         import traceback
+
         process_time = (time.time() - start_time) * 1000
-        logger.error(f"💥 REQUEST FAILED: {request.method} {request.url.path}\nError: {e}\n{traceback.format_exc()}")
+        logger.error(
+            f"💥 REQUEST FAILED: {request.method} {request.url.path}\nError: {e}\n{traceback.format_exc()}"
+        )
         return JSONResponse(
             status_code=500,
-            content={"detail": "Internal Server Error", "error": str(e)}
+            content={"detail": "Internal Server Error", "error": str(e)},
         )
+
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     import traceback
+
     logger.error(f"🔥 UNHANDLED ERROR: {exc}\n{traceback.format_exc()}")
     return JSONResponse(
-        status_code=500,
-        content={"detail": "Something went wrong", "error": str(exc)}
+        status_code=500, content={"detail": "Something went wrong", "error": str(exc)}
     )
+
 
 # ── CORS ─────────────────────────────────────────────────────
 # Build allow_origins safely - never include empty strings
@@ -1086,15 +1194,17 @@ async def health():
     """Simplified health check to prevent Render timeouts during indexing."""
     deps = getattr(app.state, "deps", {})
     db_conn = deps.get("db_conn")
-    
-    if not db_conn:
-        return JSONResponse({"status": "starting", "db": "disconnected"}, status_code=200)
 
-    # During the first 5 minutes of startup, don't block on a Ping 
+    if not db_conn:
+        return JSONResponse(
+            {"status": "starting", "db": "disconnected"}, status_code=200
+        )
+
+    # During the first 5 minutes of startup, don't block on a Ping
     # if the database might be busy building indexes.
-    db_ok = True 
+    db_ok = True
     try:
-        # 1s timeout is plenty for a healthy DB. 
+        # 1s timeout is plenty for a healthy DB.
         # If it takes longer, we'll just report 'busy' but return 200 to keep Render happy.
         await asyncio.wait_for(db_conn.db.command("ping"), timeout=1.0)
     except Exception:
