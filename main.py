@@ -56,6 +56,9 @@ logger = logging.getLogger("filebot.main")
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
+print(f"🚀 main.py: Module loaded. CWD={os.getcwd()}", flush=True)
+print(f"🚀 main.py: Python version={sys.version}", flush=True)
+
 # ============================================================
 # CONFIGURATION
 # ============================================================
