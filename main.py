@@ -962,10 +962,14 @@ async def _full_startup(app: FastAPI):
     # Fetch bot identity for display
     logger.info("[STARTUP-3] DEBUG: About to call get_me()")
     try:
-        me = await bot_application.bot.get_me()
+        me = await asyncio.wait_for(bot_application.bot.get_me(), timeout=5.0)
         settings.BOT_USERNAME = me.username
         settings.BOT_LINK = f"https://t.me/{me.username}"
         logger.info("🤖 @%s ready", me.username)
+    except asyncio.TimeoutError:
+        logger.warning("[STARTUP-3] ⚠️ get_me() timed out after 5s, using defaults")
+        settings.BOT_USERNAME = settings.BOT_USERNAME or "filebot"
+        settings.BOT_LINK = settings.BOT_LINK or f"https://t.me/{settings.BOT_USERNAME}"
     except Exception as exc:
         logger.warning("[STARTUP-3] ⚠️ Could not fetch bot identity: %s", exc)
 
