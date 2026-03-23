@@ -830,8 +830,13 @@ async def configure_webhook(
     else:
         needed_max = 40
 
+    logger.info(
+        f"configure_webhook: max_connections={needed_max}, secret={'set' if secret else 'NOT SET'}"
+    )
+
     try:
         # Check current webhook (5 second timeout)
+        logger.info("configure_webhook: Calling getWebhookInfo...")
         async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=3.0)) as client:
             info_response = await client.get(
                 f"https://api.telegram.org/bot{bot_token}/getWebhookInfo"
@@ -844,6 +849,7 @@ async def configure_webhook(
             return
 
         # Set webhook (10 second timeout)
+        logger.info("configure_webhook: Calling setWebhook...")
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(10.0, connect=3.0)
         ) as client:
@@ -978,8 +984,10 @@ async def _full_startup(app: FastAPI):
             logger.info(
                 f"[STARTUP-4] 🔧 Webhook logic triggered: {settings.WEBHOOK_URL}"
             )
-            # user_count is fast, no need for timeout here
+            logger.info("[STARTUP-4] DEBUG: Getting user count...")
             user_count = await deps["user_repo"]._col.count_documents({})
+            logger.info(f"[STARTUP-4] DEBUG: User count: {user_count}")
+            logger.info("[STARTUP-4] DEBUG: Calling configure_webhook...")
             await asyncio.wait_for(
                 configure_webhook(
                     get_bot_token(),
@@ -994,9 +1002,7 @@ async def _full_startup(app: FastAPI):
             logger.info(
                 "[STARTUP-4] 🔧 No WEBHOOK_URL - Starting long polling as fallback..."
             )
-            # updater.start_polling starts background tasks.
-            # In some environments, awaiting this might take a moment, so we log before/after.
-            # If it's PTB 20.x, this is a coroutine.
+            logger.info("[STARTUP-4] DEBUG: Starting polling...")
             await bot_application.updater.start_polling(drop_pending_updates=True)
             logger.info("[STARTUP-4] ✅ Long polling tasks initiated")
     except asyncio.TimeoutError:
@@ -1007,7 +1013,6 @@ async def _full_startup(app: FastAPI):
         logger.info("[STARTUP-4] ✅ Long polling started (timeout fallback)")
     except Exception as e:
         logger.error(f"[STARTUP-4] ❌ Webhook/Polling initialization failed: {e}")
-        # Last ditch effort to ensure bot is at least trying to poll if webhook failed
         try:
             if not bot_application.updater.running:
                 await bot_application.updater.start_polling(drop_pending_updates=True)
