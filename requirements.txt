@@ -1,5 +1,5 @@
 # ========== CORE BOT FRAMEWORK ==========
-python-telegram-bot[webhooks,job-queue]==22.6
+python-telegram-bot[webhooks,job-queue]==21.10
 pyrogram==2.0.106
 tgcrypto==1.2.5
 

@@ -194,6 +194,7 @@ def validate_environment() -> None:
         if (
             os.getenv("USE_WEBHOOK") == "true"
             or os.getenv("RENDER_SERVICE_URL")
+            or os.getenv("RENDER_EXTERNAL_URL")
             or os.getenv("DOMAIN")
         ):
             deduced = deduce_webhook_url()
@@ -912,7 +913,7 @@ async def _full_startup(app: FastAPI):
         global bot_application
         bot_application = bot_app
         logger.info("[STARTUP-2] DEBUG: About to log 'built' message")
-        logger.info("[STARTUP-2] ✅ Bot application built")
+        logger.info("[STARTUP-2] ✅ Bot application built (initialized and started)")
 
         # Process any updates that arrived during startup
         if _pending_updates:
@@ -948,7 +949,7 @@ async def _full_startup(app: FastAPI):
         logger.warning(f"[STARTUP-3] ⚠️ QueueWorker: {e}")
 
     # Bot username was cached during application.initialize() in build_bot_application
-    logger.info("🤖 @%s ready", settings.BOT_USERNAME or "unknown")
+    logger.info("🤖 @%s ready | Webhook URL: %s", settings.BOT_USERNAME or "unknown", settings.WEBHOOK_URL or "POLLING")
 
     # Step 4: Configure webhook OR start long polling (run in background to avoid blocking)
     async def setup_webhook_background():
@@ -968,7 +969,11 @@ async def _full_startup(app: FastAPI):
                 logger.info("[STARTUP-4] ✅ Webhook configured in background")
             else:
                 logger.info("[STARTUP-4] 🔧 Starting long polling in background...")
-                await bot_application.updater.start_polling(drop_pending_updates=True)
+                await bot_application.updater.start_polling(
+                    drop_pending_updates=True,
+                    allowed_updates=Update.ALL_TYPES,
+                    close_loop=False,
+                )
                 logger.info("[STARTUP-4] ✅ Long polling started in background")
         except Exception as e:
             logger.error(f"[STARTUP-4] ❌ Background webhook/polling error: {e}")
