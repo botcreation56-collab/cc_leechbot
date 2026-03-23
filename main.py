@@ -821,26 +821,30 @@ async def build_bot_application(deps: dict) -> Application:
 async def configure_webhook(
     bot, webhook_url: str, secret: str, user_count: Optional[int] = None
 ) -> None:
-    """Configure Telegram webhook using PTB's built-in method."""
-    if user_count:
-        needed_max = int(min(300, max(40, user_count / 500)))
-    else:
-        needed_max = 40
-
-    logger.info(f"configure_webhook: max_connections={needed_max}")
-
     try:
-        logger.info("configure_webhook: Setting webhook via PTB...")
         logger.info("configure_webhook: STARTING bot.set_webhook call...")
+        # Clean secret: only allow A-Z, a-z, 0-9, _ and -
+        import re
+        safe_secret = None
+        if secret:
+            safe_secret = re.sub(r'[^a-zA-Z0-9_-]', '', secret)
+            if not safe_secret:
+                logger.warning("⚠️ WEBHOOK_SECRET was entirely invalid! Disabling secret token.")
+                safe_secret = None
+            elif safe_secret != secret:
+                logger.warning(f"⚠️ WEBHOOK_SECRET contained invalid characters. Cleaned version: {safe_secret}")
+
         await bot.set_webhook(
             url=webhook_url,
             max_connections=needed_max,
-            secret_token=secret if secret else None,
+            secret_token=safe_secret,
             drop_pending_updates=False,
         )
         logger.info("✅ configure_webhook: bot.set_webhook call COMPLETED successfully!")
+        return True
     except Exception as exc:
         logger.error("❌ Webhook failed: %s", exc)
+        return False
 
 
 # ============================================================
@@ -954,10 +958,11 @@ async def _full_startup(app: FastAPI):
 
     # Step 4: Configure webhook OR start long polling
     logger.info("[STARTUP-4] 🔧 Starting Webhook/polling setup...")
-    try:
-        if settings.WEBHOOK_URL:
+    webhook_success = False
+    if settings.WEBHOOK_URL:
+        try:
             logger.info("[STARTUP-4] 🔧 Setting webhook...")
-            await asyncio.wait_for(
+            webhook_success = await asyncio.wait_for(
                 configure_webhook(
                     bot_application.bot,
                     settings.WEBHOOK_URL,
@@ -966,17 +971,24 @@ async def _full_startup(app: FastAPI):
                 ),
                 timeout=30.0,
             )
-            logger.info("[STARTUP-4] ✅ Webhook configured")
-        else:
-            logger.info("[STARTUP-4] 🔧 Starting long polling...")
+            if webhook_success:
+                logger.info("[STARTUP-4] ✅ Webhook configured")
+            else:
+                logger.warning("[STARTUP-4] ⚠️ Webhook setup failed, falling back to polling...")
+        except Exception as e:
+            logger.error(f"[STARTUP-4] ❌ Webhook error: {e}")
+
+    if not webhook_success:
+        try:
+            logger.info("[STARTUP-4] 🔧 Starting long polling as fallback...")
             await bot_application.updater.start_polling(
                 drop_pending_updates=True,
                 allowed_updates=Update.ALL_TYPES,
                 close_loop=False,
             )
             logger.info("[STARTUP-4] ✅ Long polling started")
-    except Exception as e:
-        logger.error(f"[STARTUP-4] ❌ Webhook/polling error: {e}")
+        except Exception as e:
+            logger.error(f"[STARTUP-4] ❌ Polling fallback error: {e}")
 
     # Run remaining startup tasks in background
     async def startup_remaining():

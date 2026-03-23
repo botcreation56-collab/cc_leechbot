@@ -281,9 +281,8 @@ def get_settings() -> Settings:
                 )
             import secrets
 
-            _settings.WEBHOOK_SECRET = (
-                secrets.token_urlsafe(32).replace("_", "").replace("-", "")
-            )
+            # Generate hex to be 100% safe (A-Z, a-z, 0-9)
+            _settings.WEBHOOK_SECRET = secrets.token_hex(24)
             print(f"\n{'=' * 60}")
             print(f"⚠️ WEBHOOK_SECRET auto-generated for current session (dev only).")
             print(f"{'=' * 60}\n")
