@@ -980,45 +980,41 @@ async def _full_startup(app: FastAPI):
     asyncio.create_task(setup_webhook_background())
     logger.info("[STARTUP-4] 🔧 Webhook/polling setup started in background")
 
-    # Step 5: Initialize Pyrogram (after webhook)
-    logger.info("[STARTUP-5] Waiting 2s before starting Pyrogram...")
-    await asyncio.sleep(2)
-    try:
-        from bot.pyrogram_client import init_pyrogram
-
+    # Run remaining startup tasks in background
+    async def startup_remaining():
+        # Step 5: Initialize Pyrogram
         logger.info("[STARTUP-5] 🔧 Starting Pyrogram clients...")
-        # Pyrogram start can hang if session is invalid, so we use a strict timeout here
-        success = await asyncio.wait_for(init_pyrogram(), timeout=60.0)
-        if success:
-            logger.info("[STARTUP-5] ✅ Pyrogram started")
-        else:
-            logger.info("[STARTUP-5] ⚠️ Pyrogram initialization skipped or failed")
-    except asyncio.TimeoutError:
-        logger.error(
-            "[STARTUP-5] ❌ Pyrogram startup TIMED OUT (60s) - skipping Pyrogram to avoid total hang"
-        )
-    except Exception as e:
-        logger.warning(f"[STARTUP-5] ⚠️ Pyrogram error: {e}")
+        try:
+            from bot.pyrogram_client import init_pyrogram
 
-    # Step 6: Rclone setup
-    logger.info("[STARTUP-6] Waiting 1s before rclone check...")
-    await asyncio.sleep(1)
-    try:
-        from bot.services._cloud_upload import ensure_rclone_binary
+            success = await asyncio.wait_for(init_pyrogram(), timeout=30.0)
+            if success:
+                logger.info("[STARTUP-5] ✅ Pyrogram started")
+            else:
+                logger.info("[STARTUP-5] ⚠️ Pyrogram initialization skipped or failed")
+        except asyncio.TimeoutError:
+            logger.error("[STARTUP-5] ❌ Pyrogram TIMED OUT")
+        except Exception as e:
+            logger.warning(f"[STARTUP-5] ⚠️ Pyrogram error: {e}")
 
+        # Step 6: Rclone setup
         logger.info("[STARTUP-6] 🔧 Checking rclone binary...")
-        # Downloading rclone can take time, but let's put a generous timeout
-        path = await asyncio.wait_for(ensure_rclone_binary(), timeout=120.0)
-        if path:
-            logger.info("[STARTUP-6] ✅ Rclone ready")
-        else:
-            logger.info("[STARTUP-6] ⚠️ Rclone not configured")
-    except asyncio.TimeoutError:
-        logger.error("[STARTUP-6] ❌ Rclone binary download/check TIMED OUT (120s)")
-    except Exception as e:
-        logger.warning(f"[STARTUP-6] ⚠️ Rclone error: {e}")
+        try:
+            from bot.services._cloud_upload import ensure_rclone_binary
 
-    logger.info("🎉 ALL STARTUP COMPLETE - Bot is fully operational!")
+            path = await asyncio.wait_for(ensure_rclone_binary(), timeout=60.0)
+            if path:
+                logger.info("[STARTUP-6] ✅ Rclone ready")
+            else:
+                logger.info("[STARTUP-6] ⚠️ Rclone not configured")
+        except asyncio.TimeoutError:
+            logger.error("[STARTUP-6] ❌ Rclone TIMED OUT")
+        except Exception as e:
+            logger.warning(f"[STARTUP-6] ⚠️ Rclone error: {e}")
+
+        logger.info("🎉 ALL STARTUP COMPLETE - Bot is fully operational!")
+
+    asyncio.create_task(startup_remaining())
 
 
 # ============================================================
