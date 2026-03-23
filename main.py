@@ -746,8 +746,10 @@ async def build_bot_application(deps: dict) -> Application:
 
     from telegram.ext import JobQueue
 
+    logger.info("DEBUG: Creating JobQueue")
     job_queue = JobQueue()
 
+    logger.info("DEBUG: Building Application")
     application = (
         Application.builder()
         .token(get_bot_token())
@@ -758,11 +760,15 @@ async def build_bot_application(deps: dict) -> Application:
         .job_queue(job_queue)
         .build()
     )
+    logger.info("DEBUG: Application built")
 
     job_queue.set_application(application)
 
+    logger.info("DEBUG: Initializing application")
     await application.initialize()
+    logger.info("DEBUG: Starting application")
     await application.start()
+    logger.info("DEBUG: Application started")
 
     # Initialize Telegram log handler (non-blocking)
     try:
@@ -791,8 +797,11 @@ async def build_bot_application(deps: dict) -> Application:
             "task_repo": deps["task_repo"],
         }
     )
+    logger.info("DEBUG: bot_data updated")
 
+    logger.info("DEBUG: Setting up handlers")
     setup_handlers(application)
+    logger.info("DEBUG: Handlers set up")
 
     logger.info("✅ Bot application built | webhook: %s", settings.WEBHOOK_URL)
     return application
@@ -908,10 +917,13 @@ async def _full_startup(app: FastAPI):
     # Step 2: Build bot application (handlers)
     try:
         logger.info("[STARTUP-2] Building bot application...")
+        logger.info("[STARTUP-2] DEBUG: About to call build_bot_application")
         bot_app = await asyncio.wait_for(build_bot_application(deps), timeout=45.0)
+        logger.info("[STARTUP-2] DEBUG: build_bot_application returned")
         app.state.bot = bot_app.bot
         global bot_application
         bot_application = bot_app
+        logger.info("[STARTUP-2] DEBUG: About to log 'built' message")
         logger.info("[STARTUP-2] ✅ Bot application built")
 
         # Process any updates that arrived during startup
@@ -926,26 +938,9 @@ async def _full_startup(app: FastAPI):
                 except Exception:
                     pass
             _pending_updates.clear()
-
-        # Auto-detect bot username if not set (with 5s timeout to avoid blocking)
-        if not settings.BOT_USERNAME or settings.BOT_USERNAME == "filebot":
-            try:
-                bot_info = await asyncio.wait_for(
-                    bot_application.bot.get_me(), timeout=5.0
-                )
-                if bot_info.username:
-                    settings.BOT_USERNAME = bot_info.username
-                    settings.BOT_LINK = f"https://t.me/{bot_info.username}"
-                    logger.info(
-                        "[STARTUP-2] ✅ Bot username auto-detected: @%s",
-                        bot_info.username,
-                    )
-            except asyncio.TimeoutError:
-                logger.warning(
-                    "[STARTUP-2] ⚠️ get_me() timed out, skipping auto-detection"
-                )
-            except Exception as e:
-                logger.warning(f"[STARTUP-2] ⚠️ Could not auto-detect bot username: {e}")
+    except asyncio.TimeoutError:
+        logger.error("[STARTUP-2] ❌ Bot app build TIMED OUT after 45s")
+        return
     except Exception as e:
         logger.error(f"[STARTUP-2] ❌ Bot app failed: {e}\n{tb.format_exc()}")
         return
@@ -953,13 +948,26 @@ async def _full_startup(app: FastAPI):
     # Step 3: Start QueueWorker
     try:
         logger.info("[STARTUP-3] Starting QueueWorker...")
+        logger.info("[STARTUP-3] DEBUG: Importing QueueWorker")
         from bot.services import QueueWorker
 
+        logger.info("[STARTUP-3] DEBUG: Creating QueueWorker instance")
         worker = QueueWorker(bot_application.bot)
+        logger.info("[STARTUP-3] DEBUG: Creating start task")
         asyncio.create_task(worker.start())
         logger.info("[STARTUP-3] ✅ QueueWorker started")
     except Exception as e:
         logger.warning(f"[STARTUP-3] ⚠️ QueueWorker: {e}")
+
+    # Fetch bot identity for display
+    logger.info("[STARTUP-3] DEBUG: About to call get_me()")
+    try:
+        me = await bot_application.bot.get_me()
+        settings.BOT_USERNAME = me.username
+        settings.BOT_LINK = f"https://t.me/{me.username}"
+        logger.info("🤖 @%s ready", me.username)
+    except Exception as exc:
+        logger.warning("[STARTUP-3] ⚠️ Could not fetch bot identity: %s", exc)
 
     # Step 4: Configure webhook OR start long polling
     try:
@@ -1172,9 +1180,8 @@ async def health():
         "status": "healthy" if db_ok else "degraded",
         "bot_ready": bot_application is not None,
         "bot_username": settings.BOT_USERNAME or "unknown",
+        "bot_link": settings.BOT_LINK or f"https://t.me/{settings.BOT_USERNAME}",
         "db_status": db_status,
-        "webhook_url": settings.WEBHOOK_URL or "polling_mode",
-        "timestamp": time.time(),
     }
 
 
