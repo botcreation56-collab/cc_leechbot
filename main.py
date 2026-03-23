@@ -984,22 +984,13 @@ async def _full_startup(app: FastAPI):
             logger.info(
                 f"[STARTUP-4] 🔧 Webhook logic triggered: {settings.WEBHOOK_URL}"
             )
-            logger.info("[STARTUP-4] DEBUG: Getting user count...")
-            try:
-                user_count = await asyncio.wait_for(
-                    deps["user_repo"]._col.count_documents({}), timeout=5.0
-                )
-            except asyncio.TimeoutError:
-                logger.warning("[STARTUP-4] ⚠️ User count query timed out, using 0")
-                user_count = 0
-            logger.info(f"[STARTUP-4] DEBUG: User count: {user_count}")
             logger.info("[STARTUP-4] DEBUG: Calling configure_webhook...")
             await asyncio.wait_for(
                 configure_webhook(
                     get_bot_token(),
                     settings.WEBHOOK_URL,
                     settings.WEBHOOK_SECRET or "",
-                    user_count,
+                    None,  # Skip user count query to avoid hanging
                 ),
                 timeout=15.0,
             )
