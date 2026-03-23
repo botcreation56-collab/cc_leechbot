@@ -927,10 +927,12 @@ async def _full_startup(app: FastAPI):
                     pass
             _pending_updates.clear()
 
-        # Auto-detect bot username if not set
+        # Auto-detect bot username if not set (with 5s timeout to avoid blocking)
         if not settings.BOT_USERNAME or settings.BOT_USERNAME == "filebot":
             try:
-                bot_info = await bot_application.bot.get_me()
+                bot_info = await asyncio.wait_for(
+                    bot_application.bot.get_me(), timeout=5.0
+                )
                 if bot_info.username:
                     settings.BOT_USERNAME = bot_info.username
                     settings.BOT_LINK = f"https://t.me/{bot_info.username}"
@@ -938,6 +940,10 @@ async def _full_startup(app: FastAPI):
                         "[STARTUP-2] ✅ Bot username auto-detected: @%s",
                         bot_info.username,
                     )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "[STARTUP-2] ⚠️ get_me() timed out, skipping auto-detection"
+                )
             except Exception as e:
                 logger.warning(f"[STARTUP-2] ⚠️ Could not auto-detect bot username: {e}")
     except Exception as e:
