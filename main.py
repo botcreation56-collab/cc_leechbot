@@ -959,19 +959,26 @@ async def _full_startup(app: FastAPI):
     except Exception as e:
         logger.warning(f"[STARTUP-3] ⚠️ QueueWorker: {e}")
 
-    # Fetch bot identity for display
-    logger.info("[STARTUP-3] DEBUG: About to call get_me()")
-    try:
-        me = await asyncio.wait_for(bot_application.bot.get_me(), timeout=5.0)
-        settings.BOT_USERNAME = me.username
-        settings.BOT_LINK = f"https://t.me/{me.username}"
-        logger.info("🤖 @%s ready", me.username)
-    except asyncio.TimeoutError:
-        logger.warning("[STARTUP-3] ⚠️ get_me() timed out after 5s, using defaults")
-        settings.BOT_USERNAME = settings.BOT_USERNAME or "filebot"
-        settings.BOT_LINK = settings.BOT_LINK or f"https://t.me/{settings.BOT_USERNAME}"
-    except Exception as exc:
-        logger.warning("[STARTUP-3] ⚠️ Could not fetch bot identity: %s", exc)
+    # Bot username was fetched during application.initialize() via getMe
+    # PTB stores the bot user dict internally as _bot
+    cached_username = None
+    if bot_application and bot_application.bot:
+        bot_dict = getattr(bot_application.bot, "_bot", None)
+        if bot_dict and isinstance(bot_dict, dict):
+            cached_username = bot_dict.get("username")
+        if not cached_username:
+            bot_user = getattr(bot_application.bot, "_user", None)
+            if bot_user and hasattr(bot_user, "username"):
+                cached_username = bot_user.username
+
+    if cached_username:
+        settings.BOT_USERNAME = cached_username
+        settings.BOT_LINK = f"https://t.me/{cached_username}"
+        logger.info("🤖 @%s ready (cached)", cached_username)
+    else:
+        logger.warning(
+            "[STARTUP-3] ⚠️ BOT_USERNAME not cached - set BOT_USERNAME in environment"
+        )
 
     # Step 4: Configure webhook OR start long polling
     try:
