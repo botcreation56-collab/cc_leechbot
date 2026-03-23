@@ -274,15 +274,19 @@ def get_settings() -> Settings:
         is_production = environment == "production"
 
         if not _settings.WEBHOOK_SECRET:
+            if is_production:
+                raise ValueError(
+                    "WEBHOOK_SECRET must be set in production. "
+                    'Generate with: python -c "import secrets; print(secrets.token_urlsafe(32))"'
+                )
             import secrets
 
             _settings.WEBHOOK_SECRET = (
                 secrets.token_urlsafe(32).replace("_", "").replace("-", "")
             )
-            if is_production:  # Only print warning in production
-                print(f"\n{'=' * 60}")
-                print(f"⚠️ WEBHOOK_SECRET auto-generated for current session.")
-                print(f"{'=' * 60}\n")
+            print(f"\n{'=' * 60}")
+            print(f"⚠️ WEBHOOK_SECRET auto-generated for current session (dev only).")
+            print(f"{'=' * 60}\n")
 
         if is_production:
             if not _settings.ENCRYPTION_KEY:

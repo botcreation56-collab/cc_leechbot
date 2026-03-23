@@ -191,7 +191,11 @@ def validate_environment() -> None:
 
     # Auto-deduce webhook if requested OR if running on Render/with a DOMAIN
     if not settings.WEBHOOK_URL:
-        if os.getenv("USE_WEBHOOK") == "true" or os.getenv("RENDER_SERVICE_URL") or os.getenv("DOMAIN"):
+        if (
+            os.getenv("USE_WEBHOOK") == "true"
+            or os.getenv("RENDER_SERVICE_URL")
+            or os.getenv("DOMAIN")
+        ):
             deduced = deduce_webhook_url()
             if deduced:
                 settings.WEBHOOK_URL = deduced.rstrip("/") + "/webhook/telegram"
@@ -797,10 +801,15 @@ async def build_bot_application(deps: dict) -> Application:
 async def configure_webhook(
     bot_token: str, webhook_url: str, secret: str, user_count: Optional[int] = None
 ) -> None:
-    """Configure Telegram webhook with explicit timeouts."""
-    needed_max = 40
+    """Configure Telegram webhook with explicit timeouts.
+
+    Scales max_connections based on user_count: 1 connection per 500 users.
+    Telegram limit: 40-300 connections.
+    """
     if user_count:
-        needed_max = min(100, 40 + (user_count // 1000) * 20)
+        needed_max = int(min(300, max(40, user_count / 500)))
+    else:
+        needed_max = 40
 
     try:
         # Check current webhook (5 second timeout)
@@ -907,7 +916,9 @@ async def _full_startup(app: FastAPI):
 
         # Process any updates that arrived during startup
         if _pending_updates:
-            logger.info(f"[STARTUP-2] 📥 Processing {_pending_updates.__len__()} queued updates...")
+            logger.info(
+                f"[STARTUP-2] 📥 Processing {_pending_updates.__len__()} queued updates..."
+            )
             for data in _pending_updates:
                 try:
                     update = Update.de_json(data, bot_application.bot)
@@ -915,6 +926,20 @@ async def _full_startup(app: FastAPI):
                 except Exception:
                     pass
             _pending_updates.clear()
+
+        # Auto-detect bot username if not set
+        if not settings.BOT_USERNAME or settings.BOT_USERNAME == "filebot":
+            try:
+                bot_info = await bot_application.bot.get_me()
+                if bot_info.username:
+                    settings.BOT_USERNAME = bot_info.username
+                    settings.BOT_LINK = f"https://t.me/{bot_info.username}"
+                    logger.info(
+                        "[STARTUP-2] ✅ Bot username auto-detected: @%s",
+                        bot_info.username,
+                    )
+            except Exception as e:
+                logger.warning(f"[STARTUP-2] ⚠️ Could not auto-detect bot username: {e}")
     except Exception as e:
         logger.error(f"[STARTUP-2] ❌ Bot app failed: {e}\n{tb.format_exc()}")
         return
@@ -933,7 +958,9 @@ async def _full_startup(app: FastAPI):
     # Step 4: Configure webhook OR start long polling
     try:
         if settings.WEBHOOK_URL:
-            logger.info(f"[STARTUP-4] 🔧 Webhook logic triggered: {settings.WEBHOOK_URL}")
+            logger.info(
+                f"[STARTUP-4] 🔧 Webhook logic triggered: {settings.WEBHOOK_URL}"
+            )
             # user_count is fast, no need for timeout here
             user_count = await deps["user_repo"]._col.count_documents({})
             await asyncio.wait_for(
@@ -947,14 +974,18 @@ async def _full_startup(app: FastAPI):
             )
             logger.info("[STARTUP-4] ✅ Webhook configured and verified")
         else:
-            logger.info("[STARTUP-4] 🔧 No WEBHOOK_URL - Starting long polling as fallback...")
+            logger.info(
+                "[STARTUP-4] 🔧 No WEBHOOK_URL - Starting long polling as fallback..."
+            )
             # updater.start_polling starts background tasks.
             # In some environments, awaiting this might take a moment, so we log before/after.
             # If it's PTB 20.x, this is a coroutine.
             await bot_application.updater.start_polling(drop_pending_updates=True)
             logger.info("[STARTUP-4] ✅ Long polling tasks initiated")
     except asyncio.TimeoutError:
-        logger.warning("[STARTUP-4] ⚠️ Webhook setup timed out - falling back to polling...")
+        logger.warning(
+            "[STARTUP-4] ⚠️ Webhook setup timed out - falling back to polling..."
+        )
         await bot_application.updater.start_polling(drop_pending_updates=True)
         logger.info("[STARTUP-4] ✅ Long polling started (timeout fallback)")
     except Exception as e:
@@ -981,7 +1012,9 @@ async def _full_startup(app: FastAPI):
         else:
             logger.info("[STARTUP-5] ⚠️ Pyrogram initialization skipped or failed")
     except asyncio.TimeoutError:
-        logger.error("[STARTUP-5] ❌ Pyrogram startup TIMED OUT (60s) - skipping Pyrogram to avoid total hang")
+        logger.error(
+            "[STARTUP-5] ❌ Pyrogram startup TIMED OUT (60s) - skipping Pyrogram to avoid total hang"
+        )
     except Exception as e:
         logger.warning(f"[STARTUP-5] ⚠️ Pyrogram error: {e}")
 
