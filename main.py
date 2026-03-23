@@ -820,11 +820,7 @@ async def build_bot_application(deps: dict) -> Application:
 async def configure_webhook(
     bot_token: str, webhook_url: str, secret: str, user_count: Optional[int] = None
 ) -> None:
-    """Configure Telegram webhook with explicit timeouts.
-
-    Scales max_connections based on user_count: 1 connection per 500 users.
-    Telegram limit: 40-300 connections.
-    """
+    """Configure Telegram webhook using PTB's built-in method."""
     if user_count:
         needed_max = int(min(300, max(40, user_count / 500)))
     else:
@@ -833,23 +829,18 @@ async def configure_webhook(
     logger.info(f"configure_webhook: max_connections={needed_max}")
 
     try:
-        # Just set webhook directly (skip getWebhookInfo check to avoid hanging)
-        logger.info("configure_webhook: Calling setWebhook...")
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(30.0, connect=10.0)
-        ) as client:
-            r = await client.post(
-                f"https://api.telegram.org/bot{bot_token}/setWebhook",
-                json={
-                    "url": webhook_url,
-                    "drop_pending_updates": False,
-                    "max_connections": needed_max,
-                    "secret_token": secret,
-                },
+        logger.info("configure_webhook: Setting webhook via PTB...")
+        # Use bot from application for the webhook setting
+        if bot_application and bot_application.bot:
+            await bot_application.bot.set_webhook(
+                url=webhook_url,
+                max_connections=needed_max,
+                secret_token=secret if secret else None,
+                drop_pending_updates=False,
             )
-        logger.info("SetWebhook → %d: %s", r.status_code, r.text[:100])
-        if r.status_code == 200:
-            logger.info("✅ Webhook configured!")
+            logger.info("✅ Webhook configured via PTB!")
+        else:
+            logger.error("❌ Bot application not available")
     except Exception as exc:
         logger.error("❌ Webhook failed: %s", exc)
 
