@@ -979,27 +979,6 @@ async def _full_startup(app: FastAPI):
 
     asyncio.create_task(setup_webhook_background())
     logger.info("[STARTUP-4] 🔧 Webhook/polling setup started in background")
-        else:
-            logger.info(
-                "[STARTUP-4] 🔧 No WEBHOOK_URL - Starting long polling as fallback..."
-            )
-            logger.info("[STARTUP-4] DEBUG: Starting polling...")
-            await bot_application.updater.start_polling(drop_pending_updates=True)
-            logger.info("[STARTUP-4] ✅ Long polling tasks initiated")
-    except asyncio.TimeoutError:
-        logger.warning(
-            "[STARTUP-4] ⚠️ Webhook setup timed out - falling back to polling..."
-        )
-        await bot_application.updater.start_polling(drop_pending_updates=True)
-        logger.info("[STARTUP-4] ✅ Long polling started (timeout fallback)")
-    except Exception as e:
-        logger.error(f"[STARTUP-4] ❌ Webhook/Polling initialization failed: {e}")
-        try:
-            if not bot_application.updater.running:
-                await bot_application.updater.start_polling(drop_pending_updates=True)
-                logger.info("[STARTUP-4] ✅ Long polling started (critical recovery)")
-        except:
-            pass
 
     # Step 5: Initialize Pyrogram (after webhook)
     logger.info("[STARTUP-5] Waiting 2s before starting Pyrogram...")
