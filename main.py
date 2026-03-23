@@ -818,7 +818,7 @@ async def build_bot_application(deps: dict) -> Application:
 
 
 async def configure_webhook(
-    bot_token: str, webhook_url: str, secret: str, user_count: Optional[int] = None
+    bot, webhook_url: str, secret: str, user_count: Optional[int] = None
 ) -> None:
     """Configure Telegram webhook using PTB's built-in method."""
     if user_count:
@@ -830,17 +830,13 @@ async def configure_webhook(
 
     try:
         logger.info("configure_webhook: Setting webhook via PTB...")
-        # Use bot from application for the webhook setting
-        if bot_application and bot_application.bot:
-            await bot_application.bot.set_webhook(
-                url=webhook_url,
-                max_connections=needed_max,
-                secret_token=secret if secret else None,
-                drop_pending_updates=False,
-            )
-            logger.info("✅ Webhook configured via PTB!")
-        else:
-            logger.error("❌ Bot application not available")
+        await bot.set_webhook(
+            url=webhook_url,
+            max_connections=needed_max,
+            secret_token=secret if secret else None,
+            drop_pending_updates=False,
+        )
+        logger.info("✅ Webhook configured via PTB!")
     except Exception as exc:
         logger.error("❌ Webhook failed: %s", exc)
 
@@ -956,13 +952,13 @@ async def _full_startup(app: FastAPI):
 
     # Step 4: Configure webhook OR start long polling (run in background to avoid blocking)
     async def setup_webhook_background():
-        await asyncio.sleep(1)  # Small delay to let other things initialize
+        await asyncio.sleep(1)
         try:
             if settings.WEBHOOK_URL:
                 logger.info("[STARTUP-4] 🔧 Setting webhook in background...")
                 await asyncio.wait_for(
                     configure_webhook(
-                        get_bot_token(),
+                        bot_application.bot,
                         settings.WEBHOOK_URL,
                         settings.WEBHOOK_SECRET or "",
                         None,
