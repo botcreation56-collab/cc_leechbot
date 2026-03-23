@@ -830,28 +830,13 @@ async def configure_webhook(
     else:
         needed_max = 40
 
-    logger.info(
-        f"configure_webhook: max_connections={needed_max}, secret={'set' if secret else 'NOT SET'}"
-    )
+    logger.info(f"configure_webhook: max_connections={needed_max}")
 
     try:
-        # Check current webhook (5 second timeout)
-        logger.info("configure_webhook: Calling getWebhookInfo...")
-        async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=3.0)) as client:
-            info_response = await client.get(
-                f"https://api.telegram.org/bot{bot_token}/getWebhookInfo"
-            )
-            info = info_response.json()
-
-        current_url = info.get("result", {}).get("url", "")
-        if current_url == webhook_url:
-            logger.info("✅ Webhook already set: %s", webhook_url)
-            return
-
-        # Set webhook (10 second timeout)
+        # Just set webhook directly (skip getWebhookInfo check to avoid hanging)
         logger.info("configure_webhook: Calling setWebhook...")
         async with httpx.AsyncClient(
-            timeout=httpx.Timeout(10.0, connect=3.0)
+            timeout=httpx.Timeout(30.0, connect=10.0)
         ) as client:
             r = await client.post(
                 f"https://api.telegram.org/bot{bot_token}/setWebhook",
