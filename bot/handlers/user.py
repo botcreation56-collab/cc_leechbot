@@ -92,7 +92,6 @@ logger = logging.getLogger(__name__)
 RCLONE_SUPPORTED_SERVICES = ["gdrive", "onedrive", "dropbox", "mega", "s3", "box"]
 logger.info("✅ Admin panel handlers loaded")
 logger.info("✅ User commands module loaded successfully")
-logger.info("User commands module loaded successfully")
 logger.info("✅ User settings module loaded with all handlers")
 WIZARD_TIMEOUT = 1200
 

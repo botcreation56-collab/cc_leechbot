@@ -831,13 +831,14 @@ async def configure_webhook(
 
     try:
         logger.info("configure_webhook: Setting webhook via PTB...")
+        logger.info("configure_webhook: STARTING bot.set_webhook call...")
         await bot.set_webhook(
             url=webhook_url,
             max_connections=needed_max,
             secret_token=secret if secret else None,
             drop_pending_updates=False,
         )
-        logger.info("✅ Webhook configured via PTB!")
+        logger.info("✅ configure_webhook: bot.set_webhook call COMPLETED successfully!")
     except Exception as exc:
         logger.error("❌ Webhook failed: %s", exc)
 
@@ -942,8 +943,8 @@ async def _full_startup(app: FastAPI):
 
         logger.info("[STARTUP-3] DEBUG: Creating QueueWorker instance")
         worker = QueueWorker(bot_application.bot)
-        logger.info("[STARTUP-3] DEBUG: Creating start task")
-        asyncio.create_task(worker.start())
+        logger.info("[STARTUP-3] DEBUG: Starting QueueWorker synchronously...")
+        await worker.start()
         logger.info("[STARTUP-3] ✅ QueueWorker started")
     except Exception as e:
         logger.warning(f"[STARTUP-3] ⚠️ QueueWorker: {e}")
@@ -951,35 +952,31 @@ async def _full_startup(app: FastAPI):
     # Bot username was cached during application.initialize() in build_bot_application
     logger.info("🤖 @%s ready | Webhook URL: %s", settings.BOT_USERNAME or "unknown", settings.WEBHOOK_URL or "POLLING")
 
-    # Step 4: Configure webhook OR start long polling (run in background to avoid blocking)
-    async def setup_webhook_background():
-        await asyncio.sleep(1)
-        try:
-            if settings.WEBHOOK_URL:
-                logger.info("[STARTUP-4] 🔧 Setting webhook in background...")
-                await asyncio.wait_for(
-                    configure_webhook(
-                        bot_application.bot,
-                        settings.WEBHOOK_URL,
-                        settings.WEBHOOK_SECRET or "",
-                        None,
-                    ),
-                    timeout=30.0,
-                )
-                logger.info("[STARTUP-4] ✅ Webhook configured in background")
-            else:
-                logger.info("[STARTUP-4] 🔧 Starting long polling in background...")
-                await bot_application.updater.start_polling(
-                    drop_pending_updates=True,
-                    allowed_updates=Update.ALL_TYPES,
-                    close_loop=False,
-                )
-                logger.info("[STARTUP-4] ✅ Long polling started in background")
-        except Exception as e:
-            logger.error(f"[STARTUP-4] ❌ Background webhook/polling error: {e}")
-
-    asyncio.create_task(setup_webhook_background())
-    logger.info("[STARTUP-4] 🔧 Webhook/polling setup started in background")
+    # Step 4: Configure webhook OR start long polling
+    logger.info("[STARTUP-4] 🔧 Starting Webhook/polling setup...")
+    try:
+        if settings.WEBHOOK_URL:
+            logger.info("[STARTUP-4] 🔧 Setting webhook...")
+            await asyncio.wait_for(
+                configure_webhook(
+                    bot_application.bot,
+                    settings.WEBHOOK_URL,
+                    settings.WEBHOOK_SECRET or "",
+                    None,
+                ),
+                timeout=30.0,
+            )
+            logger.info("[STARTUP-4] ✅ Webhook configured")
+        else:
+            logger.info("[STARTUP-4] 🔧 Starting long polling...")
+            await bot_application.updater.start_polling(
+                drop_pending_updates=True,
+                allowed_updates=Update.ALL_TYPES,
+                close_loop=False,
+            )
+            logger.info("[STARTUP-4] ✅ Long polling started")
+    except Exception as e:
+        logger.error(f"[STARTUP-4] ❌ Webhook/polling error: {e}")
 
     # Run remaining startup tasks in background
     async def startup_remaining():
