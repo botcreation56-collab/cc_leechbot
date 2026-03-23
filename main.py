@@ -954,23 +954,31 @@ async def _full_startup(app: FastAPI):
     # Bot username was cached during application.initialize() in build_bot_application
     logger.info("🤖 @%s ready", settings.BOT_USERNAME or "unknown")
 
-    # Step 4: Configure webhook OR start long polling
-    try:
-        if settings.WEBHOOK_URL:
-            logger.info(
-                f"[STARTUP-4] 🔧 Webhook logic triggered: {settings.WEBHOOK_URL}"
-            )
-            logger.info("[STARTUP-4] DEBUG: Calling configure_webhook...")
-            await asyncio.wait_for(
-                configure_webhook(
-                    get_bot_token(),
-                    settings.WEBHOOK_URL,
-                    settings.WEBHOOK_SECRET or "",
-                    None,  # Skip user count query to avoid hanging
-                ),
-                timeout=15.0,
-            )
-            logger.info("[STARTUP-4] ✅ Webhook configured and verified")
+    # Step 4: Configure webhook OR start long polling (run in background to avoid blocking)
+    async def setup_webhook_background():
+        await asyncio.sleep(1)  # Small delay to let other things initialize
+        try:
+            if settings.WEBHOOK_URL:
+                logger.info("[STARTUP-4] 🔧 Setting webhook in background...")
+                await asyncio.wait_for(
+                    configure_webhook(
+                        get_bot_token(),
+                        settings.WEBHOOK_URL,
+                        settings.WEBHOOK_SECRET or "",
+                        None,
+                    ),
+                    timeout=30.0,
+                )
+                logger.info("[STARTUP-4] ✅ Webhook configured in background")
+            else:
+                logger.info("[STARTUP-4] 🔧 Starting long polling in background...")
+                await bot_application.updater.start_polling(drop_pending_updates=True)
+                logger.info("[STARTUP-4] ✅ Long polling started in background")
+        except Exception as e:
+            logger.error(f"[STARTUP-4] ❌ Background webhook/polling error: {e}")
+
+    asyncio.create_task(setup_webhook_background())
+    logger.info("[STARTUP-4] 🔧 Webhook/polling setup started in background")
         else:
             logger.info(
                 "[STARTUP-4] 🔧 No WEBHOOK_URL - Starting long polling as fallback..."
