@@ -770,6 +770,16 @@ async def build_bot_application(deps: dict) -> Application:
     await application.start()
     logger.info("DEBUG: Application started")
 
+    # Cache bot username immediately after initialize (getMe already called internally)
+    try:
+        me = await application.bot.get_me()
+        if me and me.username:
+            settings.BOT_USERNAME = me.username
+            settings.BOT_LINK = f"https://t.me/{me.username}"
+            logger.info("DEBUG: Bot username cached from initialize: @%s", me.username)
+    except Exception as e:
+        logger.warning("DEBUG: Could not cache bot username: %s", e)
+
     # Initialize Telegram log handler (non-blocking)
     try:
         from bot.utils import init_telegram_logging
@@ -959,26 +969,8 @@ async def _full_startup(app: FastAPI):
     except Exception as e:
         logger.warning(f"[STARTUP-3] ⚠️ QueueWorker: {e}")
 
-    # Bot username was fetched during application.initialize() via getMe
-    # PTB stores the bot user dict internally as _bot
-    cached_username = None
-    if bot_application and bot_application.bot:
-        bot_dict = getattr(bot_application.bot, "_bot", None)
-        if bot_dict and isinstance(bot_dict, dict):
-            cached_username = bot_dict.get("username")
-        if not cached_username:
-            bot_user = getattr(bot_application.bot, "_user", None)
-            if bot_user and hasattr(bot_user, "username"):
-                cached_username = bot_user.username
-
-    if cached_username:
-        settings.BOT_USERNAME = cached_username
-        settings.BOT_LINK = f"https://t.me/{cached_username}"
-        logger.info("🤖 @%s ready (cached)", cached_username)
-    else:
-        logger.warning(
-            "[STARTUP-3] ⚠️ BOT_USERNAME not cached - set BOT_USERNAME in environment"
-        )
+    # Bot username was cached during application.initialize() in build_bot_application
+    logger.info("🤖 @%s ready", settings.BOT_USERNAME or "unknown")
 
     # Step 4: Configure webhook OR start long polling
     try:
