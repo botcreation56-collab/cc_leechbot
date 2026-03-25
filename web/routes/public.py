@@ -508,7 +508,7 @@ async def verify_priority_endpoint(user: int, token: str):
 
 
 @router.get("/queue-bypassed")
-async def queue_bypassed_endpoint(request: Request, token: str, bot: str):
+async def queue_bypassed_endpoint(request: Request, token: str, bot: str = ""):
     """
     Renders the success page after a user completes the shortener link.
     Decrypts the token and injects the bot username so the HTML button can

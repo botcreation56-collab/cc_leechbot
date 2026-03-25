@@ -818,13 +818,35 @@ async def build_bot_application(deps: dict) -> Application:
     return application
 
 
+def _compute_webhook_max_connections(user_count: Optional[int]) -> int:
+    """Compute webhook max_connections based on active parallel user count.
+
+    Strategy:
+      - Base floor: 40  (Telegram minimum recommended)
+      - Scale: +2 connections per active user
+      - Hard ceiling: 100 (Telegram maximum)
+    """
+    if not user_count or user_count <= 0:
+        return 40
+    scaled = 40 + (user_count * 2)
+    return min(scaled, 100)
+
+
 async def configure_webhook(
     bot, webhook_url: str, secret: str, user_count: Optional[int] = None
-) -> None:
+) -> bool:
+    """Set (or update) the Telegram webhook.
+
+    max_connections is computed dynamically from *user_count* so that
+    Telegram allocates more delivery workers as parallel load grows.
+    Call this again with the new user_count whenever the concurrency
+    level changes — Telegram will update without dropping pending updates.
+    """
     try:
         logger.info("configure_webhook: STARTING bot.set_webhook call...")
-        # Clean secret: only allow A-Z, a-z, 0-9, _ and -
         import re
+
+        # Sanitize secret: only A-Z, a-z, 0-9, _ and -
         safe_secret = None
         if secret:
             safe_secret = re.sub(r'[^a-zA-Z0-9_-]', '', secret)
@@ -832,19 +854,47 @@ async def configure_webhook(
                 logger.warning("⚠️ WEBHOOK_SECRET was entirely invalid! Disabling secret token.")
                 safe_secret = None
             elif safe_secret != secret:
-                logger.warning(f"⚠️ WEBHOOK_SECRET contained invalid characters. Cleaned version: {safe_secret}")
+                logger.warning(
+                    f"⚠️ WEBHOOK_SECRET contained invalid characters. Cleaned: {safe_secret}"
+                )
+
+        # Dynamic max_connections scaling
+        max_conn = _compute_webhook_max_connections(user_count)
+        logger.info(
+            "configure_webhook: max_connections=%d (user_count=%s)",
+            max_conn,
+            user_count,
+        )
 
         await bot.set_webhook(
             url=webhook_url,
-            max_connections=needed_max,
+            max_connections=max_conn,
             secret_token=safe_secret,
             drop_pending_updates=False,
         )
-        logger.info("✅ configure_webhook: bot.set_webhook call COMPLETED successfully!")
+        logger.info(
+            "✅ configure_webhook: bot.set_webhook COMPLETED (max_connections=%d)", max_conn
+        )
         return True
     except Exception as exc:
         logger.error("❌ Webhook failed: %s", exc)
         return False
+
+
+async def update_webhook_capacity(bot, user_count: int) -> bool:
+    """Re-configure webhook max_connections when concurrency changes.
+
+    Call this whenever the number of parallel users increases or decreases
+    so Telegram adjusts its delivery capacity accordingly.
+    """
+    if not settings.WEBHOOK_URL:
+        return False  # Polling mode — nothing to update
+    return await configure_webhook(
+        bot,
+        settings.WEBHOOK_URL,
+        settings.WEBHOOK_SECRET or "",
+        user_count=user_count,
+    )
 
 
 # ============================================================
@@ -979,16 +1029,23 @@ async def _full_startup(app: FastAPI):
             logger.error(f"[STARTUP-4] ❌ Webhook error: {e}")
 
     if not webhook_success:
-        try:
-            logger.info("[STARTUP-4] 🔧 Starting long polling as fallback...")
-            await bot_application.updater.start_polling(
-                drop_pending_updates=True,
-                allowed_updates=Update.ALL_TYPES,
-                close_loop=False,
+        updater = getattr(bot_application, "updater", None)
+        if updater is not None:
+            try:
+                logger.info("[STARTUP-4] 🔧 Starting long polling as fallback...")
+                await updater.start_polling(
+                    drop_pending_updates=True,
+                    allowed_updates=Update.ALL_TYPES,
+                    close_loop=False,
+                )
+                logger.info("[STARTUP-4] ✅ Long polling started")
+            except Exception as e:
+                logger.error(f"[STARTUP-4] ❌ Polling fallback error: {e}")
+        else:
+            logger.warning(
+                "[STARTUP-4] ⚠️ No Updater available (webhook-mode build) and webhook failed. "
+                "Bot will process updates only via incoming webhook POSTs."
             )
-            logger.info("[STARTUP-4] ✅ Long polling started")
-        except Exception as e:
-            logger.error(f"[STARTUP-4] ❌ Polling fallback error: {e}")
 
     # Run remaining startup tasks in background
     async def startup_remaining():

@@ -313,7 +313,11 @@ async def handle_bypass_queue(update: Update, context: ContextTypes.DEFAULT_TYPE
         from config.settings import get_domain
 
         domain = get_domain()
-        success_url = f"https://{domain}/queue-bypassed?token={encrypted_token}"
+        bot_username = settings.BOT_USERNAME or ""
+        success_url = (
+            f"https://{domain}/queue-bypassed?token={encrypted_token}"
+            f"&bot={bot_username}"
+        )
 
         # Shorten the URL using configured shortener
         from bot.services._link_shortener import LinkShortener

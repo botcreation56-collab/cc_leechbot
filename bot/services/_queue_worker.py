@@ -42,7 +42,39 @@ class QueueWorker:
         self.pro_semaphore = asyncio.Semaphore(pro_bypass_limit)
         self.sleep_interval = 2
         self.active_tasks: Set[asyncio.Task] = set()
+        # Webhook capacity scaling — track previous active count to detect changes
+        self._last_webhook_user_count: int = 0
         self._initialized = True
+
+    @property
+    def current_active_count(self) -> int:
+        """Number of tasks currently being processed (semaphore-slot consumers)."""
+        return self.limit - self.semaphore._value  # type: ignore[attr-defined]
+
+    async def _maybe_update_webhook_capacity(self) -> None:
+        """Re-configure Telegram webhook max_connections if load changed.
+
+        Called on every loop iteration so Telegram always has an accurate
+        concurrency hint.  The call is a no-op when the count has not changed
+        and skips gracefully when running in polling/local mode.
+        """
+        try:
+            current = self.current_active_count
+            if current == self._last_webhook_user_count:
+                return
+            self._last_webhook_user_count = current
+            # Import lazily to avoid circular startup imports
+            from main import update_webhook_capacity, bot_application
+            if bot_application is not None:
+                asyncio.create_task(
+                    update_webhook_capacity(bot_application.bot, current)
+                )
+                logger.debug(
+                    "🔗 Webhook capacity update queued (active_users=%d)", current
+                )
+        except Exception as exc:
+            # Never let capacity updates crash the queue loop
+            logger.debug("Webhook capacity update skipped: %s", exc)
 
     @classmethod
     def get_instance(cls) -> "QueueWorker":
@@ -98,6 +130,9 @@ class QueueWorker:
         while self.running:
             try:
                 db = get_db()
+
+                # Update webhook capacity whenever active task count changes
+                await self._maybe_update_webhook_capacity()
 
                 # 1. Cleanup expired waiting tasks (120s timeout)
                 now = datetime.utcnow()

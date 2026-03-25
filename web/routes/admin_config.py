@@ -171,6 +171,8 @@ class PlanItem(BaseModel):
     storage_per_day: int
     dump_expiry_days: int
     max_file_size_gb: int = 5
+    max_file_size_mb: Optional[int] = None
+    features: Optional[list] = None
 
 
 class PlansUpdateRequest(BaseModel):
