@@ -989,6 +989,14 @@ async def ussettings_command(
                 await message.reply_text(text, parse_mode="Markdown")
             return
 
+        # Get user settings
+        settings = user.get("settings", {})
+        prefix = settings.get("prefix", "Not set")
+        suffix = settings.get("suffix", "Not set")
+        plan = user.get("plan", "free")
+        mode = settings.get("mode", "video").upper()
+        visibility = settings.get("visibility", "public").upper()
+
         # Create settings menu
         keyboard = [
             [
@@ -1032,12 +1040,6 @@ async def ussettings_command(
             keyboard[-2][
                 0
             ].url = updates_url  # index -2 = Updates Channel row, -1 = Back
-
-        # Get user settings
-        settings = user.get("settings", {})
-        prefix = settings.get("prefix", "Not set")
-        suffix = settings.get("suffix", "Not set")
-        plan = user.get("plan", "free")
 
         prefix_display = (
             f"{prefix[:10]}..."
