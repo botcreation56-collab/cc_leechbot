@@ -501,8 +501,6 @@ def setup_handlers(application: Application) -> None:
             ("^us_thumbnail_delete$", handle_us_thumbnail_delete),
             ("^us_thumbnail_delete_confirm$", handle_us_thumbnail_delete_confirm),
             ("^us_mode$", handle_us_mode),
-            ("^us_mode_video$", handle_us_mode_video),
-            ("^us_mode_document$", handle_us_mode_document),
             ("^us_remove_confirm$", handle_us_remove_confirm),
             ("^us_reset_confirm_yes$", handle_us_reset_confirm_yes),
             ("^us_myfiles$", handle_us_myfiles),
@@ -712,13 +710,13 @@ def setup_handlers(application: Application) -> None:
         )
 
         # 14. ADMIN LOGS & CHAT
+        # NOTE: ^view_logs_ and ^admin_chatbox$ are already registered in Section 5.
+        # Only unique patterns belong here to avoid silent duplicate registrations.
         for pattern, handler in [
             ("^view_admin_logs$", handle_admin_logs_menu),
-            ("^view_logs_", handle_admin_logs),
             ("^download_logs$", handle_admin_download_logs),
             ("^clear_old_logs$", handle_admin_clear_logs),
             ("^view_error_logs$", handle_view_error_logs),
-            ("^admin_chatbox$", handle_admin_chatbox),
             ("^support_reply_", handle_support_reply),
             ("^support_read_", handle_support_read),
             ("^start_support_chat$", handle_start_support_chat),

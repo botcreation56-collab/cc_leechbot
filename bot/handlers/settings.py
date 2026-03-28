@@ -1001,7 +1001,7 @@ async def ussettings_command(
             ],
             [
                 InlineKeyboardButton("💎 Plan", callback_data="us_plan"),
-                InlineKeyboardButton("🎬 Mode", callback_data="us_mode"),
+                InlineKeyboardButton(f"🎬 Mode : {mode}", callback_data="us_mode"),
             ],
             [
                 InlineKeyboardButton("📁 Destination", callback_data="us_destination"),
@@ -1365,98 +1365,32 @@ async def handle_user_settings_text(
 
 
 async def handle_us_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Toggles the output mode between VIDEO and DOCUMENT directly from the settings menu."""
     try:
         user_id = update.effective_user.id
         query = update.callback_query
-        await query.answer()
-
-        user = await get_user(user_id)
-        if not user:
-            await send_auto_delete_msg(
-                context.bot,
-                update.effective_chat.id,
-                "❌ User not found",
-                parse_mode="Markdown",
-            )
-            return
-
-        current_mode = user.get("settings", {}).get("mode", "video")
-
-        keyboard = [
-            [
-                InlineKeyboardButton("🎬 VIDEO", callback_data="us_mode_video"),
-                InlineKeyboardButton("📄 DOCUMENT", callback_data="us_mode_document"),
-            ],
-            [InlineKeyboardButton("🔙 Back", callback_data="us_back")],
-        ]
-
-        await query.message.edit_text(
-            mode_text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="Markdown",
-        )
-
-        logger.info(f"✅ Mode menu opened for user {user_id}")
-
-    except Exception as e:
-        logger.error(f"❌ Error in handle_us_mode: {e}", exc_info=True)
-        await update.callback_query.answer("❌ Error", show_alert=True)
-
-
-async def handle_us_mode_video(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> None:
-    try:
-        user_id = update.effective_user.id
-        query = update.callback_query
-        await query.answer()
 
         user = await get_user(user_id)
         if not user:
             await query.answer("❌ User not found", show_alert=True)
             return
 
-        await update_user(user_id, {"settings.mode": "video"})
+        settings = user.get("settings", {})
+        current_mode = settings.get("mode", "video")
+        new_mode = "document" if current_mode == "video" else "video"
 
-        await query.answer("✅ Mode set to VIDEO", show_alert=True)
+        await update_user(user_id, {"settings.mode": new_mode})
+        await query.answer(f"✅ Mode toggled to {new_mode.upper()}", show_alert=False)
 
-        await log_user_update(context.bot, user_id, "set mode to video")
-        logger.info(f"✅ User {user_id} set mode to VIDEO")
-
-        # Return to settings menu
+        # Refresh the primary settings menu to show the updated button text
         await ussettings_command(update, context)
 
     except Exception as e:
-        logger.error(f"❌ Error in handle_us_mode_video: {e}", exc_info=True)
-        await query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
-
-
-async def handle_us_mode_document(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> None:
-    try:
-        user_id = update.effective_user.id
-        query = update.callback_query
-        await query.answer()
-
-        user = await get_user(user_id)
-        if not user:
-            await query.answer("❌ User not found", show_alert=True)
-            return
-
-        await update_user(user_id, {"settings.mode": "document"})
-
-        await query.answer("✅ Mode set to DOCUMENT", show_alert=True)
-
-        await log_user_update(context.bot, user_id, "set mode to document")
-        logger.info(f"✅ User {user_id} set mode to DOCUMENT")
-
-        # Return to settings menu
-        await ussettings_command(update, context)
-
-    except Exception as e:
-        logger.error(f"❌ Error in handle_us_mode_document: {e}", exc_info=True)
-        await query.answer(f"❌ Error: {str(e)[:50]}", show_alert=True)
+        logger.error(f"❌ Error in handle_us_mode toggle: {e}", exc_info=True)
+        try:
+            await query.answer("❌ Toggle error", show_alert=True)
+        except:
+            pass
 
 
 async def go_back_to_settings(

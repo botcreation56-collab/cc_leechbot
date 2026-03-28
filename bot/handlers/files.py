@@ -837,8 +837,7 @@ async def myfiles_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Send a file or URL to get started!",
                 parse_mode="Markdown",
             )
-
-        await log_info(f"✅ /myfiles used by {user_id}")
+            return
 
     except Exception as e:
         logger.error(f"❌ Error in myfiles command: {e}", exc_info=True)
@@ -1827,6 +1826,30 @@ class WizardHandler:
                     final_msg += f"🔗 [Stream/Download]({stream_url})\n\n"
                 final_msg += "💡 Use /myfiles to manage your files"
 
+                # Build completion keyboard (mirrors the FFmpeg path)
+                fast_keyboard = []
+                if stream_url and dump_file_id:
+                    fast_keyboard = [
+                        [
+                            InlineKeyboardButton(
+                                "🎬 VLC Player", url=f"vlc://{stream_url}"
+                            ),
+                            InlineKeyboardButton(
+                                "📲 MX Player",
+                                url=f"intent:{stream_url}#Intent;package=com.mxtech.videoplayer.ad;S.title={custom_name};end",
+                            ),
+                        ],
+                        [
+                            InlineKeyboardButton(
+                                "📤 Send to Destination",
+                                callback_data=f"send_dest_{dump_file_id}",
+                            )
+                        ],
+                    ]
+                fast_reply_markup = (
+                    InlineKeyboardMarkup(fast_keyboard) if fast_keyboard else None
+                )
+
                 try:
                     target_msg_id = task_info.get("user_progress_msg_id")
                     if target_msg_id:
@@ -1835,10 +1858,14 @@ class WizardHandler:
                             message_id=target_msg_id,
                             text=final_msg,
                             parse_mode="Markdown",
+                            reply_markup=fast_reply_markup,
                         )
                     else:
                         await bot.send_message(
-                            user_id, final_msg, parse_mode="Markdown"
+                            user_id,
+                            final_msg,
+                            parse_mode="Markdown",
+                            reply_markup=fast_reply_markup,
                         )
                 except Exception as e:
                     logger.warning(f"Could not send completion message: {e}")
@@ -2021,10 +2048,10 @@ class WizardHandler:
                 keyboard = [
                     [
                         InlineKeyboardButton(
-                            "📺 VLC Player", url=f"vlc://{stream_url}"
+                            "🎬 VLC Player", url=f"vlc://{stream_url}"
                         ),
                         InlineKeyboardButton(
-                            "📱 MX Player",
+                            "📲 MX Player",
                             url=f"intent:{stream_url}#Intent;package=com.mxtech.videoplayer.ad;S.title={custom_name};end",
                         ),
                     ],
@@ -2445,20 +2472,45 @@ async def execute_processing_flow_by_task(bot, task: dict) -> None:
             message_id=ledger_msg_id,
         )
 
-        # Notify user
+        # Notify user with stream link + destination button
         try:
             notification_text = (
                 f"✅ **File Ready!**\n\n"
                 f"📄 File: `{display_name}`\n"
                 + (f"🔗 Stream: {stream_url}\n\n" if stream_url else "\n")
                 + f"🆔 Task: `{task_id}`\n\n"
-                + f"⚠️ **Note**: If the file stream is not playable, please use an external player like MX Player, PlayIt, or VLC. Alternatively, use the Download button. Download speed restrictions remain unchanged."
+                + "⚠️ **Note**: If the file stream is not playable, please use an external player like MX Player, PlayIt, or VLC."
+            )
+
+            # Build keyboard — always include destination button when file is available
+            notify_keyboard = []
+            if stream_url and dump_file_id:
+                notify_keyboard = [
+                    [
+                        InlineKeyboardButton(
+                            "🎬 VLC Player", url=f"vlc://{stream_url}"
+                        ),
+                        InlineKeyboardButton(
+                            "📲 MX Player",
+                            url=f"intent:{stream_url}#Intent;package=com.mxtech.videoplayer.ad;S.title={display_name};end",
+                        ),
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            "📤 Send to Destination",
+                            callback_data=f"send_dest_{dump_file_id}",
+                        )
+                    ],
+                ]
+            notify_reply_markup = (
+                InlineKeyboardMarkup(notify_keyboard) if notify_keyboard else None
             )
 
             await bot.send_message(
                 chat_id=user_id,
                 text=notification_text,
                 parse_mode="Markdown",
+                reply_markup=notify_reply_markup,
             )
         except Exception as notify_err:
             logger.warning(f"Could not notify user {user_id}: {notify_err}")

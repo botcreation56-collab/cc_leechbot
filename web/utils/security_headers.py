@@ -31,12 +31,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         is_api = request.url.path.startswith("/api/")
         is_static = request.url.path.startswith("/static/")
 
+        # --- Applied to all responses ---
         response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"  # Clickjacking protection
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
 
         if os.getenv("DISABLE_XSS_PROTECTION") != "1":
             response.headers["X-XSS-Protection"] = "1; mode=block"
-
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
 
         response.headers["Permissions-Policy"] = (
             "accelerometer=(), "
@@ -49,10 +50,15 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "usb=()"
         )
 
-        response.headers["Cache-Control"] = (
-            "no-store, no-cache, must-revalidate, private"
-        )
-        response.headers["Pragma"] = "no-cache"
+        # Cache-Control: static assets can be cached by the browser;
+        # dynamic API and HTML responses must never be stored.
+        if is_static:
+            response.headers["Cache-Control"] = "public, max-age=86400"
+        else:
+            response.headers["Cache-Control"] = (
+                "no-store, no-cache, must-revalidate, private"
+            )
+            response.headers["Pragma"] = "no-cache"
 
         return response
 

@@ -18,7 +18,7 @@ import re
 
 from cachetools import TTLCache
 from telegram import Update
-from telegram.ext import ContextTypes
+from telegram.ext import ContextTypes, ApplicationHandlerStop
 
 from bot.database import get_user, log_security_event
 from config.constants import ERROR_MESSAGES
@@ -322,8 +322,15 @@ async def ban_check_middleware(
 
 
 async def apply_ban_check(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """PTB middleware entry point."""
-    await ban_check_middleware(update, context)
+    """PTB TypeHandler entry point (group -1).
+
+    Must raise ApplicationHandlerStop to prevent the update from reaching
+    any further handlers when a user is banned. Returning a value does
+    nothing in PTB — only the exception actually halts propagation.
+    """
+    allowed = await ban_check_middleware(update, context)
+    if not allowed:
+        raise ApplicationHandlerStop
 
 
 # ============================================================
@@ -448,6 +455,7 @@ def safe_async_wrapper(func: Callable) -> Callable:
     Usage: @safe_async_wrapper
     """
 
+    @wraps(func)  # Preserves __name__, __doc__, __module__, __annotations__
     async def wrapper(*args, **kwargs):
         try:
             return await func(*args, **kwargs)
@@ -455,5 +463,4 @@ def safe_async_wrapper(func: Callable) -> Callable:
             logger.error(f"❌ {func.__name__} error: {e}")
             raise
 
-    wrapper.__name__ = func.__name__
     return wrapper

@@ -3,16 +3,16 @@ Public API routes - watch pages, downloads, documentation
 """
 
 import logging
-from fastapi import APIRouter, HTTPException, Path
-from fastapi.responses import FileResponse
+from pathlib import Path
+from datetime import datetime, timedelta
+
+from fastapi import APIRouter, Cookie, HTTPException, Request, Response
+from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from bot.database import get_db, update_user, get_config, get_user
 from config.settings import get_settings
-from datetime import datetime, timedelta
-from pathlib import Path
-from fastapi.templating import Jinja2Templates
-from fastapi import Request
 
 templates = Jinja2Templates(
     directory=str(Path(__file__).parent.parent / "static" / "pages")
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 settings = get_settings()
 
-from fastapi.responses import RedirectResponse
+# RedirectResponse and Cookie/Response already imported above
 
 
 @router.get("/")
@@ -50,7 +50,7 @@ class FileMetadata(BaseModel):
     url: str
 
 
-from fastapi import Cookie, Response
+# Cookie and Response already imported above
 
 
 @router.get("/api/verify_link/{file_id}/{token}")
