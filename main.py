@@ -816,6 +816,16 @@ async def build_bot_application(deps: dict) -> Application:
     return application
 
 
+def get_safe_secret(raw_secret: str) -> Optional[str]:
+    """Sanitize the webhook secret to only allowed chars (A-Z, a-z, 0-9, _, -)."""
+    if not raw_secret:
+        return None
+    import re
+
+    safe = re.sub(r"[^a-zA-Z0-9_-]", "", str(raw_secret))
+    return safe if safe else None
+
+
 def _compute_webhook_max_connections(user_count: Optional[int]) -> int:
     """Compute webhook max_connections based on active parallel user count.
 
@@ -858,10 +868,12 @@ async def configure_webhook(
 
         # Dynamic max_connections scaling
         max_conn = _compute_webhook_max_connections(user_count)
+        safe_secret = get_safe_secret(secret)
+
         logger.info(
-            "configure_webhook: max_connections=%d (user_count=%s)",
+            "configure_webhook: max_connections=%d | safe_secret_len=%s",
             max_conn,
-            user_count,
+            len(safe_secret) if safe_secret else 0,
         )
 
         await bot.set_webhook(
@@ -951,7 +963,10 @@ async def _full_startup(app: FastAPI):
         logger.info("[STARTUP-1] Connecting to database...")
         deps = await asyncio.wait_for(build_dependency_graph(), timeout=30.0)
         app.state.deps = deps
-        logger.info("[STARTUP-1] ✅ Dependencies ready")
+        logger.info("[STARTUP-1] ✅ Dependencies ready (DB connected and shared)")
+    except asyncio.TimeoutError:
+        logger.error("[STARTUP-1] ❌ DB connection TIMED OUT after 30s")
+        return
     except Exception as e:
         logger.error(f"[STARTUP-1] ❌ Dependencies failed: {e}\n{tb.format_exc()}")
         return
@@ -959,14 +974,14 @@ async def _full_startup(app: FastAPI):
     # Step 2: Build bot application (handlers)
     try:
         logger.info("[STARTUP-2] Building bot application...")
-        logger.info("[STARTUP-2] DEBUG: About to call build_bot_application")
         bot_app = await asyncio.wait_for(build_bot_application(deps), timeout=45.0)
-        logger.info("[STARTUP-2] DEBUG: build_bot_application returned")
+        
+        logger.info("[STARTUP-2] bot_app variable received. Storing in app.state...")
         app.state.bot = bot_app.bot
         global bot_application
         bot_application = bot_app
-        logger.info("[STARTUP-2] DEBUG: About to log 'built' message")
-        logger.info("[STARTUP-2] ✅ Bot application built (initialized and started)")
+        
+        logger.info("[STARTUP-2] ✅ Bot application built, initialized, and started.")
 
         # Process any updates that arrived during startup
         if _pending_updates:
@@ -1245,12 +1260,16 @@ async def telegram_webhook(request: Request):
         return JSONResponse({"ok": True})
 
     if not settings.WEBHOOK_SECRET:
-        logger.critical("🚨 WEBHOOK_SECRET not configured!")
+        logger.critical("🚨 WEBHOOK_SECRET not configured in settings!")
         raise HTTPException(status_code=500, detail="Webhook secret not configured")
 
+    safe_expected = get_safe_secret(settings.WEBHOOK_SECRET)
     incoming = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
-    if incoming != settings.WEBHOOK_SECRET:
-        logger.warning("🚫 Webhook rejected: invalid secret token")
+
+    if not safe_expected or incoming != safe_expected:
+        logger.warning(
+            f"🚫 Webhook rejected: secret mismatch (expected_safe_len={len(safe_expected) if safe_expected else 0})"
+        )
         raise HTTPException(status_code=403, detail="Invalid secret token")
 
     body = await request.body()
