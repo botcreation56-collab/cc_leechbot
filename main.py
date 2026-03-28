@@ -263,8 +263,6 @@ def setup_handlers(application: Application) -> None:
         go_back_to_settings,
         handle_us_close,
         handle_us_mode,
-        handle_us_mode_video,
-        handle_us_mode_document,
         handle_us_prefix,
         handle_us_suffix,
         handle_us_metadata,
