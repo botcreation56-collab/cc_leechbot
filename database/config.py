@@ -7,9 +7,9 @@ import traceback
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from database.connection import get_db
-from database.cache import _get_cache_lock, _bust_config_cache, _config_cache
-from database.security_log import log_admin_action
+from .connection import get_db
+from .cache import _get_cache_lock, _bust_config_cache, _config_cache
+from .security_log import log_admin_action
 
 logger = logging.getLogger("filebot.db.config")
 

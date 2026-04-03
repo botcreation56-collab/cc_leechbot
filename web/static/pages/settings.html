@@ -230,52 +230,7 @@
 </head>
 
 <body class="theme-dark">
-    <!-- Hamburger button (mobile only) -->
-    <button class="hamburger" id="hamburger-btn" aria-label="Open menu" onclick="toggleSidebar()">
-        <span></span>
-        <span></span>
-        <span></span>
-    </button>
-
-    <!-- Sidebar Backdrop -->
-    <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="toggleSidebar()"></div>
-
     <div class="layout">
-        <!-- Sidebar -->
-        <nav class="sidebar" id="sidebar">
-            <a href="./dashboard.html" class="brand">
-                <span>⚡</span>
-                <div class="brand-text">FileBot</div>
-            </a>
-
-            <ul class="nav-menu">
-                <li class="nav-item">
-                    <a href="./dashboard.html" class="nav-link">
-                        <span class="nav-icon">📊</span>
-                        <span class="nav-text">Dashboard</span>
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a href="./myfiles.html" class="nav-link">
-                        <span class="nav-icon">📂</span>
-                        <span class="nav-text">My Files</span>
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a href="./settings.html" class="nav-link active">
-                        <span class="nav-icon">⚙️</span>
-                        <span class="nav-text">Settings</span>
-                    </a>
-                </li>
-            </ul>
-
-            <button onclick="auth.logout()" class="nav-link"
-                style="background: none; border: none; width: 100%; color: #ff7b72; margin-top: auto; cursor: pointer;">
-                <span class="nav-icon">🚪</span>
-                <span class="nav-text">Logout</span>
-            </button>
-        </nav>
-
         <!-- Main Content -->
         <main class="main-content">
 
@@ -332,13 +287,45 @@
                     <label>Default Author Injection</label>
                     <input type="text" id="meta-author" class="form-control" placeholder="E.g., YourBrandName">
                 </div>
-                <!-- Default mode -->
-                <div class="form-group">
-                    <label>Default Upload Mode</label>
-                    <div class="toggle-group" id="mode-group">
-                        <div class="toggle-btn active" data-val="video">Video Stream</div>
-                        <div class="toggle-btn" data-val="document">Document File</div>
+                
+                <div style="display: flex; gap: 20px;">
+                    <div class="form-group" style="flex: 1;">
+                        <label>Filename Prefix</label>
+                        <input type="text" id="meta-prefix" class="form-control" placeholder="E.g., [MySite.com]">
                     </div>
+                    <div class="form-group" style="flex: 1;">
+                        <label>Filename Suffix</label>
+                        <input type="text" id="meta-suffix" class="form-control" placeholder="E.g., @MyBotChannel">
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 20px; align-items: flex-start;">
+                    <div class="form-group" style="flex: 1;">
+                        <label>Default Upload Mode</label>
+                        <div class="toggle-group" id="mode-group">
+                            <div class="toggle-btn active" data-val="video">Video Stream</div>
+                            <div class="toggle-btn" data-val="document">Document File</div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group" style="flex: 1;">
+                        <label>Subtitle Mode</label>
+                        <select id="meta-subtitle" class="form-control">
+                            <option value="Ignore">Ignore</option>
+                            <option value="Inject">Inject</option>
+                            <option value="Remux">Remux</option>
+                            <option value="Hardcode">Hardcode</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Thumbnail Mode</label>
+                    <select id="meta-thumbnail" class="form-control">
+                        <option value="auto">Auto (Generate from video)</option>
+                        <option value="custom">Custom (Set via Telegram bot)</option>
+                    </select>
+                    <small style="color: #8b949e; display: block; margin-top: 4px;">Note: You can only upload a custom thumbnail using the bot in Telegram.</small>
                 </div>
                 <button class="btn-primary" onclick="saveSettings()">Save Preferences</button>
                 <div id="settings-msg" style="margin-top: 10px; font-size: 13px;"></div>
@@ -401,6 +388,14 @@
 
                 document.getElementById('meta-title').value = data.metadata_title || "";
                 document.getElementById('meta-author').value = data.metadata_author || "";
+                document.getElementById('meta-prefix').value = data.prefix || "";
+                document.getElementById('meta-suffix').value = data.suffix || "";
+                
+                const subtitleSelect = document.getElementById('meta-subtitle');
+                if (data.subtitle) subtitleSelect.value = data.subtitle;
+                
+                const thumbSelect = document.getElementById('meta-thumbnail');
+                if (data.thumbnail) thumbSelect.value = data.thumbnail;
 
                 // Update user plan
                 userPlan = data.plan || 'free';
@@ -477,6 +472,10 @@
                 const payload = {
                     metadata_title: document.getElementById('meta-title').value,
                     metadata_author: document.getElementById('meta-author').value,
+                    prefix: document.getElementById('meta-prefix').value,
+                    suffix: document.getElementById('meta-suffix').value,
+                    subtitle: document.getElementById('meta-subtitle').value,
+                    thumbnail: document.getElementById('meta-thumbnail').value,
                     default_mode: currentMode
                 };
 
@@ -581,18 +580,13 @@
             }
         }
 
-        function toggleSidebar() {
-            document.getElementById('sidebar').classList.toggle('open');
-            document.getElementById('sidebar-backdrop').classList.toggle('show');
-            const btn = document.getElementById('hamburger-btn');
-            if (btn) btn.classList.toggle('open');
-        }
-
         document.addEventListener('DOMContentLoaded', () => {
             fetchSettings();
             loadPlanInfo();
         });
     </script>
+<script src="/static/js/common.js"></script>
+    <script>injectSidebar("settings");</script>
 </body>
 
 </html>

@@ -221,57 +221,7 @@
 
 <body class="theme-dark">
 
-    <!-- Hamburger button (mobile only) -->
-    <button class="hamburger" id="hamburger-btn" aria-label="Open menu" onclick="toggleSidebar()">
-        <span></span><span></span><span></span>
-    </button>
-
-    <!-- Sidebar backdrop overlay -->
-    <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="toggleSidebar()"></div>
-
     <div class="layout">
-        <!-- Sidebar -->
-        <nav class="sidebar" id="sidebar">
-            <a href="./dashboard.html" class="brand">
-                <span>⚡</span>
-                <div class="brand-text">FileBot</div>
-            </a>
-
-            <ul class="nav-menu">
-                <li class="nav-item">
-                    <a href="./dashboard.html" class="nav-link active">
-                        <span class="nav-icon">📊</span>
-                        <span class="nav-text">Dashboard</span>
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a href="./myfiles.html" class="nav-link">
-                        <span class="nav-icon">📂</span>
-                        <span class="nav-text">My Files</span>
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a href="./settings.html" class="nav-link">
-                        <span class="nav-icon">⚙️</span>
-                        <span class="nav-text">Settings</span>
-                    </a>
-                </li>
-                <!-- Admin link — hidden by default, shown via JS if user is admin -->
-                <li class="nav-item" id="admin-nav-item" style="display:none;">
-                    <a href="/admin.html" class="nav-link" style="color:#ff4444;">
-                        <span class="nav-icon">🛡️</span>
-                        <span class="nav-text">Admin Panel</span>
-                    </a>
-                </li>
-            </ul>
-
-            <button onclick="doLogout()" class="nav-link"
-                style="background: none; border: none; width: 100%; color: #ff7b72; margin-top: auto; cursor: pointer;">
-                <span class="nav-icon">🚪</span>
-                <span class="nav-text">Logout</span>
-            </button>
-        </nav>
-
         <!-- Main Content -->
         <main class="main-content">
 
@@ -342,20 +292,6 @@
         const FILES_PER_PAGE = 10;
         let currentPage = 0;
         let hasMoreFiles = true;
-
-        function toggleSidebar() {
-            document.getElementById('sidebar').classList.toggle('open');
-            document.getElementById('sidebar-backdrop').classList.toggle('show');
-            const btn = document.getElementById('hamburger-btn');
-            if (btn) btn.classList.toggle('open');
-        }
-
-        document.addEventListener('keydown', e => {
-            if (e.key === 'Escape') {
-                const sidebar = document.getElementById('sidebar');
-                if (sidebar.classList.contains('open')) toggleSidebar();
-            }
-        });
 
         const token = localStorage.getItem('filebot_token');
         if (!token) { window.location.href = '../login.html'; }
@@ -497,6 +433,8 @@
             setupLazyLoading();
         });
     </script>
+<script src="/static/js/common.js"></script>
+    <script>injectSidebar("dashboard");</script>
 </body>
 
 </html>

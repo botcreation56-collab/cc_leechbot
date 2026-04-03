@@ -8,7 +8,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.error import TelegramError
 from bot.middleware import admin_only
-from bot.database import (
+from database import (
     get_db,
     get_user,
     get_all_users,
@@ -128,7 +128,7 @@ async def show_config_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         gdrive_status = "❌ Not configured"
         rclone_status = "❌ No remotes"
         try:
-            from bot.database import get_rclone_configs
+            from database import get_rclone_configs
 
             remotes = await get_rclone_configs()
             if remotes:
@@ -660,7 +660,7 @@ async def handle_config_edit_input(
             else:
                 value = text
 
-            from bot.database import set_config
+            from database import set_config
 
             ok = await set_config({config_key: value})
             if ok:
@@ -713,7 +713,7 @@ async def handle_config_edit_input(
                 )
                 return
 
-            from bot.database import get_config, set_config
+            from database import get_config, set_config
 
             config = await get_config() or {}
             plans = config.get("plans", {})
@@ -799,7 +799,7 @@ async def handle_config_edit_input(
             if not domain_url.startswith("http"):
                 domain_url = f"https://{domain_url}"
 
-            from bot.database import set_config, get_config
+            from database import set_config, get_config
 
             config = await get_config() or {}
             shorteners = config.get("shorteners", [])
@@ -1490,7 +1490,7 @@ async def handle_us_thumbnail_view(update: Update, context: ContextTypes.DEFAULT
     try:
         query = update.callback_query
         user_id = update.effective_user.id
-        from bot.database import get_user
+        from database import get_user
 
         user = await get_user(user_id)
         thumb = user.get("settings", {}).get("thumbnail_file_id")
@@ -1625,7 +1625,7 @@ async def handle_toggle_plan_rclone(update: Update, context: ContextTypes.DEFAUL
         plan_data["rclone_allowed"] = not current
         plans[plan_name] = plan_data
 
-        from bot.database import set_config
+        from database import set_config
 
         await set_config({"plans": plans})
 

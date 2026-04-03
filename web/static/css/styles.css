@@ -4,6 +4,8 @@ THEME VARIABLES & BASE
 
 :root {
     --primary-color: #0096FF;
+    --admin-color: #ff4444;
+    --accent-color: var(--primary-color);
     --bg-light: #ffffff;
     --bg-dark: #0d1117;
     --text-light: #0d1117;
@@ -60,7 +62,7 @@ body.theme-dark .top-bar {
 .logo-link {
     text-decoration: none;
     font-weight: 600;
-    color: var(--primary-color);
+    color: var(--accent-color);
 }
 
 .top-bar-title {
@@ -125,8 +127,9 @@ body.theme-dark .sidebar-item:hover {
 }
 
 .sidebar-item.active {
-    border-left: 3px solid var(--primary-color);
-    background: rgba(0, 150, 255, 0.08);
+    border-left: 3px solid var(--accent-color);
+    background: rgba(0, 150, 255, 0.08); /* Fallback */
+    background: color-mix(in srgb, var(--accent-color) 8%, transparent);
 }
 
 .main-content {
@@ -161,7 +164,7 @@ body.theme-dark .sidebar-item:hover {
     padding: 16px;
     border-radius: 8px;
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
-    border-left: 4px solid var(--primary-color);
+    border-left: 4px solid var(--accent-color);
 }
 
 body.theme-dark .stat-card {
@@ -276,7 +279,7 @@ BUTTONS & INPUTS (new variants)
 }
 
 .btn.primary-btn {
-    background: var(--primary-color);
+    background: var(--accent-color);
     color: #fff;
 }
 
@@ -377,7 +380,8 @@ body.theme-dark .login-card {
 
 .login-tab.active {
     background: rgba(0, 150, 255, 0.08);
-    border-color: var(--primary-color);
+    background: color-mix(in srgb, var(--accent-color) 8%, transparent);
+    border-color: var(--accent-color);
 }
 
 .login-section {
@@ -417,7 +421,7 @@ body.theme-dark .lang-toggle {
 }
 
 .lang-btn.active {
-    background: var(--primary-color);
+    background: var(--accent-color);
     color: #fff;
 }
 

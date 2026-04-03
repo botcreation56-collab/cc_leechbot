@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 
-from bot.database import get_db, get_user, update_user, get_config
+from database import get_db, get_user, update_user, get_config
 from web.routes.auth import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -20,6 +20,10 @@ class UserSettingsUpdate(BaseModel):
     metadata_author: Optional[str] = None
     metadata_title: Optional[str] = None
     default_mode: Optional[str] = None
+    prefix: Optional[str] = None
+    suffix: Optional[str] = None
+    thumbnail: Optional[str] = None
+    subtitle: Optional[str] = None
 
 
 class DestinationAdd(BaseModel):
@@ -27,6 +31,11 @@ class DestinationAdd(BaseModel):
 
     channel_id: int
     title: str
+    
+class CheckoutRequest(BaseModel):
+    """Checkout request"""
+    
+    tx_id: str
 
 
 @router.get("/")
@@ -39,7 +48,7 @@ async def get_user_settings(user_id: int = Depends(get_current_user)):
 
         settings = user.get("settings", {})
 
-        from bot.database import get_user_destinations
+        from database import get_user_destinations
 
         destinations = await get_user_destinations(user_id)
 
@@ -61,6 +70,10 @@ async def get_user_settings(user_id: int = Depends(get_current_user)):
             "metadata_author": user.get("metadata_author", ""),
             "metadata_title": user.get("metadata_title", ""),
             "default_mode": settings.get("default_mode", "video"),
+            "prefix": settings.get("prefix", ""),
+            "suffix": settings.get("suffix", ""),
+            "thumbnail": settings.get("thumbnail", "auto"),
+            "subtitle": settings.get("metadata", {}).get("subtitle", "Ignore"),
             "destinations": enhanced_destinations,
             "plan": user.get("plan", "free"),
         }
@@ -130,9 +143,26 @@ async def update_user_settings(
             updates["metadata_title"] = request.metadata_title
 
         if request.default_mode is not None:
-            settings = user.get("settings", {})
+            settings = updates.setdefault("settings", user.get("settings", {}))
             settings["default_mode"] = request.default_mode
-            updates["settings"] = settings
+            
+        if request.prefix is not None:
+            settings = updates.setdefault("settings", user.get("settings", {}))
+            settings["prefix"] = request.prefix
+            
+        if request.suffix is not None:
+            settings = updates.setdefault("settings", user.get("settings", {}))
+            settings["suffix"] = request.suffix
+            
+        if request.thumbnail is not None:
+            settings = updates.setdefault("settings", user.get("settings", {}))
+            settings["thumbnail"] = request.thumbnail
+            
+        if request.subtitle is not None:
+            settings = updates.setdefault("settings", user.get("settings", {}))
+            if "metadata" not in settings:
+                settings["metadata"] = {}
+            settings["metadata"]["subtitle"] = request.subtitle
 
         if updates:
             await update_user(user_id, updates)
@@ -151,7 +181,7 @@ async def add_destination(
 ):
     """Add a new destination channel"""
     try:
-        from bot.database import add_user_destination
+        from database import add_user_destination
 
         success = await add_user_destination(user_id, request.channel_id, request.title)
 
@@ -197,7 +227,7 @@ async def get_my_files(user_id: int = Depends(get_current_user)):
 async def remove_destination(channel_id: int, user_id: int = Depends(get_current_user)):
     """Remove a destination channel"""
     try:
-        from bot.database import remove_user_destination
+        from database import remove_user_destination
 
         success = await remove_user_destination(user_id, channel_id)
 
@@ -209,4 +239,39 @@ async def remove_destination(channel_id: int, user_id: int = Depends(get_current
         raise
     except Exception as e:
         logger.error(f"❌ Remove destination error: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.post("/checkout")
+async def process_checkout(request: CheckoutRequest, user_id: int = Depends(get_current_user)):
+    """Handle native checkout from web UI"""
+    try:
+        user = await get_user(user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+            
+        from config.settings import get_settings
+        from bot.services import run_broadcast_worker # Just using to import app context if needed
+        # We'll just log this to the admin log channel
+        config = await get_config()
+        log_channel = config.get("log_channel")
+        
+        # In a real payment processor, we would verify tx_id here and automatically upgrade.
+        # Since this is manual checkout, we notify admins.
+        
+        if log_channel:
+            # We want to send a message to log channel, but we don't have python-telegram-bot Application here directly.
+            # Usually we use a background task or direct bot request.
+            # To keep it simple, we can add a notification to DB and admin can see it,
+            # but since web worker might not have Telegram bot injected, we'll store it as a checkout request in DB.
+            db = get_db()
+            await db.checkout_requests.insert_one({
+                "user_id": user_id,
+                "tx_id": request.tx_id,
+                "status": "pending",
+                "created_at": __import__("datetime").datetime.utcnow()
+            })
+            
+        return {"status": "success", "message": "Checkout request submitted"}
+    except Exception as e:
+        logger.error(f"❌ Checkout error: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")

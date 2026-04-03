@@ -6,7 +6,7 @@ import uuid
 import secrets
 import hashlib
 
-from bot.database import get_user, create_one_time_key, get_db
+from database import get_user, create_one_time_key, get_db
 from web.utils.rate_limiter import RateLimiter
 from web.utils.csrf import BruteForceProtection, CSRFProtector, generate_csrf_token
 from config.settings import get_settings

@@ -1,25 +1,5 @@
 """
 infrastructure/database/repositories.py — Backward compatibility shim.
-
-All database functionality is now in database/repositories.py. This shim re-exports from there.
+Re-exports the repository layer.
 """
-
-from database.repositories import (
-    UserRepository,
-    TaskRepository,
-    CloudFileRepository,
-    OneTimeKeyRepository,
-    ConfigRepository,
-    AuditLogRepository,
-    RcloneConfigRepository,
-)
-
-__all__ = [
-    "UserRepository",
-    "TaskRepository",
-    "CloudFileRepository",
-    "OneTimeKeyRepository",
-    "ConfigRepository",
-    "AuditLogRepository",
-    "RcloneConfigRepository",
-]
+from database.repositories import *

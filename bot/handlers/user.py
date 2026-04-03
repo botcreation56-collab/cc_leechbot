@@ -9,7 +9,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.error import TelegramError
 from bot.middleware import admin_only, rate_limit, action_lock, is_admin
-from bot.database import (
+from database import (
     get_db,
     get_user,
     get_all_users,
@@ -219,7 +219,7 @@ async def show_shorteners_menu(update: Update, context: ContextTypes.DEFAULT_TYP
     """Show link shorteners menu with existing shorteners"""
     try:
         await update.callback_query.answer()
-        from bot.database import get_config
+        from database import get_config
 
         config = await get_config() or {}
         shorteners = config.get("shorteners", [])
@@ -291,7 +291,7 @@ async def handle_bypass_queue(update: Update, context: ContextTypes.DEFAULT_TYPE
         logger.info(f"🔔 BYPASS_Q handler called: {data}")
 
         task_id = data.replace("bypass_q_", "")
-        from bot.database import get_task
+        from database import get_task
 
         task = await get_task(task_id)
         if not task:
@@ -327,7 +327,7 @@ async def handle_bypass_queue(update: Update, context: ContextTypes.DEFAULT_TYPE
             shortened_url = success_url  # Fallback
 
         # Get tutorial link from config
-        from bot.database import get_config
+        from database import get_config
 
         config = await get_config() or {}
         tutorial_url = config.get(
@@ -361,7 +361,7 @@ async def handle_refresh_queue(update: Update, context: ContextTypes.DEFAULT_TYP
         task_id = data.replace("refresh_q_", "")
         user_id = query.from_user.id
 
-        from bot.database import get_task, get_user_position
+        from database import get_task, get_user_position
 
         task = await get_task(task_id)
         if not task or task.get("status") != "queued":
@@ -857,7 +857,7 @@ async def generate_cloud_link(
     """Generate cloud link for file"""
     try:
         user_id = update.effective_user.id
-        from bot.database import get_user
+        from database import get_user
 
         user = await get_user(user_id)
         plan = user.get("plan", "free") if user else "free"
@@ -956,7 +956,7 @@ async def handle_us_destination_button(
         context.user_data.pop("awaiting", None)
         context.user_data.pop("awaiting_set_at", None)
 
-        from bot.database import get_user_destinations
+        from database import get_user_destinations
 
         destinations = await get_user_destinations(user_id)
 
@@ -1033,7 +1033,7 @@ async def handle_us_dest_manage(update: Update, context: ContextTypes.DEFAULT_TY
         context.user_data.pop("awaiting", None)
         context.user_data.pop("awaiting_set_at", None)
 
-        from bot.database import get_user_destinations, get_user, get_config
+        from database import get_user_destinations, get_user, get_config
 
         destinations = await get_user_destinations(user_id)
         dest = next((d for d in destinations if d.get("id") == channel_id), None)
@@ -1210,7 +1210,7 @@ async def handle_us_dest_remove_do(update: Update, context: ContextTypes.DEFAULT
         channel_id = int(query.data.replace("us_dest_remove_do_", ""))
         user_id = query.from_user.id
 
-        from bot.database import remove_user_destination
+        from database import remove_user_destination
 
         success = await remove_user_destination(user_id, channel_id)
 
@@ -1394,7 +1394,7 @@ async def handle_us_dest_shortener_toggle(
         channel_id = query.data.replace("us_dest_shortener_", "")
         user_id = query.from_user.id
 
-        from bot.database import get_user, get_config
+        from database import get_user, get_config
 
         user = await get_user(user_id)
         settings = user.get("settings", {})
@@ -1417,7 +1417,7 @@ async def handle_us_dest_shortener_toggle(
             if "destination_metadata" not in settings:
                 settings["destination_metadata"] = {}
             settings["destination_metadata"][channel_id] = dest_metadata
-            from bot.database import update_user
+            from database import update_user
 
             await update_user(user_id, {"settings": settings})
             await query.answer("❌ Shortener disabled", show_alert=True)
@@ -1508,7 +1508,7 @@ async def handle_us_dest_download_link_choice(
             )
             return
 
-        from bot.database import get_user, update_user
+        from database import get_user, update_user
 
         user = await get_user(query.from_user.id)
         settings = user.get("settings", {})
@@ -1538,7 +1538,7 @@ async def handle_us_dest_caption_builder(
         channel_id = query.data.replace("us_dest_caption_builder_", "")
         user_id = query.from_user.id
 
-        from bot.database import get_user, get_config
+        from database import get_user, get_config
 
         user = await get_user(user_id)
         settings = user.get("settings", {})
@@ -1646,7 +1646,7 @@ async def handle_us_dest_cap_edit(update: Update, context: ContextTypes.DEFAULT_
         channel_id = query.data.replace("us_dest_cap_edit_", "")
         context.user_data["awaiting"] = f"us_dest_cap_text_{channel_id}"
 
-        from bot.database import get_user
+        from database import get_user
 
         user = await get_user(query.from_user.id)
         settings = user.get("settings", {})
@@ -1689,7 +1689,7 @@ async def handle_us_dest_cap_stream_btn(
         channel_id = query.data.replace("us_dest_cap_stream_btn_", "")
         user_id = query.from_user.id
 
-        from bot.database import get_user, update_user
+        from database import get_user, update_user
 
         user = await get_user(user_id)
         settings = user.get("settings", {})
@@ -1773,7 +1773,7 @@ async def handle_us_dest_cap_style(update: Update, context: ContextTypes.DEFAULT
         channel_id = query.data.replace("us_dest_cap_style_", "")
         user_id = query.from_user.id
 
-        from bot.database import get_user, update_user
+        from database import get_user, update_user
 
         user = await get_user(user_id)
         settings = user.get("settings", {})
@@ -1803,7 +1803,7 @@ async def handle_us_dest_cap_reset(update: Update, context: ContextTypes.DEFAULT
         channel_id = query.data.replace("us_dest_cap_reset_", "")
         user_id = query.from_user.id
 
-        from bot.database import get_user, update_user
+        from database import get_user, update_user
 
         user = await get_user(user_id)
         settings = user.get("settings", {})
@@ -1832,7 +1832,7 @@ async def handle_us_dest_buttons(update: Update, context: ContextTypes.DEFAULT_T
         channel_id = query.data.replace("us_dest_buttons_", "")
         user_id = query.from_user.id
 
-        from bot.database import get_user
+        from database import get_user
 
         user = await get_user(user_id)
         settings = user.get("settings", {})
@@ -1913,7 +1913,7 @@ async def handle_us_dest_buttons_edit(
         channel_id = query.data.replace("us_dest_buttons_edit_", "")
         context.user_data["awaiting"] = f"us_dest_buttons_{channel_id}"
 
-        from bot.database import get_user
+        from database import get_user
 
         user = await get_user(query.from_user.id)
         settings = user.get("settings", {})
@@ -1959,7 +1959,7 @@ async def handle_us_dest_buttons_clear(
         channel_id = query.data.replace("us_dest_buttons_clear_", "")
         user_id = query.from_user.id
 
-        from bot.database import get_user, update_user
+        from database import get_user, update_user
 
         user = await get_user(user_id)
         settings = user.get("settings", {})
@@ -2032,7 +2032,7 @@ async def handle_user_destination_forward(
             channel_title = msg.forward_from_chat.title or str(channel_id)
 
         if channel_id:
-            from bot.database import add_user_destination
+            from database import add_user_destination
 
             success = await add_user_destination(user_id, channel_id, channel_title)
 
@@ -2093,7 +2093,7 @@ async def handle_send_to_destination(
     file_id = query.data.replace("send_dest_", "")
     user_id = query.from_user.id
 
-    from bot.database import get_user_destinations
+    from database import get_user_destinations
 
     destinations = await get_user_destinations(user_id)
 
@@ -2162,7 +2162,7 @@ async def handle_forward_to_destination(
     size = meta.get("size", 0)
 
     # Get destination-specific settings
-    from bot.database import get_user, get_config
+    from database import get_user, get_config
     from datetime import datetime, timedelta
     import secrets
     import re
@@ -2299,7 +2299,7 @@ async def handle_forward_to_destination(
 
         dest_token = secrets.token_urlsafe(32)
 
-        from bot.database import get_db
+        from database import get_db
 
         db = get_db()
 
@@ -2482,14 +2482,31 @@ async def send_progress_message(
 ):
     """
     Send or update progress message with user-friendly step indicators.
+    Now uses MongoDB to store progress state across workers and throttles updates.
     """
     import time
+    import asyncio
+    from database import get_task, update_task
 
-    if not hasattr(bot, "progress_data"):
-        bot.progress_data = {}
-    progress_data = bot.progress_data
+    now = time.time()
+    task = await get_task(task_id)
+    if not task:
+        return
 
-    task_info = progress_data.setdefault(task_id, {})
+    progress_data = task.get("progress_data") or {}
+    last_update = progress_data.get("last_update_time", 0)
+
+    # Throttle: Wait if less than 0.8s has passed since last update
+    if progress and progress < 100 and (now - last_update) < 0.8:
+        await asyncio.sleep(0.8 - (now - last_update))
+        # Re-fetch task to get latest progress_data
+        task = await get_task(task_id)
+        if not task:
+            return
+        progress_data = task.get("progress_data") or {}
+
+    task_info = progress_data
+
     if stage is not None:
         task_info["stage"] = stage
     if progress is not None:
@@ -2498,6 +2515,8 @@ async def send_progress_message(
         task_info["start_time"] = start_time
     elif "start_time" not in task_info:
         task_info["start_time"] = time.time()
+
+    task_info["last_update_time"] = time.time()
 
     current_stage_key = task_info.get("stage", "init")
     current_progress = task_info.get("progress", 0)
@@ -2570,6 +2589,8 @@ async def send_progress_message(
                 )
             except Exception as e:
                 if "Message is not modified" not in str(e):
+                    import logging
+                    logger = logging.getLogger(__name__)
                     logger.warning(f"Failed to edit user progress message: {e}")
 
         # ——— Update Dump Channel (optional) ———
@@ -2590,12 +2611,16 @@ async def send_progress_message(
                     )
                 except Exception as e:
                     if "Message is not modified" not in str(e):
+                        import logging
+                        logger = logging.getLogger(__name__)
                         logger.warning(f"Failed to edit dump progress message: {e}")
 
-        # Save state
-        bot.progress_data[task_id] = task_info
+        # Save state to DB
+        await update_task(task_id, {"progress_data": task_info})
 
         if current_progress >= 100:
+            import logging
+            logger = logging.getLogger(__name__)
             logger.info(f"Task {task_id} completed — deleting progress message 🗑️")
             try:
                 await bot.delete_message(
@@ -2610,40 +2635,16 @@ async def send_progress_message(
             except Exception as e:
                 logger.warning(f"Failed to delete progress message: {e}")
 
-            # Clean up memory
-            if task_id in bot.progress_data:
-                del bot.progress_data[task_id]
+            # Clean up progress_data from db
+            await update_task(task_id, {"progress_data": {}})
             return
 
     except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
         logger.error(
             f"send_progress_message failed for task {task_id}: {e}", exc_info=True
         )
-
-
-async def finalize_progress(
-    bot, task_id, success=True, result_text="", reply_markup=None
-):
-    """Finalize progress tracking and clean up session."""
-    try:
-        from bot.database import update_task
-
-        status = "completed" if success else "failed"
-        await update_task(task_id, {"status": status, "result": result_text})
-
-        # We need user_id to clear session. Usually task has it.
-        from bot.database import get_task
-
-        task = await get_task(task_id)
-        if task:
-            user_id = task.get("user_id")
-            # We'll rely on the caller or a helper to clear context.user_data
-            # since we don't have 'context' here.
-            # But we can at least log it.
-            logger.info(f"✅ Task {task_id} finalized as {status}")
-
-    except Exception as e:
-        logger.error(f"Error finalizing progress: {e}")
 
 
 async def clear_user_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2754,16 +2755,18 @@ async def finalize_progress(
 ):
     """Finalize progress tracking and clean up session, notifying both User and Dump."""
     try:
-        from bot.database import update_task
+        from database import get_task, update_task
+        import logging
+        logger = logging.getLogger(__name__)
 
         status = "completed" if success else "failed"
         await update_task(task_id, {"status": status, "result": result_text})
 
-        progress_data = getattr(bot, "progress_data", {})
-        if task_id not in progress_data:
+        task = await get_task(task_id)
+        if not task:
             return
 
-        progress_info = progress_data[task_id]
+        progress_info = task.get("progress_data", {})
 
         # 1. Update User PM
         user_id = progress_info.get("user_id")
@@ -2782,7 +2785,7 @@ async def finalize_progress(
                     chat_id=user_id,
                     message_id=user_msg_id,
                     text=final_text,
-                    reply_markup=reply_markup,  # Erases buttons by default if reply_markup is None
+                    reply_markup=reply_markup,
                     parse_mode="Markdown",
                 )
             except Exception as e:
@@ -2808,14 +2811,14 @@ async def finalize_progress(
             except Exception as e:
                 logger.warning(f"Failed to edit dump progress message: {e}")
 
-        # Cleanup Memory
-        if task_id in bot.progress_data:
-            del bot.progress_data[task_id]
+        # Cleanup DB Progress
+        await update_task(task_id, {"progress_data": {}})
         logger.info(f"✅ Task {task_id} finalized as {status}")
 
     except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
         logger.error(f"Error finalizing progress: {e}")
-
 
 @rate_limit
 async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2931,7 +2934,7 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.warning(f"⚠️ Unhandled text input state: {awaiting}")
 
         if awaiting == "support_message":
-            from bot.database import add_chatbox_message
+            from database import add_chatbox_message
 
             success = await add_chatbox_message(user_id, text, sender_type="user")
             if success:
@@ -3018,7 +3021,7 @@ async def check_force_sub(
     If False, saves pending_data to resume later.
     """
     try:
-        from bot.database import get_force_sub_channels
+        from database import get_force_sub_channels
 
         force_channels = await get_force_sub_channels()
 
@@ -3027,7 +3030,7 @@ async def check_force_sub(
             return True
 
         user_id = update.effective_user.id
-        from bot.database import get_user
+        from database import get_user
 
         user = await get_user(user_id)
         requested = user.get("requested_fsub", []) if user else []
@@ -3268,7 +3271,7 @@ async def handle_chat_join_request(
         logger.info(f"👋 Join request from {user_id} for chat {chat_id}")
 
         # Track that this user has a pending join request
-        from bot.database import get_user, update_user
+        from database import get_user, update_user
 
         user = await get_user(user_id)
         requested = user.get("requested_fsub", [])
@@ -3384,7 +3387,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(f"`{user_id}`", parse_mode="Markdown")
                 return
             elif arg.startswith("bypass_"):
-                from bot.database import get_db
+                from database import get_db
 
                 logger.info(f"🔔 BYPASS command received: {arg}")
                 db = get_db()
@@ -3487,7 +3490,7 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 task_id = raw_id
 
         if task_id:
-            from bot.database import get_task, fail_task
+            from database import get_task, fail_task
 
             task = await get_task(task_id)
 
@@ -3670,7 +3673,7 @@ async def cancel_task_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
 
 
-from bot.database import get_config
+from database import get_config
 
 
 async def unknown_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):

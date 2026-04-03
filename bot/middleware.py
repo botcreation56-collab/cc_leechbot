@@ -20,7 +20,7 @@ from cachetools import TTLCache
 from telegram import Update
 from telegram.ext import ContextTypes, ApplicationHandlerStop
 
-from bot.database import get_user, log_security_event
+from database import get_user, log_security_event
 from config.constants import ERROR_MESSAGES
 from config.settings import get_admin_ids, get_settings
 
@@ -390,7 +390,7 @@ async def error_handler(
 
         # Log to channel
         try:
-            from bot.database import get_channel_id
+            from database import get_channel_id
 
             db_log_channel = await get_channel_id("log")
             log_channel_id = (

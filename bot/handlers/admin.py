@@ -9,7 +9,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.error import TelegramError
 from bot.middleware import admin_only
-from bot.database import (
+from database import (
     get_db,
     get_user,
     get_all_users,
@@ -200,7 +200,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         user_id = user.id
 
-        from bot.database import get_user, get_config
+        from database import get_user, get_config
 
         db_user = await get_user(user_id)
 
@@ -595,7 +595,7 @@ async def handle_admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE)
         query = update.callback_query
         await query.answer("📊 Refreshing Stats...", show_alert=False)
 
-        from bot.database import get_admin_stats
+        from database import get_admin_stats
 
         db_stats = await get_admin_stats()
         queue_stats = await get_queue_stats()
@@ -712,7 +712,7 @@ async def handle_unban_from_list(update: Update, context: ContextTypes.DEFAULT_T
         await query.answer()
 
         user_id = int(query.data.split("_")[-1])
-        from bot.database import unban_user
+        from database import unban_user
 
         result = await unban_user(user_id, admin_id=update.effective_user.id)
 
@@ -1155,7 +1155,7 @@ async def handle_admin_set_force_sub_channel(
 ):
     """Show force-sub channel management menu with requested buttons"""
     try:
-        from bot.database import get_force_sub_channels
+        from database import get_force_sub_channels
 
         fsub_channels = await get_force_sub_channels()
 
@@ -1254,7 +1254,7 @@ async def handle_admin_fsub_manage(
         if channel_id is None:
             channel_id = int(query.data.replace("admin_fsub_manage_", ""))
 
-        from bot.database import get_force_sub_channels
+        from database import get_force_sub_channels
 
         channels = await get_force_sub_channels()
         channel = next((ch for ch in channels if ch.get("id") == channel_id), None)
@@ -1330,7 +1330,7 @@ async def handle_admin_fsub_req_toggle(
         query = update.callback_query
         channel_id = int(query.data.replace("admin_fsub_req_toggle_", ""))
 
-        from bot.database import get_force_sub_channels, update_force_sub_metadata
+        from database import get_force_sub_channels, update_force_sub_metadata
 
         channels = await get_force_sub_channels()
         channel = next((ch for ch in channels if ch.get("id") == channel_id), None)
@@ -1364,7 +1364,7 @@ async def handle_admin_fsub_toggle(update: Update, context: ContextTypes.DEFAULT
         query = update.callback_query
         channel_id = int(query.data.replace("admin_fsub_toggle_", ""))
 
-        from bot.database import get_force_sub_channels, update_force_sub_metadata
+        from database import get_force_sub_channels, update_force_sub_metadata
 
         channels = await get_force_sub_channels()
         channel = next((ch for ch in channels if ch.get("id") == channel_id), None)
@@ -1447,7 +1447,7 @@ async def handle_admin_fsub_remove(update: Update, context: ContextTypes.DEFAULT
         await query.answer()
         channel_id = int(query.data.replace("admin_fsub_remove_", ""))
 
-        from bot.database import remove_force_sub_channel
+        from database import remove_force_sub_channel
 
         success = await remove_force_sub_channel(
             channel_id, admin_id=update.effective_user.id
@@ -1465,7 +1465,7 @@ async def handle_admin_fsub_remove(update: Update, context: ContextTypes.DEFAULT
 async def handle_admin_remove_log(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Remove log channel from config"""
     try:
-        from bot.database import remove_channel_config
+        from database import remove_channel_config
 
         await remove_channel_config("log", admin_id=update.effective_user.id)
         await update.callback_query.answer("✅ Log channel removed", show_alert=True)
@@ -1478,7 +1478,7 @@ async def handle_admin_remove_log(update: Update, context: ContextTypes.DEFAULT_
 async def handle_admin_remove_dump(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Remove dump channel from config"""
     try:
-        from bot.database import remove_channel_config
+        from database import remove_channel_config
 
         await remove_channel_config("dump", admin_id=update.effective_user.id)
         await update.callback_query.answer("✅ Dump channel removed", show_alert=True)
@@ -1493,7 +1493,7 @@ async def handle_admin_remove_storage(
 ):
     """Remove storage channel from config"""
     try:
-        from bot.database import remove_channel_config
+        from database import remove_channel_config
 
         await remove_channel_config("storage", admin_id=update.effective_user.id)
         await update.callback_query.answer(
@@ -1606,7 +1606,7 @@ async def handle_admin_input(
             try:
                 uid = int(text.split()[0])
                 reason = " ".join(text.split()[1:]) or "No reason"
-                from bot.database import ban_user
+                from database import ban_user
 
                 ok = await ban_user(uid, reason=reason, admin_id=user_id)
                 if ok:
@@ -1636,7 +1636,7 @@ async def handle_admin_input(
         if state == "admin_unban_user":
             try:
                 uid = int(text)
-                from bot.database import unban_user
+                from database import unban_user
 
                 ok = await unban_user(uid, admin_id=user_id)
                 if ok:
@@ -1695,7 +1695,7 @@ async def handle_admin_input(
 
         if state.startswith("support_reply_"):
             user_id_to_reply = int(state.split("_")[-1])
-            from bot.database import add_chatbox_message
+            from database import add_chatbox_message
 
             success = await add_chatbox_message(
                 user_id_to_reply, text, sender_type="admin"
@@ -1841,7 +1841,7 @@ async def handle_admin_forwards(update: Update, context: ContextTypes.DEFAULT_TY
         }
 
         admin_id = update.effective_user.id
-        from bot.database import set_config, get_config
+        from database import set_config, get_config
 
         if channel_type == "force_sub_channel":
             # Add to nested channels.force_sub array
@@ -1990,7 +1990,7 @@ async def handle_admin_chatbox(update: Update, context: ContextTypes.DEFAULT_TYP
         query = update.callback_query
         await query.answer()
 
-        from bot.database import get_unique_chat_users
+        from database import get_unique_chat_users
 
         users = await get_unique_chat_users(limit=10)
 

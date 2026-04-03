@@ -9,7 +9,7 @@ import time
 from datetime import datetime
 from typing import Any, Set
 
-from bot.database import get_db, update_task
+from database import get_db, update_task
 
 logger = logging.getLogger("filebot.services.queue")
 
@@ -27,7 +27,7 @@ class QueueWorker:
             return
         self.bot = bot
         self.running = False
-        from bot.database import get_config_sync
+        from database import get_config_sync
 
         config = get_config_sync() or {}
         self.limit = int(
@@ -178,6 +178,9 @@ class QueueWorker:
                         sort=[("priority", -1), ("created_at", 1)],
                     )
                     if pro_task:
+                        tid = pro_task.get("task_id")
+                        prio = pro_task.get("priority", 0)
+                        logger.info(f"⚡ [PRO-BYPASS] Picking task {tid} (Priority: {prio}) while queue is at capacity.")
                         t = asyncio.create_task(
                             self._process_task_safely(pro_task, bypass_semaphore=True)
                         )
@@ -200,7 +203,7 @@ class QueueWorker:
 
                 task = task[0]
                 user_id = task.get("user_id")
-                from bot.database import get_user, get_config, get_active_task_count
+                from database import get_user, get_config, get_active_task_count
 
                 user = await get_user(user_id)
                 plan_name = user.get("plan", "free").lower()
@@ -230,6 +233,13 @@ class QueueWorker:
                         },
                     )
                     if task:
+                        tid = task.get("task_id")
+                        prio = task.get("priority", 0)
+                        if prio > 0:
+                            logger.info(f"🚀 [PRIORITY] Picking task {tid} (Priority: {prio})")
+                        else:
+                            logger.info(f"📥 [NORMAL] Picking task {tid}")
+
                         t = asyncio.create_task(
                             self._process_task_safely(task, bypass_semaphore=False)
                         )
@@ -317,8 +327,9 @@ class QueueWorker:
                 try:
                     # If this was a wizard session, check if we already have a message ID to edit
                     msg_id = None
-                    if hasattr(self.bot, "progress_data"):
-                        msg_id = self.bot.progress_data.get(task_id, {}).get(
+                    task_obj = await get_task(task_id)
+                    if task_obj and isinstance(task_obj.get("progress_data"), dict):
+                        msg_id = task_obj.get("progress_data", {}).get(
                             "user_progress_msg_id"
                         )
 
@@ -449,7 +460,7 @@ async def run_broadcast_worker(broadcast_id: str) -> None:
     """
     import asyncio
     from datetime import datetime as _dt
-    from bot.database import get_db
+    from database import get_db
 
     logger.info(f"📢 Broadcast worker started: {broadcast_id}")
     db = get_db()

@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
 
-from bot.database import get_config, update_config
+from database import get_config, update_config
 from web.routes.auth import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -266,7 +266,7 @@ async def trigger_broadcast_endpoint(
         if admin_id not in get_admin_ids():
             raise HTTPException(status_code=403, detail="Not authorized")
 
-        from bot.database import create_broadcast_draft
+        from database import create_broadcast_draft
         import asyncio
         from bot.services import run_broadcast_worker
 

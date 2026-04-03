@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
 
-from bot.database import get_db
+from database import get_db
 from web.routes.auth import get_current_admin
 
 logger = logging.getLogger(__name__)

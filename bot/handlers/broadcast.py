@@ -7,7 +7,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.error import TelegramError
 from bot.middleware import admin_only
-from bot.database import (
+from database import (
     get_db,
     get_user,
     get_all_users,

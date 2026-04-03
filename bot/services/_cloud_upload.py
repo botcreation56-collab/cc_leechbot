@@ -140,7 +140,7 @@ async def upload_to_rclone(
 
         logger.info(f"📤 Uploading to rclone: {path.name}")
 
-        from bot.database import get_db
+        from database import get_db
 
         db = get_db()
         config = await db.rclone_configs.find_one({"config_id": rclone_config_id})
@@ -207,7 +207,7 @@ async def upload_to_rclone(
             ]
             logger.info(f"Running: rclone copy {path.name} {destination}")
 
-        from bot.database import increment_rclone_usage
+        from database import increment_rclone_usage
 
         await increment_rclone_usage(rclone_config_id, 1)
 
@@ -270,7 +270,7 @@ async def upload_to_rclone(
         logger.error(f"❌ Rclone upload error: {e}")
         raise RcloneError(str(e)[:100])
     finally:
-        from bot.database import increment_rclone_usage
+        from database import increment_rclone_usage
 
         await increment_rclone_usage(rclone_config_id, -1)
         if config_file and Path(config_file).exists():
@@ -313,7 +313,7 @@ async def get_available_rclone(
 ) -> Optional[Dict[str, Any]]:
     """Get available rclone config for user."""
     try:
-        from bot.database import get_rclone_configs
+        from database import get_rclone_configs
 
         configs = await get_rclone_configs(plan=user_plan)
         if not configs:
@@ -421,7 +421,7 @@ async def create_or_update_storage_message(
     """
     try:
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-        from bot.database import get_config, get_channel_id, get_user, update_user
+        from database import get_config, get_channel_id, get_user, update_user
 
         config = await get_config()
         storage_channel = await get_channel_id("storage") or config.get(
@@ -549,7 +549,7 @@ async def upload_to_terabox(
 async def get_terabox_config(db: Any) -> Optional[Dict[str, Any]]:
     """Get Terabox configuration (encrypted). ADMIN-ONLY."""
     try:
-        from bot.database import get_config
+        from database import get_config
 
         config = await get_config()
         if not config:
@@ -608,7 +608,7 @@ async def upload_and_send_file(
       - >=50MB: Rclone cloud upload + link to user + dump (optional).
     """
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-    from bot.database import (
+    from database import (
         store_cloud_file_metadata,
         delete_expired_cloud_files,
         get_config,
@@ -693,7 +693,7 @@ async def upload_and_send_file(
         # Loop until we get a free config, OR determine no configs exist
         max_wait = 3600  # 1 hour
         slept = 0
-        from bot.database import get_db
+        from database import get_db
 
         db = get_db()
         while not rclone_config and slept < max_wait:

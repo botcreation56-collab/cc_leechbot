@@ -8,10 +8,15 @@ from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel
 from typing import List, Optional
 
-from bot.database import (
-    get_db, get_all_users, get_user, get_rclone_configs, get_config
+from database import (
+    UserRepository,
+    TaskRepository,
+    CloudFileRepository,
+    RcloneConfigRepository,
+    ConfigRepository,
 )
 from web.routes.auth import get_current_user, get_current_admin
+from fastapi import Request
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +25,7 @@ router = APIRouter()
 
 class DashboardStats(BaseModel):
     """Dashboard statistics"""
+
     total_users: int
     free_users: int
     pro_users: int
@@ -30,6 +36,7 @@ class DashboardStats(BaseModel):
 
 class UserStats(BaseModel):
     """User statistics"""
+
     user_id: int
     plan: str
     storage_used: float
@@ -38,64 +45,41 @@ class UserStats(BaseModel):
     banned: bool
 
 
-
-
 @router.get("/dashboard", response_model=DashboardStats)
-async def get_dashboard(admin_id: int = Depends(get_current_admin)):
-    """Get dashboard statistics using aggregation pipeline."""
+async def get_dashboard(request: Request, admin_id: int = Depends(get_current_admin)):
+    """Get dashboard statistics using repositories."""
     try:
-        db = get_db()
-        
-        # ✅ USE AGGREGATION PIPELINE (NO LOADING INTO MEMORY)
-        pipeline = [
-            {
-                "$facet": {
-                    "total": [{"$count": "count"}],
-                    "by_plan": [
-                        {"$group": {
-                            "_id": "$plan",
-                            "count": {"$sum": 1}
-                        }},
-                        {"$match": {"_id": {"$in": ["free", "pro"]}}}
-                    ],
-                    "banned": [
-                        {"$match": {"banned": True}},
-                        {"$count": "count"}
-                    ]
-                }
-            }
-        ]
-        
-        result = await db.users.aggregate(pipeline).to_list(1)
-        data = result[0] if result else {}
-        
-        # Extract counts
-        total_count = data.get("total", [{}])[0].get("count", 0) if data.get("total") else 0
-        
-        plan_counts = {item["_id"]: item["count"] 
-                      for item in data.get("by_plan", [])}
-        free_users = plan_counts.get("free", 0)
-        pro_users = plan_counts.get("pro", 0)
-        
-        banned_list = data.get("banned", [])
-        banned_count = banned_list[0].get("count", 0) if banned_list else 0
-        
+        deps = request.app.state.deps
+        user_repo: UserRepository = deps["user_repo"]
+        rclone_repo: RcloneConfigRepository = deps["rclone_repo"]
+        config_repo: ConfigRepository = deps["config_repo"]
+
+        # ✅ USE REPOSITORY STATS
+        user_stats = await user_repo.stats()
+
+        total_users = user_stats.get("total_users", 0)
+        free_users = user_stats.get("free_users", 0)
+        pro_users = user_stats.get("pro_users", 0)
+        banned_users = user_stats.get("banned_users", 0)
+
         # Get rclone configs and terabox status
-        rclone_configs = await db.rclone_configs.count_documents({})
-        config = await db.config.find_one({})
+        rclone_count = await rclone_repo.count()
+        config = await config_repo.get()
         terabox_enabled = bool(config and config.get("terabox_config"))
-        
-        logger.info(f"✅ Dashboard stats retrieved: admin_id={admin_id}, total_users={total_count}")
-        
+
+        logger.info(
+            f"✅ Dashboard stats retrieved via repositories: admin_id={admin_id}, total_users={total_users}"
+        )
+
         return DashboardStats(
-            total_users=total_count,
+            total_users=total_users,
             free_users=free_users,
             pro_users=pro_users,
-            banned_users=banned_count,
-            rclone_configs=rclone_configs,
-            terabox_enabled=terabox_enabled
+            banned_users=banned_users,
+            rclone_configs=rclone_count,
+            terabox_enabled=terabox_enabled,
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -103,48 +87,43 @@ async def get_dashboard(admin_id: int = Depends(get_current_admin)):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-
 @router.get("/stats/{user_id}", response_model=UserStats)
-async def get_user_stats(user_id: int, admin_id: int = Depends(get_current_admin)):
-    """Get user statistics."""
+async def get_user_stats(
+    request: Request, user_id: int, admin_id: int = Depends(get_current_admin)
+):
+    """Get user statistics using repositories."""
     try:
-        db = get_db()
-        
-        # Get user from database — field is telegram_id, not user_id
-        user = await db.users.find_one({"telegram_id": user_id})
+        deps = request.app.state.deps
+        user_repo: UserRepository = deps["user_repo"]
+        cloud_repo: CloudFileRepository = deps["cloud_repo"]
+
+        # Get user from database
+        user = await user_repo.get(user_id)
         if not user:
             logger.warning(f"❌ User not found: telegram_id={user_id}")
             raise HTTPException(status_code=404, detail="User not found")
-        
-        # ✅ QUERY FILE COUNT FROM DATABASE
-        files_count = await db.files.count_documents({"user_id": user_id})
-        
-        # ✅ CALCULATE ACTUAL STORAGE USED
-        storage_pipeline = [
-            {"$match": {"user_id": user_id}},
-            {"$group": {
-                "_id": None,
-                "total_size": {"$sum": "$file_size"}
-            }}
-        ]
-        storage_result = await db.files.aggregate(storage_pipeline).to_list(1)
-        # storage_result is a list (aggregate returns list of docs)
-        storage_used_bytes = storage_result[0].get("total_size", 0) if storage_result and isinstance(storage_result[0], dict) else 0
-        storage_used = storage_used_bytes / (1024 ** 3)  # Convert to GB
-        
-        storage_limit = user.get("storage_limit", 0) / (1024 ** 3)
-        
-        logger.info(f"✅ User stats retrieved: user_id={user_id}, files={files_count}, storage={storage_used:.2f}GB")
-        
+
+        # ✅ QUERY STORAGE STATS FROM REPOSITORY
+        storage_stats = await cloud_repo.get_user_storage_stats(user_id)
+        files_count = storage_stats["count"]
+        storage_used_bytes = storage_stats["total_size"]
+        storage_used = storage_used_bytes / (1024**3)  # Convert to GB
+
+        storage_limit = user.get("daily_limit", 0) / (1024**3)
+
+        logger.info(
+            f"✅ User stats retrieved via repositories: user_id={user_id}, files={files_count}, storage={storage_used:.2f}GB"
+        )
+
         return UserStats(
             user_id=user_id,
             plan=user.get("plan", "free"),
             storage_used=storage_used,
             storage_limit=storage_limit,
-            files_count=files_count,  # ✅ ACTUAL COUNT
-            banned=user.get("banned", False)
+            files_count=files_count,
+            banned=user.get("banned", False),
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:

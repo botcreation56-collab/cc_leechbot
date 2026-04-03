@@ -9,8 +9,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from database.connection import get_db
-from database.security_log import log_admin_action
+from .connection import get_db
+from .security_log import log_admin_action
 
 logger = logging.getLogger("filebot.db.rclone")
 

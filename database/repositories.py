@@ -300,6 +300,7 @@ class TaskRepository:
         task_type: str = "upload",
         metadata: Optional[Dict] = None,
         max_concurrent_per_user: int = 3,
+        plan: str = "free",
     ) -> Tuple[bool, str]:
         """Create a task and return its string ID.
 
@@ -333,6 +334,10 @@ class TaskRepository:
         import uuid
 
         task_id = str(uuid.uuid4())
+        now = _utcnow()
+        # Pro users get priority 10 by default
+        priority = 10 if plan in ("pro", "premium") else 0
+
         doc = {
             "task_id": task_id,
             "user_id": user_id,
@@ -340,9 +345,11 @@ class TaskRepository:
             "task_type": task_type,
             "status": "pending",
             "metadata": metadata or {},
+            "priority": priority,
+            "plan": plan,
             "error_message": None,
-            "created_at": _utcnow(),
-            "updated_at": _utcnow(),
+            "created_at": now,
+            "updated_at": now,
             "completed_at": None,
         }
         try:
@@ -465,6 +472,27 @@ class CloudFileRepository:
         except Exception as exc:
             logger.error("CloudFileRepository.total_size_bytes failed: %s", exc)
             return 0
+
+    async def get_user_storage_stats(self, user_id: int) -> Dict[str, Any]:
+        """Return (files_count, total_size_bytes) for a user."""
+        try:
+            pipeline = [
+                {"$match": {"user_id": user_id}},
+                {
+                    "$group": {
+                        "_id": None,
+                        "count": {"$sum": 1},
+                        "total_size": {"$sum": "$file_size"},
+                    }
+                },
+            ]
+            res = await self._col.aggregate(pipeline).to_list(1)
+            if not res:
+                return {"count": 0, "total_size": 0}
+            return {"count": res[0]["count"], "total_size": res[0]["total_size"]}
+        except Exception as exc:
+            logger.error("CloudFileRepository.get_user_storage_stats failed: %s", exc)
+            return {"count": 0, "total_size": 0}
 
 
 class OneTimeKeyRepository:
@@ -605,6 +633,13 @@ class RcloneConfigRepository:
         except Exception as exc:
             logger.error("RcloneConfigRepository.list failed: %s", exc)
             return []
+
+    async def count(self) -> int:
+        try:
+            return await self._col.count_documents({})
+        except Exception as exc:
+            logger.error("RcloneConfigRepository.count failed: %s", exc)
+            return 0
 
     async def pick_for_plan(self, plan: str) -> Optional[Dict[str, Any]]:
         """Pick the least-loaded active config for the given plan tier."""

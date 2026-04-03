@@ -286,6 +286,7 @@ def get_settings() -> Settings:
             print(f"\n{'=' * 60}")
             print(f"⚠️ WEBHOOK_SECRET auto-generated for current session (dev only).")
             print(f"{'=' * 60}\n")
+            _write_to_env("WEBHOOK_SECRET", _settings.WEBHOOK_SECRET)
 
         if is_production:
             if not _settings.ENCRYPTION_KEY:
@@ -297,8 +298,9 @@ def get_settings() -> Settings:
 
                     _settings.ENCRYPTION_KEY = Fernet.generate_key().decode()
                     print(
-                        f"Generated ENCRYPTION_KEY (will reset on restart): {_settings.ENCRYPTION_KEY}"
+                        f"Generated ENCRYPTION_KEY (will reset on restart unless saved): {_settings.ENCRYPTION_KEY}"
                     )
+                    _write_to_env("ENCRYPTION_KEY", _settings.ENCRYPTION_KEY)
                 except Exception as e:
                     raise RuntimeError(f"Failed to generate ENCRYPTION_KEY: {e}")
 
@@ -310,8 +312,9 @@ def get_settings() -> Settings:
 
                 _settings.JWT_SECRET = _secrets.token_urlsafe(32)
                 print(
-                    f"Generated JWT_SECRET (will reset on restart): {_settings.JWT_SECRET}"
+                    f"Generated JWT_SECRET (will reset on restart unless saved): {_settings.JWT_SECRET}"
                 )
+                _write_to_env("JWT_SECRET", _settings.JWT_SECRET)
 
         # Auto-generate only in development mode with explicit warnings
         if not _settings.ENCRYPTION_KEY or _settings.ENCRYPTION_KEY == "":
@@ -345,13 +348,25 @@ def get_settings() -> Settings:
 
 
 def _warn_generated(name: str, value: str) -> None:
-    """Print a loud warning when a secret is auto-generated."""
+    """Print a loud warning when a secret is auto-generated and write to .env."""
+    _write_to_env(name, value)
     border = "=" * 60
     print(f"\n{border}")
-    print(f"!!! AUTO-GENERATED {name} — NOT PERSISTENT ACROSS RESTARTS !!!")
-    print(f"   Copy this into your Render environment variables:")
+    print(f"!!! AUTO-GENERATED {name} !!!")
+    print(f"   It has been appended to your .env file locally.")
+    print(f"   If you are on Render, copy this into your environment variables:")
     print(f"   {name}={value}")
     print(f"{border}\n")
+
+def _write_to_env(key: str, value: str) -> None:
+    """Append a key-value pair to the .env file."""
+    try:
+        env_path = os.path.join(os.getcwd(), ".env")
+        with open(env_path, "a") as f:
+            f.write(f"\n{key}={value}\n")
+        print(f"✅ Saved auto-generated {key} to .env file for persistence.")
+    except Exception as e:
+        print(f"⚠️ Failed to write {key} to .env: {e}")
 
 
 def get_admin_ids() -> List[int]:

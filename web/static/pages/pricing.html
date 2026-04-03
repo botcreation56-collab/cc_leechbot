@@ -49,8 +49,17 @@
         }
 
         @keyframes pulse {
-            0%, 100% { transform: scale(1); opacity: 0.5; }
-            50% { transform: scale(1.1); opacity: 1; }
+
+            0%,
+            100% {
+                transform: scale(1);
+                opacity: 0.5;
+            }
+
+            50% {
+                transform: scale(1.1);
+                opacity: 1;
+            }
         }
 
         /* Header */
@@ -152,8 +161,15 @@
         }
 
         @keyframes fadeInUp {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         .hero h1 {
@@ -162,6 +178,7 @@
             margin-bottom: 16px;
             background: linear-gradient(135deg, #fff 0%, #a0aec0 100%);
             -webkit-background-clip: text;
+            background-clip: text;
             -webkit-text-fill-color: transparent;
             animation: fadeInUp 0.6s ease-out 0.1s both;
         }
@@ -417,6 +434,7 @@
             font-weight: 700;
             background: linear-gradient(135deg, #0096FF, #00D4FF);
             -webkit-background-clip: text;
+            background-clip: text;
             -webkit-text-fill-color: transparent;
             margin-bottom: 8px;
         }
@@ -515,7 +533,9 @@
         }
 
         @keyframes spin {
-            to { transform: rotate(360deg); }
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         /* User Badge */
@@ -621,6 +641,90 @@
         .toast.error i {
             color: #f85149;
         }
+
+        /* Checkout Modal */
+        .modal-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 2000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+
+        .modal-backdrop.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .checkout-modal {
+            background: rgba(22, 27, 34, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            width: 100%;
+            max-width: 400px;
+            padding: 30px;
+            transform: translateY(20px);
+            transition: transform 0.3s;
+        }
+
+        .modal-backdrop.show .checkout-modal {
+            transform: translateY(0);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .modal-header h3 {
+            margin: 0;
+            font-size: 20px;
+            color: white;
+        }
+
+        .btn-close {
+            background: none;
+            border: none;
+            color: #8b949e;
+            font-size: 20px;
+            cursor: pointer;
+        }
+
+        .checkout-form .form-group {
+            margin-bottom: 20px;
+        }
+
+        .checkout-form label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 14px;
+            color: #8b949e;
+        }
+
+        .checkout-form input {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 12px;
+            color: white;
+            font-family: inherit;
+        }
+
+        .checkout-form input:focus {
+            outline: none;
+            border-color: #0096FF;
+        }
     </style>
 </head>
 
@@ -690,7 +794,8 @@
                             How do I upgrade to Pro?
                         </div>
                         <div class="faq-answer">
-                            Click the "Upgrade to Pro" button and follow the instructions. You'll be guided through a simple payment process.
+                            Click the "Upgrade to Pro" button and follow the instructions. You'll be guided through a
+                            simple payment process.
                         </div>
                     </div>
                     <div class="faq-item">
@@ -699,7 +804,8 @@
                             What payment methods are accepted?
                         </div>
                         <div class="faq-answer">
-                            We accept all major credit/debit cards, UPI, and various payment gateways depending on your region.
+                            We accept all major credit/debit cards, UPI, and various payment gateways depending on your
+                            region.
                         </div>
                     </div>
                     <div class="faq-item">
@@ -708,7 +814,8 @@
                             Can I cancel anytime?
                         </div>
                         <div class="faq-answer">
-                            Yes, you can cancel your subscription at any time. Your pro features will remain active until the end of your billing period.
+                            Yes, you can cancel your subscription at any time. Your pro features will remain active
+                            until the end of your billing period.
                         </div>
                     </div>
                     <div class="faq-item">
@@ -717,7 +824,8 @@
                             What happens to my files when I downgrade?
                         </div>
                         <div class="faq-answer">
-                            All your files remain safe. You can still access them, but new uploads will be subject to free plan limits.
+                            All your files remain safe. You can still access them, but new uploads will be subject to
+                            free plan limits.
                         </div>
                     </div>
                 </div>
@@ -736,6 +844,30 @@
     <div class="toast" id="toast">
         <i class="fas fa-check-circle"></i>
         <span id="toast-message">Success!</span>
+    </div>
+
+    <!-- Checkout Modal -->
+    <div class="modal-backdrop" id="checkout-modal">
+        <div class="checkout-modal">
+            <div class="modal-header">
+                <h3>Upgrade to Pro</h3>
+                <button class="btn-close" onclick="closeCheckout()">×</button>
+            </div>
+            <div style="margin-bottom: 20px; color: #8b949e; font-size: 14px; line-height: 1.5;">
+                Please contact our payment support to complete your upgrade, or submit your Telegram username /
+                transaction ID below.
+                <br><br>
+                Admin Contact: <strong id="support-contact-display" style="color: white;">@admin</strong>
+            </div>
+            <div class="checkout-form">
+                <div class="form-group">
+                    <label>Transaction ID / Message</label>
+                    <input type="text" id="tx-id" placeholder="Enter transaction ID or note">
+                </div>
+                <button class="btn-plan btn-pro" onclick="submitCheckout()" style="padding: 12px;">Submit
+                    Request</button>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -789,18 +921,18 @@
             try {
                 const res = await fetch('/api/public/plans');
                 const data = await res.json();
-                
+
                 botUsername = data.bot_username || 'cc_leechbot';
                 currencySymbol = data.currency_symbol || '₹';
-                
+
                 if (data.site_name) {
                     document.title = data.site_name + ' - Pricing';
                     document.querySelector('.logo span:last-child').textContent = data.site_name;
                 }
-                if (data.site_description) {
-                    document.querySelector('.hero p').textContent = data.site_description;
+                if (data.support_contact) {
+                    document.getElementById('support-contact-display').textContent = data.support_contact;
                 }
-                
+
                 renderPricing(data.plans || { free: {}, pro: {} });
             } catch (e) {
                 console.error('Failed to load pricing:', e);
@@ -825,14 +957,14 @@
             if (planData.features && planData.features.length > 0) {
                 return planData.features;
             }
-            
+
             const features = [];
             const parallel = planData.parallel || 1;
             const storage = planData.storage_per_day || 5;
             const expiry = planData.dump_expiry_days || 0;
             const maxSize = planData.max_file_size_mb || 50;
             const maxFileSizeGB = planData.max_file_size_gb || (maxSize / 1024).toFixed(1);
-            
+
             if (planType === 'free') {
                 features.push('Basic file processing');
                 if (parallel > 1) features.push(`${parallel} parallel uploads`);
@@ -850,7 +982,7 @@
                 features.push('Custom metadata injection');
                 features.push('24/7 Priority support');
             }
-            
+
             return features;
         }
 
@@ -940,7 +1072,44 @@
                 }, 1500);
                 return;
             }
-            window.open(`https://t.me/${botUsername}?start=upgrade_pro`, '_blank');
+            document.getElementById('checkout-modal').classList.add('show');
+        }
+
+        function closeCheckout() {
+            document.getElementById('checkout-modal').classList.remove('show');
+            document.getElementById('tx-id').value = '';
+        }
+
+        async function submitCheckout() {
+            const txId = document.getElementById('tx-id').value;
+            if (!txId) {
+                showToast('Please enter a transaction ID or message', 'error');
+                return;
+            }
+
+            try {
+                const token = localStorage.getItem('filebot_token');
+                const res = await fetch('/api/user/settings/checkout', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + token,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ tx_id: txId })
+                });
+
+                if (res.ok) {
+                    showToast('Upgrade request submitted successfully! Admin will review shortly.', 'success');
+                    setTimeout(() => {
+                        closeCheckout();
+                    }, 2000);
+                } else {
+                    const err = await res.json();
+                    showToast(err.detail || 'Failed to submit request', 'error');
+                }
+            } catch (err) {
+                showToast('Error connecting to server', 'error');
+            }
         }
 
         document.addEventListener('DOMContentLoaded', async () => {

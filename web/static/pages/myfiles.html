@@ -196,52 +196,7 @@
 </head>
 
 <body class="theme-dark">
-    <!-- Hamburger button (mobile only) -->
-    <button class="hamburger" id="hamburger-btn" aria-label="Open menu" onclick="toggleSidebar()">
-        <span></span>
-        <span></span>
-        <span></span>
-    </button>
-
-    <!-- Sidebar Backdrop -->
-    <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="toggleSidebar()"></div>
-
     <div class="layout">
-        <!-- Sidebar -->
-        <nav class="sidebar" id="sidebar">
-            <a href="./dashboard.html" class="brand">
-                <span>⚡</span>
-                <div class="brand-text">FileBot</div>
-            </a>
-
-            <ul class="nav-menu">
-                <li class="nav-item">
-                    <a href="./dashboard.html" class="nav-link">
-                        <span class="nav-icon">📊</span>
-                        <span class="nav-text">Dashboard</span>
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a href="./myfiles.html" class="nav-link active">
-                        <span class="nav-icon">📁</span>
-                        <span class="nav-text">My Files</span>
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a href="./settings.html" class="nav-link">
-                        <span class="nav-icon">⚙️</span>
-                        <span class="nav-text">Settings</span>
-                    </a>
-                </li>
-            </ul>
-
-            <button onclick="auth.logout()" class="nav-link"
-                style="background: none; border: none; width: 100%; color: #ff7b72; margin-top: auto; cursor: pointer;">
-                <span class="nav-icon">🚪</span>
-                <span class="nav-text">Logout</span>
-            </button>
-        </nav>
-
         <!-- Main Content -->
         <main class="main-content">
 
@@ -344,13 +299,6 @@
         });
 
         // --- Mobile Sidebar Toggle ---
-        function toggleSidebar() {
-            document.getElementById('sidebar').classList.toggle('open');
-            document.getElementById('sidebar-backdrop').classList.toggle('show');
-            const btn = document.getElementById('hamburger-btn');
-            if (btn) btn.classList.toggle('open');
-        }
-
         window.addEventListener('resize', () => {
             if (window.innerWidth > 768) {
                 const sidebar = document.getElementById('sidebar');
@@ -358,6 +306,8 @@
             }
         });
     </script>
+<script src="/static/js/common.js"></script>
+    <script>injectSidebar("myfiles");</script>
 </body>
 
 </html>

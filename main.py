@@ -913,12 +913,24 @@ async def update_webhook_capacity(bot, user_count: int) -> bool:
 async def cleanup_bot(application: Application, db_conn) -> None:
     """Gracefully stop PTB application and DB connection."""
     from bot.pyrogram_client import stop_pyrogram
+    from bot.services import QueueWorker
+
+    try:
+        worker = QueueWorker.get_instance()
+        await worker.stop()
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        if "QueueWorker NOT initialized" not in str(e):
+            logger.warning(f"⚠️ Could not stop QueueWorker: {e}")
 
     await application.stop()
     await application.shutdown()
     await stop_pyrogram()
     if db_conn:
         await db_conn.close()
+    import logging
+    logger = logging.getLogger(__name__)
     logger.info("🛑 Cleanup complete")
 
 

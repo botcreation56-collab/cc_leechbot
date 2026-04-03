@@ -7,7 +7,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.error import TelegramError
 from bot.middleware import admin_only
-from bot.database import (
+from database import (
     get_db,
     get_config,
     get_user,
@@ -101,7 +101,7 @@ async def handle_admin_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def handle_admin_add_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show existing rclone configs and option to add new"""
     try:
-        from bot.database import get_rclone_configs
+        from database import get_rclone_configs
 
         existing_configs = await get_rclone_configs()
         keyboard = []
@@ -210,7 +210,7 @@ async def handle_list_rclone_remotes(
 ):
     """List configured rclone remotes with CRUD-style simplified UI"""
     try:
-        from bot.database import get_rclone_configs
+        from database import get_rclone_configs
 
         remotes = await get_rclone_configs()
 
@@ -265,7 +265,7 @@ async def handle_view_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE)
         query = update.callback_query
         rid = query.data.replace("view_rclone_", "")
 
-        from bot.database import get_rclone_config
+        from database import get_rclone_config
 
         config = await get_rclone_config(rid)
 
@@ -328,7 +328,7 @@ async def handle_rclone_edit_creds_prompt(
         query = update.callback_query
         rid = query.data.replace("rclone_edit_creds_", "")
 
-        from bot.database import get_rclone_config
+        from database import get_rclone_config
 
         config = await get_rclone_config(rid)
         if not config:
@@ -409,7 +409,7 @@ async def handle_admin_delete_rclone_confirm(
         query = update.callback_query
         rid = query.data.replace("rclone_delete_confirm_", "")
 
-        from bot.database import delete_rclone_config
+        from database import delete_rclone_config
 
         success = await delete_rclone_config(rid)
 
@@ -510,7 +510,7 @@ async def handle_test_rclone(update: Update, context: ContextTypes.DEFAULT_TYPE)
         query = update.callback_query
         await query.answer("🧪 Select a remote to test...", show_alert=False)
 
-        from bot.database import get_rclone_configs
+        from database import get_rclone_configs
 
         remotes = await get_rclone_configs()
 
@@ -734,7 +734,7 @@ async def handle_toggle_rclone(update: Update, context: ContextTypes.DEFAULT_TYP
         query = update.callback_query
         rid = query.data.replace("toggle_rclone_", "")
 
-        from bot.database import get_rclone_config, update_rclone_config
+        from database import get_rclone_config, update_rclone_config
 
         config = await get_rclone_config(rid)
         if not config:
@@ -782,7 +782,7 @@ async def rclone_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
             from bot.utils import encrypt_credentials
-            from bot.database import update_rclone_config
+            from database import update_rclone_config
 
             encrypted = encrypt_credentials({"config": text})
             success = await update_rclone_config(rid, {"credentials": encrypted})
@@ -822,7 +822,7 @@ async def rclone_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
 
-            from bot.database import update_rclone_config
+            from database import update_rclone_config
 
             success = await update_rclone_config(old_rid, {"config_id": new_rid})
 
@@ -1067,7 +1067,7 @@ async def rclone_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             config = wizard.get("config", "")
             plan = wizard.get("plan", "free")
 
-            from bot.database import add_rclone_config
+            from database import add_rclone_config
 
             config_id = await add_rclone_config(
                 name=name,

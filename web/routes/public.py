@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from bot.database import get_db, update_user, get_config, get_user
+from database import get_db, update_user, get_config, get_user
 from config.settings import get_settings
 
 templates = Jinja2Templates(
@@ -552,7 +552,7 @@ async def get_public_plans():
     Dynamically reads from database configuration.
     """
     try:
-        from bot.database import get_config
+        from database import get_config
         from config.settings import get_settings
 
         config = await get_config() or {}
@@ -621,8 +621,8 @@ async def get_public_plans():
             "currency": "INR",
             "currency_symbol": "₹",
             "site_name": settings.SITE_NAME or "FileBot",
-            "site_description": settings.SITE_DESCRIPTION
-            or "Fast & reliable file processing bot",
+            "site_description": settings.SITE_DESCRIPTION or "Fast & reliable file processing bot",
+            "support_contact": config.get("support_contact", "@admin")
         }
 
     except Exception as e:
@@ -666,7 +666,7 @@ async def rclone_auth_redirect(user_id: int, client_id: str, client_secret: str)
     import json
     import base64
     from urllib.parse import quote
-    from bot.database import get_config
+    from database import get_config
 
     state_data = {"u": user_id, "i": client_id, "s": client_secret}
     state = base64.urlsafe_b64encode(json.dumps(state_data).encode()).decode()
@@ -741,7 +741,7 @@ async def rclone_callback(
             raise HTTPException(status_code=400, detail="Malformed state payload")
 
         # Exchange code for token
-        from bot.database import get_config
+        from database import get_config
 
         config = await get_config() or {}
         base_url = (
@@ -795,7 +795,7 @@ async def rclone_callback(
         )
 
         # Save to DB
-        from bot.database import add_rclone_config
+        from database import add_rclone_config
 
         config_id = await add_rclone_config(
             name=remote_name,
@@ -809,7 +809,7 @@ async def rclone_callback(
 
         if config_id:
             # Update the config snippet to reflect the assigned DB ID as its internal section name
-            from bot.database import update_rclone_config
+            from database import update_rclone_config
 
             updated_snippet = config_snippet.replace(
                 f"[{remote_name}]", f"[{config_id}]"

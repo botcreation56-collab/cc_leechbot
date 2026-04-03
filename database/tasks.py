@@ -7,8 +7,8 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-from database.connection import get_db
-from database.users import get_user
+from .connection import get_db
+from .users import get_user
 
 logger = logging.getLogger("filebot.db.tasks")
 

@@ -99,7 +99,7 @@ class LinkShortener:
         """Shorten a URL using the active shortener from config, or TinyURL fallback."""
         try:
             import aiohttp
-            from bot.database import get_config
+            from database import get_config
             from bot.services._link_shortener import CloudLinkGenerator
 
             # Default fallback behaviour
@@ -171,7 +171,7 @@ class LinkShortener:
                 return None
 
             # 3. Detect which service was used
-            from bot.database import get_config
+            from database import get_config
 
             config = await get_config()
             service_domain = "tinyurl.com"
@@ -189,7 +189,7 @@ class LinkShortener:
                 service_domain = "tinyurl.com"
 
             # 4. Save to MongoDB
-            from bot.database import get_db
+            from database import get_db
 
             db = get_db()
 

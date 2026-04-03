@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel
 from typing import List, Optional
 
-from bot.database import (
+from database import (
     get_db,
     get_user,
     update_user,
@@ -212,15 +212,22 @@ async def upgrade_user(user_id: int, admin_id: int = Depends(get_current_admin))
     Upgrade user to pro
     """
     try:
-        # Upgrade user
-        db = get_db()
+        # Fetch configured PRO plan
+        from database import get_config
+        config = await get_config() or {}
+        plans = config.get("plans", {})
+        pro_plan = plans.get("pro") or plans.get("premium", {})
+        
+        limit_gb = pro_plan.get("storage_per_day", 50)
+        parallel = pro_plan.get("parallel", 3)
+
         success = await update_user(
             user_id,
             {
                 "plan": "pro",
-                "storage_limit": 10 * 1024 * 1024 * 1024,  # 10GB
+                "storage_limit": limit_gb * 1024 * 1024 * 1024,
                 "daily_limit": None,
-                "parallel_slots": 5,
+                "parallel_slots": parallel,
             },
             admin_id,
         )

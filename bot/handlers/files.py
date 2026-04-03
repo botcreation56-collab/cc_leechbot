@@ -7,7 +7,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.error import TelegramError
 from bot.middleware import admin_only
-from bot.database import (
+from database import (
     get_db,
     get_user,
     get_all_users,
@@ -350,7 +350,7 @@ async def handle_file_upload(
 
         # 3️⃣ ✅ CHECK FOR DUPLICATES (FINGERPRINTING)
         if file_unique_id:
-            from bot.database import get_db
+            from database import get_db
 
             db = get_db()
             existing_task = await db.tasks.find_one(
@@ -431,7 +431,7 @@ async def process_file_task(context: ContextTypes.DEFAULT_TYPE):
 
     # 2. Upload + Send
     from bot.services import upload_and_send_file
-    from bot.database import get_user, get_channel_id
+    from database import get_user, get_channel_id
 
     user = await get_user(user_id)
     config = await get_config()
@@ -462,7 +462,7 @@ async def process_file_task(context: ContextTypes.DEFAULT_TYPE):
 
     # 3. Generate Link
     # 3. Generate Link with Secure Token
-    from bot.database import create_one_time_key
+    from database import create_one_time_key
     import secrets
     from datetime import datetime, timedelta
 
@@ -855,7 +855,7 @@ async def handle_us_thumbnail_menu(update: Update, context: ContextTypes.DEFAULT
     try:
         query = update.callback_query
         user_id = update.effective_user.id
-        from bot.database import get_user
+        from database import get_user
 
         user = await get_user(user_id)
         settings = user.get("settings", {})
@@ -927,7 +927,7 @@ async def handle_us_thumbnail(update: Update, context: ContextTypes.DEFAULT_TYPE
         # 2. Get User (Create if missing)
         user = await get_user(user_id)
         if not user:
-            from bot.database import create_user
+            from database import create_user
 
             username = update.effective_user.username or "Unknown"
             first_name = update.effective_user.first_name or "User"
@@ -935,7 +935,7 @@ async def handle_us_thumbnail(update: Update, context: ContextTypes.DEFAULT_TYPE
             logger.info(f"🆕 User {user_id} created during thumbnail setup")
 
         # 3. Backup to Storage Channel (Availability Check)
-        from bot.database import get_storage_channel, get_dump_channel
+        from database import get_storage_channel, get_dump_channel
 
         storage_config = await get_storage_channel()
         dump_config = await get_dump_channel()
@@ -1129,7 +1129,7 @@ class WizardHandler:
     ):
         user_id = update.effective_user.id
 
-        from bot.database import get_user
+        from database import get_user
 
         user = await get_user(user_id)
         user_settings = user.get("settings", {}) if user else {}
@@ -1518,7 +1518,7 @@ class WizardHandler:
         try:
             # 0. Vanish old storage message (if any) and post new ledger
             from bot.services import create_or_update_storage_message
-            from bot.database import get_config, get_channel_id, get_user, update_user
+            from database import get_config, get_channel_id, get_user, update_user
 
             custom_name = session.get("custom_name", "Untitled")
             logger.info(
@@ -1564,10 +1564,11 @@ class WizardHandler:
 
             # --- PROGRESS BAR FIX ---
             # Register message ID and send initial progress (0%) immediately
-            if not hasattr(bot, "progress_data"):
-                bot.progress_data = {}
-            task_info = bot.progress_data.setdefault(task_id, {})
+            from database import get_task, update_task
+            task_obj = await get_task(task_id)
+            task_info = task_obj.get("progress_data", {}) if task_obj else {}
             task_info["user_id"] = user_id
+            await update_task(task_id, {"progress_data": task_info})
 
             if query:
                 try:
@@ -1725,7 +1726,7 @@ class WizardHandler:
                     logger.warning(f"Could not update progress: {e}")
 
                 # Use original file directly
-                from bot.database import get_user
+                from database import get_user
                 from bot.services import upload_and_send_file
 
                 user = await get_user(user_id)
@@ -1784,7 +1785,7 @@ class WizardHandler:
                     }
 
                 # Generate stream URL
-                from bot.database import create_one_time_key
+                from database import create_one_time_key
                 import secrets
                 from datetime import datetime, timedelta
 
@@ -1812,7 +1813,7 @@ class WizardHandler:
                     pass
 
                 # Finalize task
-                from bot.database import update_task
+                from database import update_task
 
                 await update_task(task_id, {"status": "completed"})
 
@@ -1982,7 +1983,7 @@ class WizardHandler:
             except Exception as e:
                 logger.warning(f"Could not update upload progress: {e}")
 
-            from bot.database import get_user, get_config
+            from database import get_user, get_config
             from bot.services import upload_and_send_file
 
             user = await get_user(user_id)
@@ -2025,7 +2026,7 @@ class WizardHandler:
                 }
 
             # 6. Generate Stream Link with Shortener Token logic if needed
-            from bot.database import create_one_time_key
+            from database import create_one_time_key
             import secrets
             from datetime import datetime, timedelta
 
@@ -2146,7 +2147,7 @@ class WizardHandler:
         query = update.callback_query
 
         try:
-            from bot.database import get_user, update_task, get_user_position
+            from database import get_user, update_task, get_user_position
             from bot.services._queue_worker import QueueWorker
             from bot.services._ffmpeg import FFmpegService
             from config.settings import get_settings
@@ -2163,7 +2164,7 @@ class WizardHandler:
 
             plan_name = user.get("plan", "free").lower()
 
-            from bot.database import get_config, get_active_task_count
+            from database import get_config, get_active_task_count
 
             plans_config = await get_config("plans") or {}
             plan_limit = plans_config.get(plan_name, {}).get("parallel", 1)

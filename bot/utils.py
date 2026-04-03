@@ -54,7 +54,7 @@ class TelegramLogHandler(logging.Handler):
     async def initialize(cls, bot: Bot):
         """Initialize the handler with a bot instance."""
         cls._bot = bot
-        from bot.database import get_channel_id
+        from database import get_channel_id
         from config.settings import get_settings
 
         settings = get_settings()
@@ -202,7 +202,7 @@ async def _sync_user_profile_to_storage(bot: Bot, user_id: int) -> None:
 
     async with _sync_locks[user_id]:
         try:
-            from bot.database import get_user, update_user, get_storage_channel
+            from database import get_user, update_user, get_storage_channel
 
             user = await get_user(user_id)
             if not user:
@@ -224,7 +224,7 @@ async def _sync_user_profile_to_storage(bot: Bot, user_id: int) -> None:
                 else None
             )
 
-            from bot.database import get_user_destinations
+            from database import get_user_destinations
 
             try:
                 dests = await get_user_destinations(user_id)
@@ -580,7 +580,7 @@ async def send_to_log_channel(
 ) -> bool:
     """Send a message to the configured log channel."""
     try:
-        from bot.database import get_channel_id
+        from database import get_channel_id
         from config.settings import get_settings
 
         db_log_channel = await get_channel_id("log")

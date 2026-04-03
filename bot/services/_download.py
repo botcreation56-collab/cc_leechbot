@@ -287,7 +287,7 @@ async def download_from_mega(
     logger.info(f"📥 Starting Mega download: {url}")
 
     # Pass credentials to subprocess if admin has them
-    from bot.database import get_db
+    from database import get_db
 
     mega_email = ""
     mega_password = ""

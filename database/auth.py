@@ -6,7 +6,7 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from database.connection import get_db
+from .connection import get_db
 
 logger = logging.getLogger("filebot.db.auth")
 

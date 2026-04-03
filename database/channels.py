@@ -6,10 +6,10 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from database.connection import get_db
-from database.cache import _get_cache_lock, _bust_config_cache
-from database.config import get_config
-from database.security_log import log_admin_action
+from .connection import get_db
+from .cache import _get_cache_lock, _bust_config_cache
+from .config import get_config
+from .security_log import log_admin_action
 
 logger = logging.getLogger("filebot.db.channels")
 

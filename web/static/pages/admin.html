@@ -249,32 +249,7 @@
 </head>
 
 <body class="theme-dark">
-    <!-- Hamburger button (mobile only) -->
-    <button class="hamburger" id="hamburger-btn" aria-label="Open menu" onclick="toggleSidebar()">
-        <span></span>
-        <span></span>
-        <span></span>
-    </button>
-    <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="toggleSidebar()"></div>
-
     <div class="layout">
-        <!-- Sidebar -->
-        <nav class="sidebar" id="sidebar">
-            <a href="./dashboard.html" class="brand"><span>🛡️</span> Admin Panel</a>
-            <div class="nav-link active" onclick="switchTab('overview', this)"><span>📊</span> Overview</div>
-            <div class="nav-link" onclick="switchTab('global-config', this)"><span>⚙️</span> Global Config</div>
-            <div class="nav-link" onclick="switchTab('bot-plans', this)"><span>💎</span> Bot Plans</div>
-            <div class="nav-link" onclick="switchTab('broadcast', this)"><span>📢</span> Broadcasts</div>
-
-            <a href="/dashboard.html" class="nav-link"
-                style="margin-top: 20px; border-top: 1px solid #333; border-radius: 0;"><span>🏠</span> User
-                Dashboard</a>
-
-            <div style="flex:1"></div>
-            <button onclick="logout()" class="nav-link"
-                style="background:none; border:none; color:#ff7b72; cursor:pointer;">🚪 Logout</button>
-        </nav>
-
         <main class="main-content">
             <h1 style="margin-bottom: 10px;">Admin Dashboard</h1>
             <p style="color: #8b949e; margin-bottom: 30px;">System Health & Configuration</p>
@@ -977,15 +952,10 @@
             localStorage.removeItem('filebot_token');
             window.location.href = '../login.html';
         }
-        function toggleSidebar() {
-            document.getElementById('sidebar').classList.toggle('open');
-            document.getElementById('sidebar-backdrop').classList.toggle('show');
-            const btn = document.getElementById('hamburger-btn');
-            if (btn) btn.classList.toggle('open');
-        }
-
         document.addEventListener('DOMContentLoaded', loadDashboard);
     </script>
+<script src="/static/js/common.js"></script>
+    <script>injectSidebar("admin");</script>
 </body>
 
 </html>
