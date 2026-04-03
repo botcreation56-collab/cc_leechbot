@@ -849,36 +849,54 @@ async def configure_webhook(
     level changes — Telegram will update without dropping pending updates.
     """
     try:
-        logger.info("configure_webhook: STARTING bot.set_webhook call...")
+        # --- 1. Secret Protector ---
+        # If the secret mistakenly matches the URL, it means it's misconfigured in Render.
+        # We must ignore it to avoid Telegram API hangs.
+        if secret and (
+            "http://" in secret.lower()
+            or "https://" in secret.lower()
+            or secret.strip() == webhook_url.strip()
+        ):
+            logger.error(
+                "🚨 CRITICAL: WEBHOOK_SECRET is set to a URL! This is a misconfiguration."
+            )
+            logger.error(
+                "👉 FIX: Change WEBHOOK_SECRET in Render to a random string (e.g. 'my_secret_123'), NOT your bot URL."
+            )
+            logger.warning("⚠️ Proceeding WITHOUT secret_token protection to avoid hang...")
+            secret = ""
+
+        # --- 2. Sanitization ---
         import re
 
-        # Sanitize secret: only A-Z, a-z, 0-9, _ and -
-        safe_secret = None
-        if secret:
-            safe_secret = re.sub(r'[^a-zA-Z0-9_-]', '', secret)
-            if not safe_secret:
-                logger.warning("⚠️ WEBHOOK_SECRET was entirely invalid! Disabling secret token.")
-                safe_secret = None
-            elif safe_secret != secret:
-                logger.warning(
-                    f"⚠️ WEBHOOK_SECRET contained invalid characters. Cleaned: {safe_secret}"
-                )
-
-        # Dynamic max_connections scaling
-        max_conn = _compute_webhook_max_connections(user_count)
         safe_secret = get_safe_secret(secret)
+        if secret and not safe_secret:
+            logger.warning(
+                "⚠️ WEBHOOK_SECRET was entirely invalid! Disabling protection."
+            )
+        elif safe_secret and safe_secret != secret:
+            logger.warning(f"⚠️ WEBHOOK_SECRET cleaned: {secret} -> {safe_secret}")
+
+        # --- 3. Dynamic max_connections scaling ---
+        max_conn = _compute_webhook_max_connections(user_count)
 
         logger.info(
-            "configure_webhook: max_connections=%d | safe_secret_len=%s",
+            "configure_webhook: Attempting bot.set_webhook | url=%s | max_conn=%d | secret_len=%d",
+            webhook_url,
             max_conn,
             len(safe_secret) if safe_secret else 0,
         )
 
-        await bot.set_webhook(
-            url=webhook_url,
-            max_connections=max_conn,
-            secret_token=safe_secret,
-            drop_pending_updates=False,
+        # --- 4. API Call with Internal Timeout ---
+        # We use a 12s internal timeout to fail-fast if api.telegram.org is slow/blocked.
+        await asyncio.wait_for(
+            bot.set_webhook(
+                url=webhook_url,
+                max_connections=max_conn,
+                secret_token=safe_secret,
+                drop_pending_updates=False,
+            ),
+            timeout=12.0,
         )
         logger.info(
             "✅ configure_webhook: bot.set_webhook COMPLETED (max_connections=%d)", max_conn
