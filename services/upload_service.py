@@ -336,7 +336,7 @@ class UploadService:
 
         Returns: {stream_link, token, expires_at_iso}.
         """
-        from bot.database import get_config
+        from database import get_config
         config = await get_config() or {}
         if plan == "free":
             expiry_days = config.get("retention_free_days", 7)

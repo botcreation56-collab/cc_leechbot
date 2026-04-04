@@ -2306,7 +2306,7 @@ async def execute_processing_flow_by_task(bot, task: dict) -> None:
         )
 
         # Get user settings for processing preferences
-        from bot.database import (
+        from database import (
             get_user as _get_user,
             get_config as _get_config,
             update_task as _update_task,
@@ -2443,7 +2443,7 @@ async def execute_processing_flow_by_task(bot, task: dict) -> None:
 
         # Generate stream link
         # Generate stream link with Secure Token
-        from bot.database import create_one_time_key
+        from database import create_one_time_key
         import secrets
         from datetime import datetime, timedelta
 
@@ -2533,7 +2533,7 @@ async def execute_processing_flow_by_task(bot, task: dict) -> None:
         )
 
         from bot.utils.error_handler import get_user_error_message, notify_admin
-        from bot.database import fail_task
+        from database import fail_task
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
         # Notify admin with technical details
