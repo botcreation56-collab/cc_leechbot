@@ -182,25 +182,30 @@ def deduce_webhook_url() -> str:
 
 
 def validate_environment() -> None:
-    """Check required settings and log environment info."""
+    """Check required settings and auto-deduce webhook URL where possible."""
     logger.info("🔍 ENV BOT_TOKEN set: %s", bool(settings.BOT_TOKEN))
     logger.info("🔍 ENV WEBHOOK_URL set: %s", bool(settings.WEBHOOK_URL))
     logger.info(
         "🔍 ENV RENDER_EXTERNAL_URL: %s", os.getenv("RENDER_EXTERNAL_URL") or "None"
     )
 
-    # Auto-deduce webhook if requested OR if running on Render/with a DOMAIN
+    # Auto-deduce webhook URL if not already set.
+    # Always try — do not gate behind USE_WEBHOOK or platform env vars.
+    # On Render, RENDER_SERVICE_URL is injected automatically and deduce_webhook_url()
+    # picks it up. On local dev with no deducible URL, deduce returns "" and we skip.
     if not settings.WEBHOOK_URL:
-        if (
-            os.getenv("USE_WEBHOOK") == "true"
-            or os.getenv("RENDER_SERVICE_URL")
-            or os.getenv("RENDER_EXTERNAL_URL")
-            or os.getenv("DOMAIN")
-        ):
-            deduced = deduce_webhook_url()
-            if deduced:
-                settings.WEBHOOK_URL = deduced.rstrip("/") + "/webhook/telegram"
-                logger.info("🔍 Auto webhook URL: %s", settings.WEBHOOK_URL)
+        deduced = deduce_webhook_url()
+        if deduced:
+            # Safety: never double-append the path
+            base = deduced.rstrip("/")
+            if not base.endswith("/webhook/telegram"):
+                base = base + "/webhook/telegram"
+            settings.WEBHOOK_URL = base
+            logger.info("🔍 Auto-deduced Webhook URL: %s", settings.WEBHOOK_URL)
+    elif not settings.WEBHOOK_URL.endswith("/webhook/telegram"):
+        # User set a base URL without the path — append it automatically
+        settings.WEBHOOK_URL = settings.WEBHOOK_URL.rstrip("/") + "/webhook/telegram"
+        logger.info("🔍 Appended /webhook/telegram → %s", settings.WEBHOOK_URL)
 
     required = {"BOT_TOKEN", "MONGODB_URI"}
     missing = []
@@ -239,6 +244,7 @@ def validate_environment() -> None:
             )
 
     logger.info("✅ Environment validated")
+
 
 
 # ============================================================

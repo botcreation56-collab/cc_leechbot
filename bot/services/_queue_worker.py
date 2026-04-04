@@ -9,7 +9,8 @@ import time
 from datetime import datetime
 from typing import Any, Set
 
-from database import get_db, update_task
+from database import get_db, update_task, get_task
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 logger = logging.getLogger("filebot.services.queue")
 
@@ -247,8 +248,6 @@ class QueueWorker:
                         t.add_done_callback(self.active_tasks.discard)
                 else:
                     # Free User: Enter wait state
-                    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-
                     await db.tasks.update_one(
                         {"task_id": task["task_id"]},
                         {

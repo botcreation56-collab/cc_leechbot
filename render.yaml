@@ -19,6 +19,8 @@ services:
         sync: false
       - key: DOMAIN
         sync: false
+      - key: WEBHOOK_SECRET
+        sync: false           # required: generate with: python -c "import secrets; print(secrets.token_hex(24))"
       - key: ENCRYPTION_KEY
         sync: false
       - key: JWT_SECRET
