@@ -20,6 +20,118 @@
             --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.1);
         }
 
+        /* Copyright Disclaimer Popup */
+        .disclaimer-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(8px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            opacity: 1;
+            transition: opacity 0.5s ease;
+        }
+
+        .disclaimer-overlay.fade-out {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .disclaimer-card {
+            background: linear-gradient(145deg, #1a1a2e 0%, #16213e 100%);
+            border: 1px solid rgba(255, 100, 100, 0.3);
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 500px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 25px 80px rgba(0, 0, 0, 0.5), 0 0 40px rgba(255, 100, 100, 0.1);
+            animation: pulse-glow 2s infinite;
+        }
+
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 25px 80px rgba(0, 0, 0, 0.5), 0 0 40px rgba(255, 100, 100, 0.1); }
+            50% { box-shadow: 0 25px 80px rgba(0, 0, 0, 0.5), 0 0 60px rgba(255, 100, 100, 0.2); }
+        }
+
+        .disclaimer-icon {
+            font-size: 60px;
+            margin-bottom: 20px;
+            animation: bounce 1s ease infinite;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        .disclaimer-title {
+            color: #ff6b6b;
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .disclaimer-text {
+            color: #c9d1d9;
+            font-size: 15px;
+            line-height: 1.8;
+            margin-bottom: 25px;
+        }
+
+        .disclaimer-text strong {
+            color: #fff;
+        }
+
+        .disclaimer-text a {
+            color: #58a6ff;
+            text-decoration: none;
+        }
+
+        .disclaimer-text a:hover {
+            text-decoration: underline;
+        }
+
+        .disclaimer-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+            color: white;
+            padding: 14px 32px;
+            border-radius: 12px;
+            border: none;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 8px 25px rgba(255, 107, 107, 0.3);
+        }
+
+        .disclaimer-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 35px rgba(255, 107, 107, 0.4);
+        }
+
+        .countdown-text {
+            color: #8b949e;
+            font-size: 12px;
+            margin-top: 15px;
+        }
+
+        .countdown-seconds {
+            color: #ff6b6b;
+            font-weight: 700;
+            font-size: 14px;
+        }
+
         body.theme-dark {
             --glass-bg: rgba(22, 27, 34, 0.7);
             --glass-border: 1px solid rgba(255, 255, 255, 0.05);
@@ -245,6 +357,26 @@
 
 <body class="theme-dark" data-lang="en"> <!-- Default to Dark for Premium Feel -->
 
+    <!-- Copyright Disclaimer Popup -->
+    <div id="disclaimer-overlay" class="disclaimer-overlay">
+        <div class="disclaimer-card">
+            <div class="disclaimer-icon">⚠️</div>
+            <h2 class="disclaimer-title">Copyright Notice</h2>
+            <p class="disclaimer-text">
+                <strong>This page is for streaming purposes only.</strong><br><br>
+                We do <strong>NOT</strong> own or host any files/content displayed here.
+                All content belongs to their respective copyright owners.<br><br>
+                If you are a copyright holder and want content removed,
+                contact us via <strong>@{{ bot_username }}</strong> using <code>/support</code>
+                and we will remove it immediately.
+            </p>
+            <button id="disclaimer-btn" class="disclaimer-btn">
+                <span>👆 I Understand</span>
+            </button>
+            <p class="countdown-text">This popup will close in <span id="countdown-seconds" class="countdown-seconds">3</span> seconds</p>
+        </div>
+    </div>
+
     <header class="top-bar">
         <div class="top-bar-left">
             <a href="/" class="logo-link">
@@ -405,6 +537,37 @@
                 alert("Stream link copied!");
             } catch (err) { console.error(err); }
         });
+
+        // --- Copyright Disclaimer Popup ---
+        (function() {
+            const overlay = document.getElementById('disclaimer-overlay');
+            const btn = document.getElementById('disclaimer-btn');
+            const countdown = document.getElementById('countdown-seconds');
+            let secondsLeft = 3;
+            let countdownInterval;
+
+            function closeDisclaimer() {
+                overlay.classList.add('fade-out');
+                setTimeout(() => {
+                    overlay.style.display = 'none';
+                }, 500);
+                if (countdownInterval) clearInterval(countdownInterval);
+            }
+
+            function updateCountdown() {
+                secondsLeft--;
+                countdown.textContent = secondsLeft;
+                if (secondsLeft <= 0) {
+                    closeDisclaimer();
+                }
+            }
+
+            // Start countdown
+            countdownInterval = setInterval(updateCountdown, 1000);
+
+            // Button click closes immediately
+            btn?.addEventListener('click', closeDisclaimer);
+        })();
     </script>
 </body>
 

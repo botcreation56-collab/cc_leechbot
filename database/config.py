@@ -56,6 +56,35 @@ async def _initialize_config_from_settings() -> Dict[str, Any]:
         if force_channels:
             initial_fields["force_sub_channel"] = force_channels
 
+        # Initialize bot_settings with sensible defaults
+        initial_fields["bot_settings"] = {
+            "queue": {
+                "batch_size": 3,
+                "sleep_interval": 0.5,
+                "idle_timeout": 60,
+                "pro_bypass_limit": 3,
+            },
+            "rate_limits": {
+                "free_per_minute": 5,
+                "pro_per_minute": 30,
+                "window_seconds": 60,
+            },
+            "webhook": {
+                "batch_processing": True,
+                "max_queue_size": 1000,
+            },
+            "cache": {
+                "user_ttl_seconds": 300,
+                "config_ttl_seconds": 30,
+                "action_lock_ttl": 60,
+            },
+            "performance": {
+                "db_pool_min": 5,
+                "db_pool_max": 30,
+                "db_timeout_ms": 5000,
+            },
+        }
+
         db = get_db()
         await db.config.update_one(
             {"type": "global"},
@@ -77,6 +106,76 @@ async def _initialize_config_from_settings() -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"❌ Failed to initialize config: {e}", exc_info=True)
         return {"type": "global", "created_at": datetime.utcnow()}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# BOT SETTINGS HELPERS (Dynamic configuration for hardcoded values)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+BOT_SETTINGS_DEFAULTS = {
+    "queue": {
+        "batch_size": 3,
+        "sleep_interval": 0.5,
+        "idle_timeout": 60,
+        "pro_bypass_limit": 3,
+    },
+    "rate_limits": {
+        "free_per_minute": 5,
+        "pro_per_minute": 30,
+        "window_seconds": 60,
+    },
+    "webhook": {
+        "batch_processing": True,
+        "max_queue_size": 1000,
+    },
+    "cache": {
+        "user_ttl_seconds": 300,
+        "config_ttl_seconds": 30,
+        "action_lock_ttl": 60,
+    },
+    "performance": {
+        "db_pool_min": 5,
+        "db_pool_max": 30,
+        "db_timeout_ms": 5000,
+    },
+}
+
+
+async def get_bot_setting(category: str, key: str, default: Any = None) -> Any:
+    """Get a specific bot setting from bot_settings with defaults fallback."""
+    config = await get_config("bot_settings")
+    if not config:
+        # Fallback to defaults
+        defaults = BOT_SETTINGS_DEFAULTS.get(category, {})
+        return defaults.get(key, default)
+
+    category_settings = config.get(category, {})
+    value = category_settings.get(key)
+
+    if value is None:
+        defaults = BOT_SETTINGS_DEFAULTS.get(category, {})
+        return defaults.get(key, default)
+
+    return value
+
+
+async def update_bot_setting(category: str, key: str, value: Any) -> bool:
+    """Update a specific bot setting."""
+    updates = {f"bot_settings.{category}.{key}": value}
+    return await set_config(updates)
+
+
+async def get_all_bot_settings() -> Dict[str, Any]:
+    """Get all bot settings with defaults merged."""
+    config = await get_config("bot_settings") or {}
+
+    # Merge with defaults for any missing values
+    result = {}
+    for category, defaults in BOT_SETTINGS_DEFAULTS.items():
+        result[category] = {**defaults, **(config.get(category, {}))}
+
+    return result
 
 
 async def get_config(key: Optional[str] = None) -> Any:

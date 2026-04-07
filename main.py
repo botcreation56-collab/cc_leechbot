@@ -25,6 +25,7 @@ from functools import wraps
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
+from core.reply_context import get_reply_context
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -950,6 +951,12 @@ async def cleanup_bot(application: Application, db_conn) -> None:
         pass
 
     try:
+        reply_ctx = get_reply_context()
+        await reply_ctx.stop()
+    except Exception:
+        pass
+
+    try:
         worker = QueueWorker.get_instance()
         await worker.stop()
     except Exception as e:
@@ -1044,6 +1051,14 @@ async def _full_startup(app: FastAPI):
                 logger.info("[STARTUP-2] ✅ Webhook processor worker started")
             except Exception as e:
                 logger.warning(f"[STARTUP-2] ⚠️ Webhook processor error: {e}")
+
+            # Start ReplyContextManager
+            try:
+                reply_ctx = get_reply_context()
+                await reply_ctx.start()
+                logger.info("[STARTUP-2] ✅ ReplyContextManager started")
+            except Exception as e:
+                logger.warning(f"[STARTUP-2] ⚠️ ReplyContextManager error: {e}")
 
             # Process queued updates from startup
             if _pending_updates:

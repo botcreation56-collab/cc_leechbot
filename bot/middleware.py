@@ -28,6 +28,56 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 # ============================================================
+# REPLY CONTEXT VALIDATION
+# ============================================================
+
+
+async def validate_reply_context(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> Optional[str]:
+    """
+    Check if user's message is a valid reply to the expected context.
+
+    Returns:
+        None if valid or no context exists
+        Error message string if invalid
+    """
+    if not update.message or not update.effective_user:
+        return None
+
+    user_id = update.effective_user.id
+
+    try:
+        from core.reply_context import get_reply_context
+
+        reply_ctx = get_reply_context()
+
+        if not reply_ctx.is_awaiting_reply(user_id):
+            return None
+
+        reply_to_id = (
+            update.message.reply_to_message.message_id
+            if update.message.reply_to_message
+            else None
+        )
+
+        is_valid, error_msg = reply_ctx.validate_reply(
+            user_id,
+            message_id=reply_to_id,
+            text=update.message.text or "",
+        )
+
+        if not is_valid:
+            return error_msg
+
+        return None
+
+    except Exception as e:
+        logger.debug(f"Reply context validation error: {e}")
+        return None
+
+
+# ============================================================
 # MARKDOWN ESCAPE HELPER
 # ============================================================
 

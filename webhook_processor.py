@@ -1,7 +1,7 @@
 """
 webhook_processor.py — High-performance webhook processing with:
   - Async fire-and-forget processing (returns 200 immediately)
-  - Per-user tier rate limiting (Free: 5/min, Pro: 30/min)
+  - Per-user tier rate limiting (configurable via DB)
   - Batch update handling
   - Connection pooling reuse
 """
@@ -15,11 +15,6 @@ from typing import Optional
 from telegram import Update
 
 logger = logging.getLogger("filebot.webhook")
-
-FREE_TIER_RATE = 5
-FREE_TIER_WINDOW = 60
-PRO_TIER_RATE = 30
-PRO_TIER_WINDOW = 60
 
 
 @dataclass
@@ -45,12 +40,37 @@ class WebhookProcessor:
         self._worker_task: Optional[asyncio.Task] = None
         self._initialized = True
         self._running = False
+        self._settings_loaded = False
+        self._free_rate = 5
+        self._free_window = 60
+        self._pro_rate = 30
+        self._pro_window = 60
 
     @classmethod
     def get_instance(cls) -> "WebhookProcessor":
         if not cls._instance:
             cls._instance = cls()
         return cls._instance
+
+    async def _load_settings(self):
+        """Load rate limit settings from DB."""
+        if self._settings_loaded:
+            return
+        try:
+            from database import get_bot_setting
+
+            self._free_rate = await get_bot_setting("rate_limits", "free_per_minute", 5)
+            self._free_window = await get_bot_setting(
+                "rate_limits", "window_seconds", 60
+            )
+            self._pro_rate = await get_bot_setting("rate_limits", "pro_per_minute", 30)
+            self._pro_window = self._free_window
+            self._settings_loaded = True
+            logger.info(
+                f"✅ Webhook rate limits loaded: Free={self._free_rate}/min, Pro={self._pro_rate}/min"
+            )
+        except Exception as e:
+            logger.warning(f"⚠️ Could not load webhook settings: {e}")
 
     def _get_user_tier(self, user_id: int) -> str:
         try:
@@ -62,14 +82,14 @@ class WebhookProcessor:
         return "pro" if user and user.get("plan") != "free" else "free"
 
     def _check_rate_limit(self, user_id: int, tier: str) -> tuple[bool, float]:
+        rate = self._pro_rate if tier == "pro" else self._free_rate
+        window = self._pro_window if tier == "pro" else self._free_window
+
         entry = self._rate_limits[user_id]
         now = time.time()
 
         if now < entry.blocked_until:
             return False, entry.blocked_until - now
-
-        rate = PRO_TIER_RATE if tier == "pro" else FREE_TIER_RATE
-        window = PRO_TIER_WINDOW if tier == "pro" else FREE_TIER_WINDOW
 
         if now - entry.window_start >= window:
             entry.count = 0
@@ -94,6 +114,7 @@ class WebhookProcessor:
         if self._running:
             return
         self._running = True
+        await self._load_settings()
         self._worker_task = asyncio.create_task(self._process_loop(bot_application))
         logger.info("✅ Webhook processor worker started")
 

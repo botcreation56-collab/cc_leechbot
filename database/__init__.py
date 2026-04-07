@@ -84,6 +84,10 @@ from database.config import (
     update_config,
     _get_from_settings,
     _initialize_config_from_settings,
+    get_bot_setting,
+    update_bot_setting,
+    get_all_bot_settings,
+    BOT_SETTINGS_DEFAULTS,
 )
 from database.cloud import (
     store_cloud_file_metadata,
@@ -208,6 +212,10 @@ __all__ = [
     "update_config",
     "_get_from_settings",
     "_initialize_config_from_settings",
+    "get_bot_setting",
+    "update_bot_setting",
+    "get_all_bot_settings",
+    "BOT_SETTINGS_DEFAULTS",
     # Cloud
     "store_cloud_file_metadata",
     "get_user_files",

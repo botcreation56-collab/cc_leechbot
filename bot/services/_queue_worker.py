@@ -35,17 +35,40 @@ class QueueWorker:
             config.get("parallel_global_limit") or os.getenv("PARALLEL_LIMIT", 5)
         )
         self.semaphore = asyncio.Semaphore(self.limit)
-        pro_bypass_limit = int(
+        self._pro_bypass_limit = int(
             config.get("pro_bypass_limit") or os.getenv("PRO_BYPASS_LIMIT", 3)
         )
-        self.pro_semaphore = asyncio.Semaphore(pro_bypass_limit)
-        self.sleep_interval = 0.5
+        self.pro_semaphore = asyncio.Semaphore(self._pro_bypass_limit)
+        self._sleep_interval = 0.5
+        self._idle_timeout = 60
+        self._batch_size = 3
         self.active_tasks: Set[asyncio.Task] = set()
         self._last_webhook_user_count: int = 0
         self._initialized = True
         self._task_event = asyncio.Event()
         self._idle_since = time.time()
-        self._batch_size = 3
+        self._settings_loaded = False
+
+    async def _load_settings(self):
+        """Load queue settings from DB."""
+        if self._settings_loaded:
+            return
+        try:
+            from database import get_bot_setting
+
+            self._sleep_interval = await get_bot_setting("queue", "sleep_interval", 0.5)
+            self._idle_timeout = await get_bot_setting("queue", "idle_timeout", 60)
+            self._batch_size = await get_bot_setting("queue", "batch_size", 3)
+            new_pro_limit = await get_bot_setting("queue", "pro_bypass_limit", 3)
+            if new_pro_limit != self._pro_bypass_limit:
+                self._pro_bypass_limit = new_pro_limit
+                self.pro_semaphore = asyncio.Semaphore(new_pro_limit)
+            self._settings_loaded = True
+            logger.info(
+                f"✅ Queue settings loaded: sleep={self._sleep_interval}s, batch={self._batch_size}, pro_limit={self._pro_bypass_limit}"
+            )
+        except Exception as e:
+            logger.warning(f"⚠️ Could not load queue settings: {e}")
 
     @property
     def current_active_count(self) -> int:
@@ -95,12 +118,12 @@ class QueueWorker:
     async def start(self):
         """Start the worker loop."""
         self.running = True
+        await self._load_settings()
         print(
             f"🚀 QueueWorker: Starting background tasks (limit={self.limit})...",
             flush=True,
         )
         logger.info(f"🚀 Queue Worker Started. Limit: {self.limit}")
-        # Run recovery in background so it doesn't block the main startup flow
         asyncio.create_task(self.recover_stale_tasks())
         asyncio.create_task(self._loop())
 
@@ -168,12 +191,15 @@ class QueueWorker:
 
                 # Calculate adaptive sleep
                 idle_time = time.time() - self._idle_since
-                if idle_time > 60:
-                    adaptive_sleep = min(5.0, self.sleep_interval * 4)
+                idle_timeout = (
+                    self._idle_timeout if hasattr(self, "_idle_timeout") else 60
+                )
+                if idle_time > idle_timeout:
+                    adaptive_sleep = min(5.0, self._sleep_interval * 4)
                 elif idle_time > 10:
-                    adaptive_sleep = min(2.0, self.sleep_interval * 2)
+                    adaptive_sleep = min(2.0, self._sleep_interval * 2)
                 else:
-                    adaptive_sleep = self.sleep_interval
+                    adaptive_sleep = self._sleep_interval
 
                 available_slots = (
                     self.semaphore._value if hasattr(self.semaphore, "_value") else 0

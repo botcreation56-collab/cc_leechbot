@@ -712,6 +712,29 @@ async def handle_wizard_text_input(
     """Handle text input specifically for wizard actions like rename and metadata"""
     try:
         awaiting = context.user_data.get("awaiting")
+
+        # Validate reply context if set
+        if awaiting in ("wiz_rename",) or (
+            awaiting and awaiting.startswith("wiz_meta_")
+        ):
+            from core.reply_context import get_reply_context
+
+            reply_ctx = get_reply_context()
+
+            user_id = update.effective_user.id
+            reply_to_msg = update.message.reply_to_message
+
+            # If context is set but user didn't reply to the correct message
+            if reply_ctx.is_awaiting_reply(user_id):
+                is_valid, error_msg = reply_ctx.validate_reply(
+                    user_id,
+                    message_id=reply_to_msg.message_id if reply_to_msg else None,
+                    text=text,
+                )
+                if not is_valid:
+                    await update.message.reply_text(f"⚠️ {error_msg}")
+                    return
+
         if awaiting == "wiz_rename" or (awaiting and awaiting.startswith("wiz_meta_")):
             session = context.user_data.get("wizard")
             if not session:
@@ -1341,10 +1364,22 @@ class WizardHandler:
 
             elif data == "wiz_rename_prompt":
                 current = session.get("rename") or session["original_name"]
-                await query.edit_message_text(
-                    f"✏️ **Rename File**\n\n"
-                    f"Current: `{current}`\n\n"
-                    f"Send me the new filename.",
+
+                # Use reply context for auto-triggered reply
+                from core.reply_context import send_awaiting_message
+
+                await send_awaiting_message(
+                    bot=context.bot,
+                    user_id=user_id,
+                    text=(
+                        f"✏️ **Rename File**\n\n"
+                        f"Current: `{current}`\n\n"
+                        f"Send me the new filename.\n\n"
+                        f"📩 Reply to this message with your answer."
+                    ),
+                    context_type="rename",
+                    context_key=f"wiz_rename_{task_id}",
+                    timeout=120,
                     reply_markup=InlineKeyboardMarkup(
                         [[InlineKeyboardButton("🔙 Back", callback_data="wiz_edit")]]
                     ),
@@ -1565,6 +1600,7 @@ class WizardHandler:
             # --- PROGRESS BAR FIX ---
             # Register message ID and send initial progress (0%) immediately
             from database import get_task, update_task
+
             task_obj = await get_task(task_id)
             task_info = task_obj.get("progress_data", {}) if task_obj else {}
             task_info["user_id"] = user_id
