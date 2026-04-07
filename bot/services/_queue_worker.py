@@ -35,17 +35,17 @@ class QueueWorker:
             config.get("parallel_global_limit") or os.getenv("PARALLEL_LIMIT", 5)
         )
         self.semaphore = asyncio.Semaphore(self.limit)
-        # Pro bypass cap: limits simultaneous semaphore-bypassing Pro tasks.
-        # Without this a Pro user can queue unlimited FFmpeg/Aria2c jobs (OOM DoS).
         pro_bypass_limit = int(
             config.get("pro_bypass_limit") or os.getenv("PRO_BYPASS_LIMIT", 3)
         )
         self.pro_semaphore = asyncio.Semaphore(pro_bypass_limit)
-        self.sleep_interval = 2
+        self.sleep_interval = 0.5
         self.active_tasks: Set[asyncio.Task] = set()
-        # Webhook capacity scaling — track previous active count to detect changes
         self._last_webhook_user_count: int = 0
         self._initialized = True
+        self._task_event = asyncio.Event()
+        self._idle_since = time.time()
+        self._batch_size = 3
 
     @property
     def current_active_count(self) -> int:
@@ -66,6 +66,7 @@ class QueueWorker:
             self._last_webhook_user_count = current
             # Import lazily to avoid circular startup imports
             from main import update_webhook_capacity, bot_application
+
             if bot_application is not None:
                 asyncio.create_task(
                     update_webhook_capacity(bot_application.bot, current)
@@ -94,7 +95,10 @@ class QueueWorker:
     async def start(self):
         """Start the worker loop."""
         self.running = True
-        print(f"🚀 QueueWorker: Starting background tasks (limit={self.limit})...", flush=True)
+        print(
+            f"🚀 QueueWorker: Starting background tasks (limit={self.limit})...",
+            flush=True,
+        )
         logger.info(f"🚀 Queue Worker Started. Limit: {self.limit}")
         # Run recovery in background so it doesn't block the main startup flow
         asyncio.create_task(self.recover_stale_tasks())
@@ -131,11 +135,8 @@ class QueueWorker:
         while self.running:
             try:
                 db = get_db()
-
-                # Update webhook capacity whenever active task count changes
                 await self._maybe_update_webhook_capacity()
 
-                # 1. Cleanup expired waiting tasks (120s timeout)
                 now = datetime.utcnow()
                 expired_threshold = 120
                 expired_tasks = await db.tasks.find(
@@ -164,9 +165,21 @@ class QueueWorker:
                         )
                     except:
                         pass
-                    logger.info(f"⏰ Task {tid} expired due to timeout.")
 
-                # 2. If queue is full (parallel limit reached), ONLY pull Pro tasks (Priority > 0)
+                # Calculate adaptive sleep
+                idle_time = time.time() - self._idle_since
+                if idle_time > 60:
+                    adaptive_sleep = min(5.0, self.sleep_interval * 4)
+                elif idle_time > 10:
+                    adaptive_sleep = min(2.0, self.sleep_interval * 2)
+                else:
+                    adaptive_sleep = self.sleep_interval
+
+                available_slots = (
+                    self.semaphore._value if hasattr(self.semaphore, "_value") else 0
+                )
+
+                # If queue is full, only pull Pro tasks
                 if self.semaphore.locked():
                     pro_task = await db.tasks.find_one_and_update(
                         {"status": "queued", "priority": {"$gt": 0}},
@@ -179,116 +192,98 @@ class QueueWorker:
                         sort=[("priority", -1), ("created_at", 1)],
                     )
                     if pro_task:
-                        tid = pro_task.get("task_id")
-                        prio = pro_task.get("priority", 0)
-                        logger.info(f"⚡ [PRO-BYPASS] Picking task {tid} (Priority: {prio}) while queue is at capacity.")
                         t = asyncio.create_task(
                             self._process_task_safely(pro_task, bypass_semaphore=True)
                         )
                         self.active_tasks.add(t)
                         t.add_done_callback(self.active_tasks.discard)
                         continue
-
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(adaptive_sleep)
                     continue
 
-                # 3. Normal pull (respects priority)
-                task = (
+                # Batch fetch tasks
+                batch_count = min(self._batch_size, max(1, available_slots))
+                tasks = (
                     await db.tasks.find({"status": "queued"})
                     .sort([("priority", -1), ("created_at", 1)])
-                    .to_list(length=1)
+                    .to_list(length=batch_count)
                 )
-                if not task:
-                    await asyncio.sleep(self.sleep_interval)
+
+                if not tasks:
+                    self._idle_since = time.time()
+                    await asyncio.sleep(adaptive_sleep)
                     continue
 
-                task = task[0]
-                user_id = task.get("user_id")
+                self._idle_since = time.time()
                 from database import get_user, get_config, get_active_task_count
 
-                user = await get_user(user_id)
-                plan_name = user.get("plan", "free").lower()
-                is_pro = plan_name != "free"
+                for task in tasks:
+                    if not self.running:
+                        break
+                    if self.semaphore.locked():
+                        break
 
-                # Check per-user parallel limit from plan
-                plans_config = await get_config("plans") or {}
-                plan_limit = plans_config.get(plan_name, {}).get("parallel", 1)
-                user_active_count = await get_active_task_count(user_id)
+                    user_id = task.get("user_id")
+                    user = await get_user(user_id)
+                    plan_name = user.get("plan", "free").lower() if user else "free"
+                    is_pro = plan_name != "free"
 
-                if user_active_count >= plan_limit:
-                    # User already at their limit, skip this task for now
-                    # (In a real system we might want to prioritize others,
-                    # but for now we'll just sleep a bit to avoid CPU spin)
-                    await asyncio.sleep(1)
-                    continue
+                    plans_config = await get_config("plans") or {}
+                    plan_limit = plans_config.get(plan_name, {}).get("parallel", 1)
+                    user_active_count = await get_active_task_count(user_id)
 
-                if is_pro or task.get("wait_responded_at"):
-                    # Pro or User already responded: Immediately process
-                    task = await db.tasks.find_one_and_update(
-                        {"task_id": task["task_id"], "status": "queued"},
-                        {
-                            "$set": {
-                                "status": "processing",
-                                "started_at": datetime.utcnow(),
-                            }
-                        },
-                    )
-                    if task:
-                        tid = task.get("task_id")
-                        prio = task.get("priority", 0)
-                        if prio > 0:
-                            logger.info(f"🚀 [PRIORITY] Picking task {tid} (Priority: {prio})")
-                        else:
-                            logger.info(f"📥 [NORMAL] Picking task {tid}")
+                    if user_active_count >= plan_limit:
+                        continue
 
-                        t = asyncio.create_task(
-                            self._process_task_safely(task, bypass_semaphore=False)
+                    if is_pro or task.get("wait_responded_at"):
+                        task = await db.tasks.find_one_and_update(
+                            {"task_id": task["task_id"], "status": "queued"},
+                            {
+                                "$set": {
+                                    "status": "processing",
+                                    "started_at": datetime.utcnow(),
+                                }
+                            },
                         )
-                        self.active_tasks.add(t)
-                        t.add_done_callback(self.active_tasks.discard)
-                else:
-                    # Free User: Enter wait state
-                    await db.tasks.update_one(
-                        {"task_id": task["task_id"]},
-                        {
-                            "$set": {
-                                "status": "waiting_user_input",
-                                "wait_started_at": datetime.utcnow(),
-                            }
-                        },
-                    )
-                    try:
-                        keyboard = InlineKeyboardMarkup(
-                            [
-                                [
-                                    InlineKeyboardButton(
-                                        "🚀 Start My Task",
-                                        callback_data=f"queue_start_{task['task_id']}",
-                                    )
-                                ]
-                            ]
-                        )
-                        await self.bot.send_message(
-                            chat_id=user_id,
-                            text=(
-                                "🎉 **It's Your Turn!**\n\n"
-                                "Your file is ready to be processed.\n"
-                                "Please click the button below within **120 seconds** to start.\n\n"
-                                "If you don't respond, your turn will be skipped."
-                            ),
-                            reply_markup=keyboard,
-                            parse_mode="Markdown",
-                        )
-                        logger.info(
-                            f"📢 User {user_id} notified for task {task['task_id']}. Waiting 120s."
-                        )
-                    except Exception as e:
-                        logger.error(f"Failed to notify free user {user_id}: {e}")
-                        # If notify fails, just mark it back to queued or fail it?
-                        # Let's mark it as queued so it doesn't get stuck in waiting
+                        if task:
+                            t = asyncio.create_task(
+                                self._process_task_safely(task, bypass_semaphore=False)
+                            )
+                            self.active_tasks.add(t)
+                            t.add_done_callback(self.active_tasks.discard)
+                    else:
                         await db.tasks.update_one(
-                            {"task_id": task["task_id"]}, {"$set": {"status": "queued"}}
+                            {"task_id": task["task_id"]},
+                            {
+                                "$set": {
+                                    "status": "waiting_user_input",
+                                    "wait_started_at": datetime.utcnow(),
+                                }
+                            },
                         )
+                        try:
+                            keyboard = InlineKeyboardMarkup(
+                                [
+                                    [
+                                        InlineKeyboardButton(
+                                            "🚀 Start My Task",
+                                            callback_data=f"queue_start_{task['task_id']}",
+                                        )
+                                    ]
+                                ]
+                            )
+                            await self.bot.send_message(
+                                chat_id=user_id,
+                                text="🎉 **It's Your Turn!**\n\nYour file is ready to be processed.\nPlease click the button below within **120 seconds** to start.",
+                                reply_markup=keyboard,
+                                parse_mode="Markdown",
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to notify free user {user_id}: {e}")
+                            await db.tasks.update_one(
+                                {"task_id": task["task_id"]},
+                                {"$set": {"status": "queued"}},
+                            )
 
                 if not hasattr(self, "_last_cleanup"):
                     self._last_cleanup = 0
@@ -300,7 +295,7 @@ class QueueWorker:
 
             except Exception as e:
                 logger.error(f"Queue Loop Error: {e}")
-                await asyncio.sleep(5)
+                await asyncio.sleep(1)
 
     async def _process_task_safely(self, task: Any, bypass_semaphore: bool = False):
         """Wrapper to run task with semaphore and error handling."""

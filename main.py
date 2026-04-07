@@ -23,7 +23,7 @@ import time
 from contextlib import asynccontextmanager
 from functools import wraps
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
@@ -67,6 +67,8 @@ print(f"🚀 main.py: Python version={sys.version}", flush=True)
 from config.settings import get_admin_ids, get_bot_token, get_settings
 
 settings = get_settings()
+
+from webhook_processor import get_webhook_processor
 
 # ============================================================
 # DEPENDENCY GRAPH  — build at startup, share via app.state
@@ -244,7 +246,6 @@ def validate_environment() -> None:
             )
 
     logger.info("✅ Environment validated")
-
 
 
 # ============================================================
@@ -869,7 +870,9 @@ async def configure_webhook(
             logger.error(
                 "👉 FIX: Change WEBHOOK_SECRET in Render to a random string (e.g. 'my_secret_123'), NOT your bot URL."
             )
-            logger.warning("⚠️ Proceeding WITHOUT secret_token protection to avoid hang...")
+            logger.warning(
+                "⚠️ Proceeding WITHOUT secret_token protection to avoid hang..."
+            )
             secret = ""
 
         # --- 2. Sanitization ---
@@ -905,7 +908,8 @@ async def configure_webhook(
             timeout=12.0,
         )
         logger.info(
-            "✅ configure_webhook: bot.set_webhook COMPLETED (max_connections=%d)", max_conn
+            "✅ configure_webhook: bot.set_webhook COMPLETED (max_connections=%d)",
+            max_conn,
         )
         return True
     except Exception as exc:
@@ -940,10 +944,17 @@ async def cleanup_bot(application: Application, db_conn) -> None:
     from bot.services import QueueWorker
 
     try:
+        processor = get_webhook_processor()
+        await processor.stop_worker()
+    except Exception:
+        pass
+
+    try:
         worker = QueueWorker.get_instance()
         await worker.stop()
     except Exception as e:
         import logging
+
         logger = logging.getLogger(__name__)
         if "QueueWorker NOT initialized" not in str(e):
             logger.warning(f"⚠️ Could not stop QueueWorker: {e}")
@@ -954,6 +965,7 @@ async def cleanup_bot(application: Application, db_conn) -> None:
     if db_conn:
         await db_conn.close()
     import logging
+
     logger = logging.getLogger(__name__)
     logger.info("🛑 Cleanup complete")
 
@@ -987,148 +999,167 @@ async def lifespan(app: FastAPI):
 
 
 async def _full_startup(app: FastAPI):
-    """Run ALL startup tasks in background after port binds."""
+    """Run ALL startup tasks in background after port binds - OPTIMIZED for speed."""
     import traceback as tb
 
-    logger.info("🚀 Full startup beginning...")
+    logger.info("🚀 Full startup beginning (PARALLEL MODE)...")
 
-    # Step 1: Build dependency graph (DB connection)
-    try:
-        logger.info("[STARTUP-1] Connecting to database...")
-        deps = await asyncio.wait_for(build_dependency_graph(), timeout=30.0)
-        app.state.deps = deps
-        logger.info("[STARTUP-1] ✅ Dependencies ready (DB connected and shared)")
-    except asyncio.TimeoutError:
-        logger.error("[STARTUP-1] ❌ DB connection TIMED OUT after 30s")
-        return
-    except Exception as e:
-        logger.error(f"[STARTUP-1] ❌ Dependencies failed: {e}\n{tb.format_exc()}")
-        return
+    _init_webhook_secret()
 
-    # Step 2: Build bot application (handlers)
-    try:
-        logger.info("[STARTUP-2] Building bot application...")
-        bot_app = await asyncio.wait_for(build_bot_application(deps), timeout=45.0)
-        
-        logger.info("[STARTUP-2] bot_app variable received. Storing in app.state...")
-        app.state.bot = bot_app.bot
-        global bot_application
-        bot_application = bot_app
-        
-        logger.info("[STARTUP-2] ✅ Bot application built, initialized, and started.")
+    async def _startup_dependencies():
+        """Step 1: Build dependency graph (DB connection) - 10s timeout."""
+        try:
+            logger.info("[STARTUP-1] Connecting to database...")
+            deps = await asyncio.wait_for(build_dependency_graph(), timeout=10.0)
+            app.state.deps = deps
+            logger.info("[STARTUP-1] ✅ Dependencies ready")
+        except asyncio.TimeoutError:
+            logger.error("[STARTUP-1] ❌ DB connection TIMED OUT after 10s")
+            raise
+        except Exception as e:
+            logger.error(f"[STARTUP-1] ❌ Dependencies failed: {e}")
+            raise
 
-        # Process any updates that arrived during startup
-        if _pending_updates:
-            logger.info(
-                f"[STARTUP-2] 📥 Processing {_pending_updates.__len__()} queued updates..."
-            )
-            for data in _pending_updates:
-                try:
-                    update = Update.de_json(data, bot_application.bot)
-                    asyncio.create_task(bot_application.process_update(update))
-                except Exception:
-                    pass
-            _pending_updates.clear()
-    except asyncio.TimeoutError:
-        logger.error("[STARTUP-2] ❌ Bot app build TIMED OUT after 45s")
-        return
-    except Exception as e:
-        logger.error(f"[STARTUP-2] ❌ Bot app failed: {e}\n{tb.format_exc()}")
-        return
+    async def _startup_bot():
+        """Step 2: Build bot application (handlers) - 15s timeout."""
+        try:
+            deps = getattr(app.state, "deps", None)
+            if not deps:
+                logger.error("[STARTUP-2] ❌ No dependencies available")
+                return None
 
-    # Step 3: Start QueueWorker
-    try:
-        logger.info("[STARTUP-3] Starting QueueWorker...")
-        logger.info("[STARTUP-3] DEBUG: Importing QueueWorker")
-        from bot.services import QueueWorker
+            logger.info("[STARTUP-2] Building bot application...")
+            bot_app = await asyncio.wait_for(build_bot_application(deps), timeout=15.0)
 
-        logger.info("[STARTUP-3] DEBUG: Creating QueueWorker instance")
-        worker = QueueWorker(bot_application.bot)
-        logger.info("[STARTUP-3] DEBUG: Starting QueueWorker synchronously...")
-        await worker.start()
-        logger.info("[STARTUP-3] ✅ QueueWorker started")
-    except Exception as e:
-        logger.warning(f"[STARTUP-3] ⚠️ QueueWorker: {e}")
+            app.state.bot = bot_app.bot
+            global bot_application
+            bot_application = bot_app
 
-    # Bot username was cached during application.initialize() in build_bot_application
-    logger.info("🤖 @%s ready | Webhook URL: %s", settings.BOT_USERNAME or "unknown", settings.WEBHOOK_URL or "POLLING")
+            logger.info("[STARTUP-2] ✅ Bot application built")
 
-    # Step 4: Configure webhook OR start long polling
-    logger.info("[STARTUP-4] 🔧 Starting Webhook/polling setup...")
-    webhook_success = False
-    if settings.WEBHOOK_URL:
+            # Start webhook processor worker
+            try:
+                processor = get_webhook_processor()
+                await processor.start_worker(bot_application)
+                logger.info("[STARTUP-2] ✅ Webhook processor worker started")
+            except Exception as e:
+                logger.warning(f"[STARTUP-2] ⚠️ Webhook processor error: {e}")
+
+            # Process queued updates from startup
+            if _pending_updates:
+                logger.info(
+                    f"[STARTUP-2] 📥 Processing {len(_pending_updates)} queued updates..."
+                )
+                for data in _pending_updates:
+                    try:
+                        update = Update.de_json(data, bot_application.bot)
+                        asyncio.create_task(bot_application.process_update(update))
+                    except Exception:
+                        pass
+                _pending_updates.clear()
+
+            return bot_app
+        except asyncio.TimeoutError:
+            logger.error("[STARTUP-2] ❌ Bot app build TIMED OUT after 15s")
+            return None
+        except Exception as e:
+            logger.error(f"[STARTUP-2] ❌ Bot app failed: {e}")
+            return None
+
+    async def _startup_queue(bot):
+        """Step 3: Start QueueWorker."""
+        if not bot:
+            return
+        try:
+            logger.info("[STARTUP-3] Starting QueueWorker...")
+            from bot.services import QueueWorker
+
+            worker = QueueWorker(bot)
+            await worker.start()
+            logger.info("[STARTUP-3] ✅ QueueWorker started")
+        except Exception as e:
+            logger.warning(f"[STARTUP-3] ⚠️ QueueWorker: {e}")
+
+    async def _startup_webhook(bot):
+        """Step 4: Configure webhook."""
+        if not bot or not settings.WEBHOOK_URL:
+            return False
         try:
             logger.info("[STARTUP-4] 🔧 Setting webhook...")
-            webhook_success = await asyncio.wait_for(
+            success = await asyncio.wait_for(
                 configure_webhook(
-                    bot_application.bot,
+                    bot,
                     settings.WEBHOOK_URL,
                     settings.WEBHOOK_SECRET or "",
                     None,
                 ),
-                timeout=30.0,
+                timeout=10.0,
             )
-            if webhook_success:
+            if success:
                 logger.info("[STARTUP-4] ✅ Webhook configured")
-            else:
-                logger.warning("[STARTUP-4] ⚠️ Webhook setup failed, falling back to polling...")
+            return success
         except Exception as e:
             logger.error(f"[STARTUP-4] ❌ Webhook error: {e}")
+            return False
 
-    if not webhook_success:
-        updater = getattr(bot_application, "updater", None)
-        if updater is not None:
-            try:
-                logger.info("[STARTUP-4] 🔧 Starting long polling as fallback...")
-                await updater.start_polling(
-                    drop_pending_updates=True,
-                    allowed_updates=Update.ALL_TYPES,
-                    close_loop=False,
-                )
-                logger.info("[STARTUP-4] ✅ Long polling started")
-            except Exception as e:
-                logger.error(f"[STARTUP-4] ❌ Polling fallback error: {e}")
-        else:
-            logger.warning(
-                "[STARTUP-4] ⚠️ No Updater available (webhook-mode build) and webhook failed. "
-                "Bot will process updates only via incoming webhook POSTs."
-            )
-
-    # Run remaining startup tasks in background
-    async def startup_remaining():
-        # Step 5: Initialize Pyrogram
-        logger.info("[STARTUP-5] 🔧 Starting Pyrogram clients...")
+    async def _startup_background():
+        """Background tasks - non-blocking."""
+        # Pyrogram init
         try:
             from bot.pyrogram_client import init_pyrogram
 
-            success = await asyncio.wait_for(init_pyrogram(), timeout=30.0)
-            if success:
-                logger.info("[STARTUP-5] ✅ Pyrogram started")
-            else:
-                logger.info("[STARTUP-5] ⚠️ Pyrogram initialization skipped or failed")
-        except asyncio.TimeoutError:
-            logger.error("[STARTUP-5] ❌ Pyrogram TIMED OUT")
+            success = await asyncio.wait_for(init_pyrogram(), timeout=10.0)
+            logger.info(
+                "[STARTUP-BG] ✅ Pyrogram started"
+                if success
+                else "[STARTUP-BG] ⚠️ Pyrogram skipped"
+            )
         except Exception as e:
-            logger.warning(f"[STARTUP-5] ⚠️ Pyrogram error: {e}")
+            logger.warning(f"[STARTUP-BG] ⚠️ Pyrogram: {e}")
 
-        # Step 6: Rclone setup
-        logger.info("[STARTUP-6] 🔧 Checking rclone binary...")
+        # Rclone setup
         try:
             from bot.services._cloud_upload import ensure_rclone_binary
 
-            path = await asyncio.wait_for(ensure_rclone_binary(), timeout=60.0)
-            if path:
-                logger.info("[STARTUP-6] ✅ Rclone ready")
-            else:
-                logger.info("[STARTUP-6] ⚠️ Rclone not configured")
-        except asyncio.TimeoutError:
-            logger.error("[STARTUP-6] ❌ Rclone TIMED OUT")
+            path = await asyncio.wait_for(ensure_rclone_binary(), timeout=15.0)
+            logger.info(
+                "[STARTUP-BG] ✅ Rclone ready"
+                if path
+                else "[STARTUP-BG] ⚠️ Rclone not configured"
+            )
         except Exception as e:
-            logger.warning(f"[STARTUP-6] ⚠️ Rclone error: {e}")
+            logger.warning(f"[STARTUP-BG] ⚠️ Rclone: {e}")
 
-        logger.info("🎉 ALL STARTUP COMPLETE - Bot is fully operational!")
+        logger.info("🎉 ALL STARTUP COMPLETE")
 
-    asyncio.create_task(startup_remaining())
+    # Run critical startup tasks in parallel for speed
+    try:
+        deps_task = asyncio.create_task(_startup_dependencies())
+        await deps_task
+
+        bot_app = await _startup_bot()
+
+        if not bot_app:
+            logger.error("❌ Bot startup failed, cannot continue")
+            return
+
+        await asyncio.gather(
+            _startup_queue(bot_app.bot),
+            _startup_webhook(bot_app.bot),
+            return_exceptions=True,
+        )
+
+        logger.info(
+            "🤖 @%s ready | Webhook URL: %s",
+            settings.BOT_USERNAME or "unknown",
+            settings.WEBHOOK_URL or "POLLING",
+        )
+
+        # Non-blocking background tasks
+        asyncio.create_task(_startup_background())
+
+    except Exception as e:
+        logger.error(f"❌ Startup failed: {e}\n{tb.format_exc()}")
 
 
 # ============================================================
@@ -1233,7 +1264,7 @@ app.include_router(logs_router, tags=["AdminLogs"], prefix="/api/admin")
 @app.get("/health", include_in_schema=False)
 @app.head("/health", include_in_schema=False)
 async def health():
-    """Simplified health check to prevent Render timeouts during indexing."""
+    """Fast health check for Render - no DB ping, just connection state."""
     deps = getattr(app.state, "deps", {})
     db_conn = deps.get("db_conn")
 
@@ -1242,17 +1273,8 @@ async def health():
             {"status": "starting", "db": "disconnected"}, status_code=200
         )
 
-    db_ok = True
-    db_status = "connected"
-    try:
-        if db_conn:
-            await asyncio.wait_for(db_conn.db.command("ping"), timeout=1.0)
-        else:
-            db_ok = False
-            db_status = "disconnected"
-    except Exception as e:
-        db_ok = False
-        db_status = f"ping_failed: {str(e)[:50]}"
+    db_ok = db_conn._client is not None
+    db_status = "connected" if db_ok else "disconnected"
 
     return {
         "status": "healthy" if db_ok else "degraded",
@@ -1264,12 +1286,24 @@ async def health():
 
 
 # ============================================================
-# TELEGRAM WEBHOOK RECEIVER
+# TELEGRAM WEBHOOK RECEIVER (OPTIMIZED)
 # ============================================================
 
 WEBHOOK_PATH = "/webhook/telegram"
 
 _pending_updates: list = []
+_webhook_secret_hash: Optional[str] = None
+
+
+def _init_webhook_secret():
+    """Cache webhook secret hash at startup for fast comparison."""
+    global _webhook_secret_hash
+    if settings.WEBHOOK_SECRET:
+        import hashlib
+
+        _webhook_secret_hash = hashlib.sha256(
+            settings.WEBHOOK_SECRET.encode()
+        ).hexdigest()[:16]
 
 
 @app.get(WEBHOOK_PATH, include_in_schema=False)
@@ -1297,13 +1331,16 @@ async def telegram_webhook(request: Request):
         logger.critical("🚨 WEBHOOK_SECRET not configured in settings!")
         raise HTTPException(status_code=500, detail="Webhook secret not configured")
 
-    safe_expected = get_safe_secret(settings.WEBHOOK_SECRET)
     incoming = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+    if _webhook_secret_hash:
+        import hashlib
 
-    if not safe_expected or incoming != safe_expected:
-        logger.warning(
-            f"🚫 Webhook rejected: secret mismatch (expected_safe_len={len(safe_expected) if safe_expected else 0})"
-        )
+        incoming_hash = hashlib.sha256(incoming.encode()).hexdigest()[:16]
+        if incoming_hash != _webhook_secret_hash:
+            logger.warning(f"🚫 Webhook rejected: secret mismatch")
+            raise HTTPException(status_code=403, detail="Invalid secret token")
+    elif incoming != settings.WEBHOOK_SECRET:
+        logger.warning(f"🚫 Webhook rejected: secret mismatch")
         raise HTTPException(status_code=403, detail="Invalid secret token")
 
     body = await request.body()
@@ -1313,8 +1350,11 @@ async def telegram_webhook(request: Request):
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
     update = Update.de_json(data, bot_application.bot)
-    logger.info(f"📥 Received webhook update (id={update.update_id})")
-    await bot_application.process_update(update)
+    logger.debug(f"📥 Webhook update queued (id={update.update_id})")
+
+    processor = get_webhook_processor()
+    await processor.enqueue_update(update)
+
     return JSONResponse({"ok": True})
 
 

@@ -10,7 +10,9 @@ Both patterns share the same underlying Motor client.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -27,7 +29,7 @@ _client: Optional[AsyncIOMotorClient] = None
 
 
 class DatabaseConnection:
-    """Manages the MongoDB Motor client lifecycle."""
+    """Manages the MongoDB Motor client lifecycle with auto-reconnect."""
 
     def __init__(
         self,
@@ -46,41 +48,58 @@ class DatabaseConnection:
         self._server_selection_timeout_ms = server_selection_timeout_ms
         self._client: Optional[AsyncIOMotorClient] = None
         self._db: Optional[AsyncIOMotorDatabase] = None
+        self._reconnect_attempts = 0
+        self._max_reconnect_attempts = 3
+        self._last_ping_time = 0.0
 
     async def connect(self) -> "DatabaseConnection":
-        """Open connection and verify reachability."""
+        """Open connection with auto-retry and optimized settings."""
         if self._client is not None:
             return self
 
-        try:
-            self._client = AsyncIOMotorClient(
-                self._uri,
-                minPoolSize=self._min_pool,
-                maxPoolSize=self._max_pool,
-                connectTimeoutMS=self._connect_timeout_ms,
-                serverSelectionTimeoutMS=self._server_selection_timeout_ms,
-            )
-            await self._client.admin.command("ping")
-            self._db = self._client[self._db_name]
-            logger.info("✅ MongoDB connected | database: %s", self._db_name)
-        except (ConnectionFailure, OperationFailure) as exc:
-            logger.error("❌ MongoDB connection failed: %s", exc)
-            raise
-
-        return self
+        attempt = 0
+        while attempt < self._max_reconnect_attempts:
+            try:
+                self._client = AsyncIOMotorClient(
+                    self._uri,
+                    minPoolSize=self._min_pool,
+                    maxPoolSize=self._max_pool,
+                    connectTimeoutMS=self._connect_timeout_ms,
+                    serverSelectionTimeoutMS=self._server_selection_timeout_ms,
+                    retryWrites=True,
+                    retryReads=True,
+                )
+                await self._client.admin.command("ping")
+                self._db = self._client[self._db_name]
+                self._reconnect_attempts = 0
+                self._last_ping_time = time.time()
+                logger.info("✅ MongoDB connected | database: %s", self._db_name)
+                return self
+            except (ConnectionFailure, OperationFailure) as exc:
+                attempt += 1
+                self._reconnect_attempts = attempt
+                wait_time = min(2**attempt, 10)
+                logger.warning(
+                    f"❌ MongoDB connection attempt {attempt} failed: {exc}. Retrying in {wait_time}s..."
+                )
+                if attempt < self._max_reconnect_attempts:
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error(
+                        "❌ MongoDB connection failed after %d attempts",
+                        self._max_reconnect_attempts,
+                    )
+                    raise
 
     async def close(self, timeout: float = 5.0) -> None:
-        """Gracefully close the MongoDB connection pool.
-
-        Args:
-            timeout: Maximum seconds to wait for pending operations.
-        """
+        """Gracefully close the MongoDB connection pool."""
         if self._client:
             try:
                 self._client.close(timeout=timeout)
                 logger.info("🛑 MongoDB connection closed gracefully")
             except Exception as e:
                 logger.warning(f"MongoDB close error (forced): {e}")
+            finally:
                 self._client = None
                 self._db = None
 
@@ -90,6 +109,27 @@ class DatabaseConnection:
         if self._db is None:
             raise RuntimeError("Database is not connected. Call connect() first.")
         return self._db
+
+    async def ping_fast(self) -> bool:
+        """Fast ping without command overhead."""
+        try:
+            if self._client is None:
+                return False
+            await asyncio.wait_for(self._client.admin.command("ping"), timeout=1.0)
+            self._last_ping_time = time.time()
+            return True
+        except Exception:
+            return False
+
+    async def ensure_connected(self) -> bool:
+        """Ensure connection is alive, reconnect if needed."""
+        if self._client is not None:
+            return True
+        try:
+            await self.connect()
+            return True
+        except Exception:
+            return False
 
     async def create_indexes(self) -> None:
         """Ensure all necessary indexes exist. Idempotent."""
